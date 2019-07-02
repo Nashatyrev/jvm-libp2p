@@ -6,7 +6,9 @@ import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.MessageToMessageCodec
+import org.bouncycastle.crypto.macs.HMac
 import java.nio.ByteBuffer
+import javax.crypto.Cipher
 
 class SecIoCodec(val local: SecioParams, val remote: SecioParams) : MessageToMessageCodec<ByteBuf, ByteBuf>() {
 
@@ -39,10 +41,44 @@ class SecIoCodec(val local: SecioParams, val remote: SecioParams) : MessageToMes
         out.add(plainData)
     }
 
+
     override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
         cause.printStackTrace()
         if (cause is SecioError) {
             ctx.channel().close()
         }
+    }
+
+    companion object {
+
+        /**
+         * This is just a restructure of the aforementioned [decode] function to facilitate testing with [ByteArray]s.
+         * @param useDoFinal whether to solely use [Cipher.doFinal] or to use [Cipher.update] combined with [Cipher.doFinal].
+         */
+        fun decodeByteArray(
+            encodedData: ByteArray,
+            macSize: Int,
+            hmac: HMac,
+            cipher: Cipher,
+            useDoFinal: Boolean
+        ): ByteArray {
+            var numBytes = encodedData.size // 48
+            var cipherBytesLength = numBytes - macSize // 16
+            var macBytes = encodedData.slice(IntRange(cipherBytesLength, numBytes - 1)).toByteArray()
+            var cipherBytes = encodedData.slice(IntRange(0, cipherBytesLength - 1)).toByteArray()
+
+            hmac.reset()
+            hmac.update(cipherBytes, 0, cipherBytes.size)
+            var macArr = ByteArray(macSize)
+            hmac.doFinal(macArr, 0)
+            if (!macBytes.contentEquals(macArr)) throw MacMismatch()
+
+            return if (useDoFinal) {
+                cipher.doFinal(cipherBytes)
+            } else {
+                cipher.update(cipherBytes)
+            }
+        }
+
     }
 }
