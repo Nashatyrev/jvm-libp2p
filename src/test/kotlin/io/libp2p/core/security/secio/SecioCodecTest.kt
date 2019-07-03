@@ -36,14 +36,12 @@ class SecioCodecTest {
 
     private fun encodeB64(data: ByteArray): ByteArray = b64Encoder.encode(data)
 
-
     // Set up test data.
     private val localCipherKey = decodeB64("gnwcRZjqKQvmho9ydCCdeg==")
     private val localIv = decodeB64("KCDZcNJvWfpqBJ7vO70r2Q==")
     private val localMacKey = decodeB64("WL19M4qcwAjfwZAmOaFH3DSu69s=")
     private val localMac: HMac = HMac(SHA256Digest()).also { it.init(KeyParameter(localMacKey)) }
     private val localMacSize = localMac.macSize // expected: 32
-
 
     @Test
     fun testUsingSunJceCipherWithUpdateMethod() {
@@ -78,7 +76,6 @@ class SecioCodecTest {
     }
 
     private fun testCipherUsingUpdateOrFinalMethod(cipherToTest: Cipher, useDoFinal: Boolean) {
-
         // This is step 1 in the SecIO handshake: ensure we can decrypt our nonce when that is sent from the remote party.
         val encryptedNonceSentByRemotePeerB64 =
             "AAAAMANv6ZEpzxdL1xOjRBf/tVQPCLldztJqAzeqYEZpiKFqIVf+/81XKeT2+XH1CU6sbA=="

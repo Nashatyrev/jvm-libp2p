@@ -8,6 +8,7 @@ import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.MessageToMessageCodec
 import org.bouncycastle.crypto.macs.HMac
 import java.nio.ByteBuffer
+import java.util.*
 import javax.crypto.Cipher
 
 class SecIoCodec(val local: SecioParams, val remote: SecioParams) : MessageToMessageCodec<ByteBuf, ByteBuf>() {
@@ -73,12 +74,17 @@ class SecIoCodec(val local: SecioParams, val remote: SecioParams) : MessageToMes
             hmac.doFinal(macArr, 0)
             if (!macBytes.contentEquals(macArr)) throw MacMismatch()
 
-            return if (useDoFinal) {
-                cipher.doFinal(cipherBytes)
-            } else {
-                cipher.update(cipherBytes)
-            }
-        }
+            // Now decrypt!
+            val expectedByteCount = cipher.getOutputSize(cipherBytes.size)
+            val decryptedResult = cipher.update(cipherBytes)
 
+            if (decryptedResult.size < expectedByteCount) {
+                var finalBytes = cipher.doFinal()
+                if (finalBytes != null && finalBytes.isNotEmpty()) {
+                    return decryptedResult + finalBytes
+                }
+            }
+            return decryptedResult
+        }
     }
 }
