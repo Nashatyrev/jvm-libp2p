@@ -100,6 +100,9 @@ open class GossipRouter(
     messageValidator
 ) {
 
+    var processIHaves = true
+    var emitGossips = true
+
     // The idea behind choosing these specific default values for acceptRequestsWhitelist was
     // - from one side are pretty small and safe: peer unlikely be able to drop its score to `graylist`
     //   with 128 messages. But even if so then it's not critical to accept some extra messages before
@@ -315,6 +318,8 @@ open class GossipRouter(
     }
 
     private fun handleIHave(msg: Rpc.ControlIHave, peer: PeerHandler) {
+        if (!processIHaves) return
+
         val peerScore = score.score(peer.peerId)
         // we ignore IHAVE gossip from any peer whose score is below the gossip threshold
         if (peerScore < scoreParams.gossipThreshold) return
@@ -533,6 +538,8 @@ open class GossipRouter(
     }
 
     private fun emitGossip(topic: Topic, excludePeers: Collection<PeerHandler>) {
+        if (!emitGossips) return
+
         val ids = mCache.getMessageIds(topic)
         if (ids.isEmpty()) return
 
