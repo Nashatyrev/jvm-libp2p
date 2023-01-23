@@ -3,7 +3,7 @@
 [![](https://img.shields.io/badge/project-libp2p-yellow.svg?style=flat-square)](https://libp2p.io/)
 [![Gitter](https://img.shields.io/gitter/room/libp2p/jvm-libp2p.svg)](https://gitter.im/jvm-libp2p/community)
 [![](https://img.shields.io/badge/freenode-%23libp2p-yellow.svg?style=flat-square)](http://webchat.freenode.net/?channels=%23libp2p)
-[![Build Status](https://travis-ci.com/libp2p/jvm-libp2p.svg?branch=master)](https://travis-ci.com/libp2p/jvm-libp2p)
+![Build Status](https://github.com/libp2p/jvm-libp2p/actions/workflows/build.yml/badge.svg?branch=master)
 [![Discourse posts](https://img.shields.io/discourse/https/discuss.libp2p.io/posts.svg)](https://discuss.libp2p.io)
 
 > a libp2p implementation for the JVM, written in Kotlin 🔥
@@ -60,29 +60,77 @@ etc. and other subsystems or concepts that are internal to implementations and
 do not impact the ability to hold communications with other libp2p processes.
 
 ## Adding as a dependency to your project:
+![Maven version](https://img.shields.io/maven-metadata/v?label=jvm-libp2p-minimal&metadataUrl=https%3A%2F%2Fdl.cloudsmith.io%2Fpublic%2Flibp2p%2Fjvm-libp2p%2Fmaven%2Fio%2Flibp2p%2Fjvm-libp2p-minimal%2Fmaven-metadata.xml)
 
-Builds are published to JCenter. Maven Central mirrors JCenter, but updates can take some time to appear so if possible, pull directly from JCenter.
+[![Hosted By: Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com) 
+Hosting of artefacts is graciously provided by [Cloudsmith](https://cloudsmith.com).
 
 ### Using Gradle
+Add the Cloudsmith repository to the `repositories` section of your Gradle file.
+```groovy
+repositories {
+  // ...
+  maven { url "https://dl.cloudsmith.io/public/libp2p/jvm-libp2p/maven/" }
+}
 ```
-   repositories {
-       jcenter()
-   }
-
-   implementation 'io.libp2p:jvm-libp2p-minimal:0.5.5-RELEASE'
+Add the library to the `implementation` part of your Gradle file.
+```groovy
+dependencies {
+  // ...
+  implementation 'io.libp2p:jvm-libp2p-minimal:X.Y.Z-RELEASE'
+}
 ```
 ### Using Maven
-``` 
-  <dependency>
-    <groupId>io.libp2p</groupId>
-    <artifactId>jvm-libp2p-minimal</artifactId>
-    <version>0.5.6-RELEASE</version>
-    <type>pom</type>
-  </dependency>
+Add the repository to the `dependencyManagement` section of the pom file:
+```xml
+<repositories>
+  <repository>
+    <id>libp2p-jvm-libp2p</id>
+    <url>https://dl.cloudsmith.io/public/libp2p/jvm-libp2p/maven/</url>
+    <releases>
+      <enabled>true</enabled>
+      <updatePolicy>always</updatePolicy>
+    </releases>
+    <snapshots>
+      <enabled>true</enabled>
+      <updatePolicy>always</updatePolicy>
+    </snapshots>
+  </repository>
+</repositories>
+```
+
+And then add jvm-libp2p as a dependency:
+``` xml
+<dependency>
+  <groupId>io.libp2p</groupId>
+  <artifactId>jvm-libp2p-minimal</artifactId>
+  <version>X.Y.Z-RELEASE</version>
+  <type>pom</type>
+</dependency>
 ```
 
 
 
+## Building the project 
+
+To build the library you will need just 
+- JDK (Java Development Kit) of version 11 or higher
+ 
+For building a stable release version clone the `master` branch:  
+```bash
+git clone https://github.com/libp2p/jvm-libp2p -b master
+```
+For building a version with the latest updates clone the `develop` (default) branch:
+```bash
+git clone https://github.com/libp2p/jvm-libp2p
+```
+
+To build the library from the `jvm-libp2p` folder, run:
+```bash
+./gradlew build
+```
+
+After the build is complete you may find the library `.jar` file here: `jvm-libp2p/build/libs/jvm-libp2p-minimal-0.x.y-RELEASE.jar`
 
 ## License
 

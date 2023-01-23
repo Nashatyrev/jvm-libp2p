@@ -1,5 +1,6 @@
 package io.libp2p.core.multiformats
 
+import org.apache.logging.log4j.LogManager
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
@@ -12,6 +13,7 @@ class MultiaddrDns {
     }
 
     companion object {
+        private val log = LogManager.getLogger(MultiaddrDns::class.java)
         private val dnsProtocols = arrayOf(Protocol.DNS4, Protocol.DNS6, Protocol.DNSADDR)
 
         fun resolve(addr: Multiaddr, resolver: Resolver = DefaultResolver): List<Multiaddr> {
@@ -22,9 +24,9 @@ class MultiaddrDns {
 
             val resolvedAddresses = mutableListOf<List<Multiaddr>>()
             for (address in addressesToResolve) {
-                val toResolve = address.filterStringComponents(*dnsProtocols).firstOrNull()
+                val toResolve = address.filterComponents(*dnsProtocols).firstOrNull()
                 val resolved = if (toResolve != null)
-                    resolve(toResolve.first, toResolve.second!!, address, resolver)
+                    resolve(toResolve.protocol, toResolve.stringValue!!, address, resolver)
                 else
                     listOf(address)
                 resolvedAddresses.add(resolved)
@@ -52,6 +54,7 @@ class MultiaddrDns {
                     }
                 }
             } catch (e: UnknownHostException) {
+                log.debug(e)
                 return emptyList()
                 // squash, as this might not be fatal,
                 // and if it is we'll handle this higher up the call chain
@@ -72,7 +75,7 @@ class MultiaddrDns {
             else
                 addressMatrix[0].flatMap { parent ->
                     crossProduct(addressMatrix.subList(1, addressMatrix.size))
-                        .map { child -> Multiaddr(parent, child) }
+                        .map { child -> parent.concatenated(child) }
                 }
         }
 
@@ -106,9 +109,11 @@ class MultiaddrDns {
                 return ipAddresses
                     .filter { desiredAddressType.isInstance(it) }
                     .map {
-                        Multiaddr(listOf(
-                            Pair(resultantProto, it.address)
-                        ))
+                        Multiaddr(
+                            listOf(
+                                MultiaddrComponent(resultantProto, it.address)
+                            )
+                        )
                     }
             }
         }

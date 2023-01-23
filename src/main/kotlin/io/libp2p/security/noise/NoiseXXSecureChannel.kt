@@ -12,6 +12,7 @@ import io.libp2p.core.crypto.marshalPublicKey
 import io.libp2p.core.crypto.unmarshalPublicKey
 import io.libp2p.core.multistream.ProtocolDescriptor
 import io.libp2p.core.security.SecureChannel
+import io.libp2p.etc.REMOTE_PEER_ID
 import io.libp2p.etc.types.toByteArray
 import io.libp2p.etc.types.toByteBuf
 import io.libp2p.etc.types.toUShortBigEndian
@@ -25,16 +26,19 @@ import io.netty.channel.CombinedChannelDuplexHandler
 import io.netty.channel.SimpleChannelInboundHandler
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder
 import io.netty.handler.codec.LengthFieldPrepender
+import io.netty.handler.timeout.ReadTimeoutHandler
 import org.apache.logging.log4j.LogManager
 import spipe.pb.Spipe
 import java.util.concurrent.CompletableFuture
 
-private enum class Role(val intVal: Int) { INIT(HandshakeState.INITIATOR), RESP(HandshakeState.RESPONDER) }
+enum class Role(val intVal: Int) { INIT(HandshakeState.INITIATOR), RESP(HandshakeState.RESPONDER) }
 
 private val log = LogManager.getLogger(NoiseXXSecureChannel::class.java)
-private const val HandshakeNettyHandlerName = "HandshakeNettyHandler"
-private const val NoiseCodeNettyHandlerName = "NoiseXXCodec"
-private const val MaxCipheredPacketLength = 65535
+const val HandshakeNettyHandlerName = "HandshakeNettyHandler"
+const val HandshakeReadTimeoutNettyHandlerName = "HandshakeReadTimeoutNettyHandler"
+const val NoiseCodeNettyHandlerName = "NoiseXXCodec"
+const val MaxCipheredPacketLength = 65535
+const val HandshakeTimeoutSec = 5
 
 class UShortLengthCodec : CombinedChannelDuplexHandler<LengthFieldBasedFrameDecoder, LengthFieldPrepender>(
     LengthFieldBasedFrameDecoder(MaxCipheredPacketLength + 2, 0, 2, 0, 2),
@@ -70,7 +74,8 @@ class NoiseXXSecureChannel(private val localKey: PrivKey) :
         val handshakeComplete = CompletableFuture<SecureChannel.Session>()
         // Packet length codec should stay forever.
         ch.pushHandler(UShortLengthCodec())
-        // Handshake handle is to be removed when handshake is complete
+        // Handshake and ReadTimeout handlers are to be removed when handshake is complete
+        ch.pushHandler(HandshakeReadTimeoutNettyHandlerName, ReadTimeoutHandler(HandshakeTimeoutSec))
         ch.pushHandler(
             HandshakeNettyHandlerName,
             NoiseIoHandshake(localKey, handshakeComplete, if (ch.isInitiator) Role.INIT else Role.RESP)
@@ -80,7 +85,7 @@ class NoiseXXSecureChannel(private val localKey: PrivKey) :
     } // initChannel
 } // class NoiseXXSecureChannel
 
-private class NoiseIoHandshake(
+class NoiseIoHandshake(
     private val localKey: PrivKey,
     private val handshakeComplete: CompletableFuture<SecureChannel.Session>,
     private val role: Role
@@ -93,6 +98,7 @@ private class NoiseIoHandshake(
     private var instancePayload: ByteArray? = null
     private var activated = false
     private var remotePeerId: PeerId? = null
+    private var expectedRemotePeerId: PeerId? = null
 
     init {
         log.debug("Starting handshake")
@@ -113,6 +119,10 @@ private class NoiseIoHandshake(
         // the Noise protocol only permits alice to send a packet first
         if (role == Role.INIT) {
             sendNoiseMessage(ctx)
+            if (!ctx.channel().hasAttr(REMOTE_PEER_ID)) {
+                throw SecureHandshakeError("Remote Peer ID missing for initiating party")
+            }
+            expectedRemotePeerId = ctx.channel().attr(REMOTE_PEER_ID).get()
         }
     } // channelActive
 
@@ -127,15 +137,17 @@ private class NoiseIoHandshake(
 
         // verify the signature of the remote's noise static public key once
         // the remote public key has been provided by the XX protocol
-        with(handshakeState.remotePublicKey) {
-            if (hasPublicKey()) {
-                remotePeerId = verifyPayload(ctx, instancePayload!!, this)
+        val derivedRemotePublicKey = handshakeState.remotePublicKey
+        if (derivedRemotePublicKey.hasPublicKey()) {
+            remotePeerId = verifyPayload(ctx, instancePayload!!, derivedRemotePublicKey)
+            if (role == Role.INIT && expectedRemotePeerId != remotePeerId) {
+                throw InvalidRemotePubKey()
             }
         }
 
         // after reading messages and setting up state, write next message onto the wire
         if (handshakeState.action == HandshakeState.WRITE_MESSAGE) {
-                sendNoiseStaticKeyAsPayload(ctx)
+            sendNoiseStaticKeyAsPayload(ctx)
         }
 
         if (handshakeState.action == HandshakeState.SPLIT) {
@@ -302,6 +314,7 @@ private class NoiseIoHandshake(
             "NoisePacketSplitter",
             SplitEncoder(MaxCipheredPacketLength - session.aliceCipher.macLength)
         )
+        ctx.pipeline().remove(HandshakeReadTimeoutNettyHandlerName)
         ctx.pipeline().remove(this)
         ctx.fireChannelActive()
     } // handshakeSucceeded
@@ -313,6 +326,7 @@ private class NoiseIoHandshake(
         log.debug("Noise handshake failed", cause)
 
         handshakeComplete.completeExceptionally(cause)
+        ctx.pipeline().remove(HandshakeReadTimeoutNettyHandlerName)
         ctx.pipeline().remove(this)
     }
 } // class NoiseIoHandshake

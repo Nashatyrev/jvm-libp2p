@@ -22,6 +22,7 @@ fun <C> CompletableFuture<C>.forward(forwardTo: CompletableFuture<in C>) = forwa
 /**
  * The same as [CompletableFuture.get] but unwraps [ExecutionException]
  */
+@Suppress("SwallowedException")
 fun <C> CompletableFuture<C>.getX(): C {
     try {
         return get()
@@ -36,6 +37,7 @@ fun <C> CompletableFuture<C>.getX(): C {
 /**
  * The same as [CompletableFuture.get] but unwraps [ExecutionException]
  */
+@Suppress("SwallowedException")
 fun <C> CompletableFuture<C>.getX(timeoutSec: Double): C {
     try {
         return get((timeoutSec * 1000).toLong(), TimeUnit.MILLISECONDS)
@@ -63,13 +65,15 @@ fun <C> anyComplete(vararg all: CompletableFuture<C>): CompletableFuture<C> {
     else object : CompletableFuture<C>() {
         init {
             val counter = AtomicInteger(all.size)
-            all.forEach { it.whenComplete { v, t ->
-                if (t == null) {
-                    complete(v)
-                } else if (counter.decrementAndGet() == 0) {
-                    completeExceptionally(NonCompleteException(t))
+            all.forEach {
+                it.whenComplete { v, t ->
+                    if (t == null) {
+                        complete(v)
+                    } else if (counter.decrementAndGet() == 0) {
+                        completeExceptionally(NonCompleteException(t))
+                    }
                 }
-            } }
+            }
         }
     }
 }

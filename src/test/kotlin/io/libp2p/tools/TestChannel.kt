@@ -1,7 +1,9 @@
 package io.libp2p.tools
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
+import io.libp2p.core.PeerId
 import io.libp2p.etc.CONNECTION
+import io.libp2p.etc.REMOTE_PEER_ID
 import io.libp2p.etc.types.lazyVar
 import io.libp2p.etc.types.toVoidCompletableFuture
 import io.libp2p.etc.util.netty.nettyInitializer
@@ -29,7 +31,8 @@ class TestChannel(
     id: String = "test",
     initiator: Boolean,
     vararg handlers: ChannelHandler?,
-    val dummyIp: String = "0.0.0.0"
+    val dummyIp: String = "0.0.0.0",
+    remotePeerId: PeerId? = null
 ) :
     EmbeddedChannel(
         TestChannelId(id),
@@ -45,10 +48,20 @@ class TestChannel(
         *handlers
     ) {
 
+    init {
+        if (remotePeerId != null) {
+            attr(REMOTE_PEER_ID).set(remotePeerId)
+        }
+    }
+
     var link: TestChannel? = null
     val sentMsgCount = AtomicLong()
     var executor: Executor by lazyVar {
         Executors.newSingleThreadExecutor(threadFactory)
+    }
+
+    fun <TRet> onChannelThread(task: (EmbeddedChannel) -> TRet): CompletableFuture<TRet> {
+        return CompletableFuture.supplyAsync({ task(this) }, executor)
     }
 
     @Synchronized
@@ -75,6 +88,7 @@ class TestChannel(
 
     override fun localAddress(): SocketAddress {
         // dummyIp can actually be null when this method is called in super constructor
+        @Suppress("USELESS_ELVIS")
         return InetSocketAddress(dummyIp ?: "255.255.255.255", 777)
     }
 

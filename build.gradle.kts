@@ -1,74 +1,89 @@
-import com.google.protobuf.gradle.proto
-import com.google.protobuf.gradle.protobuf
-import com.google.protobuf.gradle.protoc
-import com.jfrog.bintray.gradle.BintrayExtension
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.dokka.gradle.DokkaTask
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Paths
 
-// To publish the release artifact to JFrog Bintray repo run the following :
-// ./gradlew bintrayUpload -PbintrayUser=<user> -PbintrayApiKey=<api-key>
+// To publish the release artifact to CloudSmith repo run the following :
+// ./gradlew publish -PcloudsmithUser=<user> -PcloudsmithApiKey=<api-key>
 
 group = "io.libp2p"
-version = "0.6.0-RELEASE"
+version = "develop"
 description = "a minimal implementation of libp2p for the jvm"
 
 plugins {
-    java
-    idea
-    kotlin("jvm") version "1.3.31"
-    id("org.jmailen.kotlinter") version "1.26.0"
-    id("com.google.protobuf") version "0.8.13"
+    kotlin("jvm").version("1.6.10")
 
-    `maven`
-    `maven-publish`
-    id("com.jfrog.bintray") version "1.8.1"
-    id("org.jetbrains.dokka") version "0.9.18"
+    id("com.github.ben-manes.versions").version("0.44.0")
+    id("com.google.protobuf").version("0.9.1")
+    id("idea")
+    id("io.gitlab.arturbosch.detekt").version("1.20.0-RC1")
+    id("java")
+    id("maven-publish")
+    id("org.jetbrains.dokka").version("1.6.10")
+    id("org.jmailen.kotlinter").version("3.8.0")
+    id("java-test-fixtures")
 }
 
 repositories {
-    jcenter()
     mavenCentral()
+    maven("https://artifacts.consensys.net/public/maven/maven/")
 }
 
-val log4j2Version = "2.11.2"
+
+val log4j2Version = "2.19.0"
+
+sourceSets.create("jmh") {
+    compileClasspath += sourceSets["main"].runtimeClasspath
+    compileClasspath += sourceSets["testFixtures"].runtimeClasspath
+    runtimeClasspath += sourceSets["main"].runtimeClasspath
+    runtimeClasspath += sourceSets["testFixtures"].runtimeClasspath
+}
 
 dependencies {
+    api("io.netty:netty-all:4.1.69.Final")
+    api("com.google.protobuf:protobuf-java:3.21.9")
+
     implementation(kotlin("stdlib-jdk8"))
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.0-M1")
-    implementation("io.netty:netty-all:4.1.36.Final")
-    implementation("com.google.guava:guava:27.1-jre")
-    implementation("org.bouncycastle:bcprov-jdk15on:1.62")
-    implementation("org.bouncycastle:bcpkix-jdk15on:1.62")
-    implementation("com.google.protobuf:protobuf-java:3.11.0")
-    implementation("commons-codec:commons-codec:1.13")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.0")
+    implementation("tech.pegasys:noise-java:22.1.0")
+
+    implementation("com.google.guava:guava:31.1-jre")
+    implementation("org.bouncycastle:bcprov-jdk15on:1.70")
+    implementation("org.bouncycastle:bcpkix-jdk15on:1.70")
+    implementation("commons-codec:commons-codec:1.15")
 
     implementation("org.apache.logging.log4j:log4j-api:${log4j2Version}")
     implementation("org.apache.logging.log4j:log4j-core:${log4j2Version}")
     implementation("javax.xml.bind:jaxb-api:2.3.1")
 
-    testImplementation("org.junit.jupiter:junit-jupiter-api:5.4.2")
-    testImplementation("org.junit.jupiter:junit-jupiter-params:5.4.2")
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.4.2")
-    testImplementation("io.mockk:mockk:1.10.0")
+    testFixturesImplementation("org.apache.logging.log4j:log4j-api:${log4j2Version}")
+    testFixturesImplementation("com.google.guava:guava:31.0.1-jre")
     testImplementation("org.jgrapht:jgrapht-core:1.3.1")
     testImplementation("org.apache.commons:commons-math3:3.6.1")
     testImplementation("org.jetbrains.kotlin:kotlin-reflect:1.3.0")
+
+    testImplementation("org.junit.jupiter:junit-jupiter-api:5.9.1")
+    testImplementation("org.junit.jupiter:junit-jupiter-params:5.9.1")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.9.1")
+    testImplementation("io.mockk:mockk:1.12.2")
+    testRuntimeOnly("org.mockito:mockito-core:4.8.1")
+    testImplementation("org.mockito:mockito-junit-jupiter:4.8.1")
+    testImplementation("org.assertj:assertj-core:3.23.1")
+
+    "jmhImplementation"("org.openjdk.jmh:jmh-core:1.35")
+    "jmhAnnotationProcessor"("org.openjdk.jmh:jmh-generator-annprocess:1.35")
 }
 
-sourceSets {
-    main {
-        proto {
-            srcDir("src/main/proto")
-        }
-    }
+task<JavaExec>("jmh") {
+    mainClass.set("org.openjdk.jmh.Main")
+    classpath = sourceSets["jmh"].compileClasspath + sourceSets["jmh"].runtimeClasspath
 }
 
 protobuf {
     protoc {
-        artifact = "com.google.protobuf:protoc:3.0.0"
+        artifact = "com.google.protobuf:protoc:3.21.9"
     }
 
     tasks.get("clean").doFirst({ delete(generatedFilesBaseDir) })
@@ -80,11 +95,19 @@ protobuf {
     }
 }
 
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
 tasks.withType<KotlinCompile> {
     kotlinOptions.jvmTarget = "1.8"
     kotlinOptions {
-        freeCompilerArgs = listOf("-Xjvm-default=enable")
+        freeCompilerArgs = listOf("-Xjvm-default=all")
     }
+}
+tasks.withType<Copy> {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
 }
 
 // Parallel build execution
@@ -96,7 +119,11 @@ tasks.test {
     }
 
     testLogging {
-        events("PASSED", "FAILED", "SKIPPED")
+        events("FAILED")
+        exceptionFormat = TestExceptionFormat.FULL
+        showCauses = true
+        showExceptions = true
+        showStackTraces = true
     }
 
     // disabling the parallel test runs for the time being due to port collisions
@@ -105,77 +132,8 @@ tasks.test {
 //    Runtime.getRuntime().availableProcessors().div(2))
 }
 
-// Interop Tests
-fun findOnPath(executable: String): Boolean {
-    return System.getenv("PATH").split(File.pathSeparator)
-        .map { Paths.get(it) }
-        .any { Files.exists(it.resolve(executable)) }
-}
-val goOnPath = findOnPath("go")
-val nodeOnPath = findOnPath("node")
-val rustOnPath = findOnPath("cargo")
-
-val externalsDir = File(sourceSets.test.get().resources.sourceDirectories.singleFile, "../external")
-val goPingServer = File(externalsDir, "go/ping-server")
-val goPingClient = File(externalsDir, "go/ping-client")
-val jsPinger = File(externalsDir, "js/pinger")
-val rustPingServer = File(externalsDir, "rust/ping-server")
-val rustPingClient = File(externalsDir, "rust/ping-client")
-
-val goTargets = listOf(goPingServer, goPingClient).map { target ->
-    val name = "go-build-${target.name}"
-    task(name, Exec::class) {
-        workingDir = target
-        commandLine = "go build".split(" ")
-    }
-    name
-}
-
-val rustTargets = listOf(rustPingServer, rustPingClient).map { target ->
-    val name = "rust-build-${target.name}"
-    task(name, Exec::class) {
-        workingDir = target
-        commandLine = "cargo build".split(" ")
-    }
-    name
-}
-
-task("npm-install-pinger", Exec::class) {
-    workingDir = jsPinger
-    commandLine = "npm install".split(" ")
-}
-
-task("interopTest", Test::class) {
-    group = "Verification"
-    description = "Runs the interoperation tests."
-
-    val dependencies = ArrayList<String>()
-    if (goOnPath) dependencies.addAll(goTargets)
-    if (nodeOnPath) dependencies.add("npm-install-pinger")
-    if (rustOnPath) dependencies.addAll(rustTargets)
-    dependsOn(dependencies)
-
-    useJUnitPlatform {
-        includeTags("interop")
-    }
-
-    testLogging {
-        events("PASSED", "FAILED", "SKIPPED")
-    }
-
-    environment("ENABLE_JS_INTEROP", nodeOnPath)
-    environment("JS_PINGER", jsPinger.toString())
-    environment("ENABLE_GO_INTEROP", goOnPath)
-    environment("GO_PING_SERVER", goPingServer.toString())
-    environment("GO_PING_CLIENT", goPingClient.toString())
-    environment("ENABLE_RUST_INTEROP", rustOnPath)
-    environment("RUST_PING_SERVER", rustPingServer.toString())
-    environment("RUST_PING_CLIENT", rustPingClient.toString())
-}
-// End Interop Tests
-
 kotlinter {
-    allowWildcardImports = false
+    disabledRules = arrayOf("no-wildcard-imports")
 }
 
 val sourcesJar by tasks.registering(Jar::class) {
@@ -183,53 +141,58 @@ val sourcesJar by tasks.registering(Jar::class) {
     from(sourceSets.main.get().allSource)
 }
 
-val dokka by tasks.getting(DokkaTask::class) {
-    outputFormat = "html"
-    outputDirectory = "$buildDir/dokka"
-    jdkVersion = 8
-    reportUndocumented = false
-    externalDocumentationLink {
-        url = URL("https://netty.io/4.1/api/")
+tasks.dokkaHtml.configure {
+    outputDirectory.set(buildDir.resolve("dokka"))
+    dokkaSourceSets {
+        configureEach {
+            jdkVersion.set(8)
+            reportUndocumented.set(false)
+            externalDocumentationLink {
+                url.set(URL("https://netty.io/4.1/api/"))
+            }
+        }
     }
 }
 
-val dokkaJar by tasks.creating(Jar::class) {
+val dokkaJar: TaskProvider<Jar> by tasks.registering(Jar::class) {
     group = JavaBasePlugin.DOCUMENTATION_GROUP
-    description = "Assembles Kotlin docs with Dokka"
+    val dokkaJavadocTask = tasks.getByName("dokkaJavadoc")
+    dependsOn(dokkaJavadocTask)
     archiveClassifier.set("javadoc")
-    from(tasks.dokka)
-    dependsOn(tasks.dokka)
+    from(dokkaJavadocTask.outputs)
 }
 
 publishing {
     repositories {
         maven {
-            // change to point to your repo, e.g. http://my.org/repo
-            url = uri("$buildDir/repo")
+            name = "cloudsmith"
+            url = uri("https://api-g.cloudsmith.io/maven/libp2p/jvm-libp2p")
+            credentials {
+                username = findProperty("cloudsmithUser")
+                password = findProperty("cloudsmithApiKey")
+            }
         }
     }
     publications {
         register("mavenJava", MavenPublication::class) {
             from(components["java"])
             artifact(sourcesJar.get())
-            artifact(dokkaJar)
+            artifact(dokkaJar.get())
+            groupId = "io.libp2p"
+            artifactId = project.name
         }
     }
 }
 
 fun findProperty(s: String) = project.findProperty(s) as String?
 
-bintray {
-    user = findProperty("bintrayUser")
-    key = findProperty("bintrayApiKey")
-    publish = true
-    setPublications("mavenJava")
-    setConfigurations("archives")
-    pkg(delegateClosureOf<BintrayExtension.PackageConfig> {
-        userOrg = "libp2p"
-        repo = "jvm-libp2p"
-        name = "io.libp2p"
-        setLicenses("Apache-2.0", "MIT")
-        vcsUrl = "https://github.com/libp2p/jvm-libp2p"
-    })
+val compileKotlin: KotlinCompile by tasks
+compileKotlin.kotlinOptions {
+    languageVersion = "1.6"
+    allWarningsAsErrors = true
+}
+
+detekt {
+    config = files("$projectDir/detekt/config.yml")
+    buildUponDefaultConfig = true
 }

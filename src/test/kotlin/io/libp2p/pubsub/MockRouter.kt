@@ -4,12 +4,19 @@ import pubsub.pb.Rpc
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
-open class MockRouter(
-    override val protocol: PubsubProtocol = PubsubProtocol.Gossip_V_1_1
-) : AbstractRouter() {
+open class MockRouter(executor: ScheduledExecutorService) : AbstractRouter(
+    protocol = PubsubProtocol.Floodsub,
+    executor = executor,
+    subscriptionFilter = TopicSubscriptionFilter.AllowAllTopicSubscriptionFilter(),
+    maxMsgSize = Int.MAX_VALUE,
+    messageFactory = { DefaultPubsubMessage(it) },
+    seenMessages = LRUSeenCache(SimpleSeenCache(), 1000),
+    messageValidator = NOP_ROUTER_VALIDATOR
+) {
 
     val inboundMessages: BlockingQueue<Rpc.RPC> = LinkedBlockingQueue()
 
@@ -37,7 +44,7 @@ open class MockRouter(
         inboundMessages += msg as Rpc.RPC
     }
 
-    override fun broadcastOutbound(msg: Rpc.Message): CompletableFuture<Unit> = CompletableFuture.completedFuture(null)
-    override fun broadcastInbound(msgs: List<Rpc.Message>, receivedFrom: PeerHandler) {}
+    override fun broadcastOutbound(msg: PubsubMessage): CompletableFuture<Unit> = CompletableFuture.completedFuture(null)
+    override fun broadcastInbound(msgs: List<PubsubMessage>, receivedFrom: PeerHandler) {}
     override fun processControl(ctrl: Rpc.ControlMessage, receivedFrom: PeerHandler) {}
 }

@@ -3,6 +3,7 @@ package io.libp2p.core.pubsub
 import io.libp2p.core.PeerId
 import io.libp2p.core.crypto.PrivKey
 import io.libp2p.pubsub.PubsubApiImpl
+import io.libp2p.pubsub.PubsubMessage
 import io.libp2p.pubsub.PubsubRouter
 import io.netty.buffer.ByteBuf
 import java.util.concurrent.CompletableFuture
@@ -61,7 +62,7 @@ interface PubsubSubscriberApi {
      * result either synchronously ([RESULT_VALID], [RESULT_INVALID] or [RESULT_IGNORE])
      * or asynchronously.
      *
-     * If the [receiver] doesn't validates it should just return [RESULT_VALID]
+     * If the [receiver] doesn't validate it should just return [RESULT_VALID]
      *
      * **Note** the message is not propagated to other peers until **all** receivers
      * subscribed to the topic return [true]. Too long validation procedure may significantly
@@ -74,10 +75,13 @@ interface PubsubSubscriberApi {
      * (without validation)
      */
     fun subscribe(receiver: Subscriber, vararg topics: Topic): PubsubSubscription {
-        return subscribe(Validator {
-            receiver.accept(it)
-            RESULT_VALID
-        }, *topics)
+        return subscribe(
+            Validator {
+                receiver.accept(it)
+                RESULT_VALID
+            },
+            *topics
+        )
     }
 
     /**
@@ -162,6 +166,9 @@ interface PubsubApi : PubsubSubscriberApi {
  * Abstract Pubsub Message API
  */
 interface MessageApi {
+
+    val originalMessage: PubsubMessage
+
     /**
      * Message body
      */

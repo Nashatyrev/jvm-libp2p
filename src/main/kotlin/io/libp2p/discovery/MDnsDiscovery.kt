@@ -31,24 +31,30 @@ class MDnsDiscovery(
     private val executor by lazy { ForkJoinPool(1) }
 
     override fun start(): CompletableFuture<Void> {
-        return CompletableFuture.runAsync(Runnable {
-            mDns.start()
+        return CompletableFuture.runAsync(
+            Runnable {
+                mDns.start()
 
-            mDns.registerService(
-                ipfsDiscoveryInfo()
-            )
-            mDns.addAnswerListener(
-                serviceTag,
-                queryInterval,
-                Listener(this)
-            )
-        }, executor)
+                mDns.registerService(
+                    ipfsDiscoveryInfo()
+                )
+                mDns.addAnswerListener(
+                    serviceTag,
+                    queryInterval,
+                    Listener(this)
+                )
+            },
+            executor
+        )
     }
 
     override fun stop(): CompletableFuture<Void> {
-        return CompletableFuture.runAsync(Runnable {
-            mDns.stop()
-        }, executor)
+        return CompletableFuture.runAsync(
+            Runnable {
+                mDns.stop()
+            },
+            executor
+        )
     }
 
     internal fun peerFound(peerInfo: PeerInfo) {
@@ -70,7 +76,7 @@ class MDnsDiscovery(
         val address = host.listenAddresses().find {
             it.has(Protocol.IP4)
         }
-        val str = address?.getStringComponent(Protocol.TCP)!!
+        val str = address?.getFirstComponent(Protocol.TCP)?.stringValue!!
         return Integer.parseInt(str)
     }
 
@@ -79,11 +85,9 @@ class MDnsDiscovery(
 
     private fun <R> ipAddresses(protocol: Protocol, klass: Class<R>): List<R> {
         return host.listenAddresses().map {
-            it.getComponent(protocol)
-        }.filter {
-            it != null
-        }.map {
-            InetAddress.getByAddress(localhost.hostName, it)
+            it.getFirstComponent(protocol)
+        }.filterNotNull().map {
+            InetAddress.getByAddress(localhost.hostName, it.value)
         }.filterIsInstance(klass)
     }
 

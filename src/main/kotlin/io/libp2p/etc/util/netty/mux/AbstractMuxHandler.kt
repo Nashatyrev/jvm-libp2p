@@ -4,6 +4,7 @@ import io.libp2p.core.ConnectionClosedException
 import io.libp2p.core.InternalErrorException
 import io.libp2p.core.Libp2pException
 import io.libp2p.etc.types.completedExceptionally
+import io.libp2p.etc.types.hasCauseOfType
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInboundHandlerAdapter
 import org.apache.logging.log4j.LogManager
@@ -14,13 +15,15 @@ typealias MuxChannelInitializer<TData> = (MuxChannel<TData>) -> Unit
 
 private val log = LogManager.getLogger(AbstractMuxHandler::class.java)
 
-abstract class AbstractMuxHandler<TData>(var inboundInitializer: MuxChannelInitializer<TData>? = null) :
+abstract class AbstractMuxHandler<TData>() :
     ChannelInboundHandlerAdapter() {
 
     private val streamMap: MutableMap<MuxId, MuxChannel<TData>> = mutableMapOf()
     var ctx: ChannelHandlerContext? = null
     private val activeFuture = CompletableFuture<Void>()
     private var closed = false
+    protected abstract val inboundInitializer: MuxChannelInitializer<TData>
+    private val pendingReadComplete = mutableSetOf<MuxId>()
 
     override fun handlerAdded(ctx: ChannelHandlerContext) {
         super.handlerAdded(ctx)
@@ -39,9 +42,9 @@ abstract class AbstractMuxHandler<TData>(var inboundInitializer: MuxChannelIniti
     }
 
     override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
-        when (cause) {
-            is InternalErrorException -> log.warn("Muxer internal error", cause)
-            is Libp2pException -> log.debug("Muxer exception", cause)
+        when {
+            cause.hasCauseOfType(InternalErrorException::class) -> log.warn("Muxer internal error", cause)
+            cause.hasCauseOfType(Libp2pException::class) -> log.debug("Muxer exception", cause)
             else -> log.warn("Unexpected exception", cause)
         }
     }
@@ -52,13 +55,19 @@ abstract class AbstractMuxHandler<TData>(var inboundInitializer: MuxChannelIniti
 
     protected fun childRead(id: MuxId, msg: TData) {
         val child = streamMap[id] ?: throw ConnectionClosedException("Channel with id $id not opened")
+        pendingReadComplete += id
         child.pipeline().fireChannelRead(msg)
     }
 
-    abstract fun onChildWrite(child: MuxChannel<TData>, data: TData): Boolean
+    override fun channelReadComplete(ctx: ChannelHandlerContext) {
+        pendingReadComplete.forEach { streamMap[it]?.pipeline()?.fireChannelReadComplete() }
+        pendingReadComplete.clear()
+    }
+
+    abstract fun onChildWrite(child: MuxChannel<TData>, data: TData)
 
     protected fun onRemoteOpen(id: MuxId) {
-        val initializer = inboundInitializer ?: throw InternalErrorException("Illegal state: inbound stream handler is not set up yet")
+        val initializer = inboundInitializer
         val child = createChild(
             id,
             initializer,
@@ -113,18 +122,21 @@ abstract class AbstractMuxHandler<TData>(var inboundInitializer: MuxChannelIniti
     fun newStream(outboundInitializer: MuxChannelInitializer<TData>): CompletableFuture<MuxChannel<TData>> {
         try {
             checkClosed() // if already closed then event loop is already down and async task may never execute
-            return activeFuture.thenApplyAsync(Function {
-                checkClosed() // close may happen after above check and before this point
-                val child = createChild(
-                    generateNextId(),
-                    {
-                        onLocalOpen(it)
-                        outboundInitializer(it)
-                    },
-                    true
-                )
-                child
-            }, getChannelHandlerContext().channel().eventLoop())
+            return activeFuture.thenApplyAsync(
+                Function {
+                    checkClosed() // close may happen after above check and before this point
+                    val child = createChild(
+                        generateNextId(),
+                        {
+                            onLocalOpen(it)
+                            outboundInitializer(it)
+                        },
+                        true
+                    )
+                    child
+                },
+                getChannelHandlerContext().channel().eventLoop()
+            )
         } catch (e: Exception) {
             return completedExceptionally(e)
         }

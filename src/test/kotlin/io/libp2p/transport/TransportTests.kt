@@ -7,14 +7,15 @@ import io.libp2p.core.multiformats.Multiaddr
 import io.libp2p.core.transport.Transport
 import org.apache.logging.log4j.LogManager
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit.SECONDS
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Tag("transport")
 abstract class TransportTests {
@@ -23,13 +24,11 @@ abstract class TransportTests {
     protected abstract fun badAddress(): Multiaddr
     protected lateinit var transportUnderTest: Transport
 
-    protected val nullConnHandler = object : ConnectionHandler {
-        override fun handleConnection(conn: Connection) { }
-    }
+    protected val nullConnHandler = ConnectionHandler { }
     protected val logger = LogManager.getLogger("test")
 
     protected fun startListeners(server: Transport, startPortNumber: Int, howMany: Int) {
-        val listening = (1..howMany).map {
+        val listening = (0 until howMany).map {
             val bindComplete = server.listen(
                 localAddress(startPortNumber + it),
                 nullConnHandler
@@ -70,7 +69,14 @@ abstract class TransportTests {
         dialConnections(client, address, connectionCount)
         assertEquals(connectionCount, client.activeConnections)
 
-        SECONDS.sleep(5) // let things settle
+        // give the server time to acknowledge connections
+        for (attempt in 1..30) {
+            if (connectionCount == inboundConnections.count) {
+                break
+            }
+            SECONDS.sleep(1)
+        }
+
         assertEquals(connectionCount, inboundConnections.count, "Connections not acknowledged by server")
         assertEquals(connectionCount, server.activeConnections)
 
@@ -87,6 +93,37 @@ abstract class TransportTests {
         // transport closed in test, but if we get a failure
         // and assuming close does the right thing!
         transportUnderTest.close().get(5, SECONDS)
+    }
+
+    @Test
+    fun `dial should invoke preHandler before connection handlers`() {
+        startListeners(transportUnderTest, 21100, 1)
+        val address = localAddress(21100)
+        val preHandlerCalled = AtomicBoolean(false)
+        transportUnderTest.dial(address, {
+            assert(preHandlerCalled.get())
+        }, {
+            preHandlerCalled.set(true)
+        }).join()
+    }
+
+    @Test
+    fun `listen should invoke preHandler before connection handlers`() {
+        val address = localAddress(21100)
+        val preHandlerCalled = AtomicBoolean(false)
+        val connectionHandlerFuture = CompletableFuture<Unit>()
+        transportUnderTest.listen(address, {
+            if (preHandlerCalled.get()) {
+                connectionHandlerFuture.complete(null)
+            } else {
+                connectionHandlerFuture.completeExceptionally(AssertionError("preHandler was not called"))
+            }
+        }, {
+            preHandlerCalled.set(true)
+        }).join()
+        transportUnderTest.dial(address, { })
+
+        connectionHandlerFuture.join()
     }
 
     @Test
@@ -129,7 +166,7 @@ abstract class TransportTests {
         val listenerCount = 5
         startListeners(transportUnderTest, portNumber, listenerCount)
 
-        val unlistening = (1..listenerCount).map {
+        val unlistening = (0 until listenerCount).map {
             val unbindComplete = transportUnderTest.unlisten(
                 localAddress(portNumber + it)
             )

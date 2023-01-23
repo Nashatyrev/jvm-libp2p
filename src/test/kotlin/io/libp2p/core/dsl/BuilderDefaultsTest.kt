@@ -1,12 +1,11 @@
 package io.libp2p.core.dsl
 
-import io.libp2p.mux.mplex.MplexStreamMuxer
+import io.libp2p.core.mux.StreamMuxerProtocol
 import io.libp2p.security.secio.SecIoSecureChannel
 import io.libp2p.transport.tcp.TcpTransport
 import org.junit.jupiter.api.Assertions.assertThrows
-import java.util.concurrent.TimeUnit.SECONDS
 import org.junit.jupiter.api.Test
-import java.lang.IllegalStateException
+import java.util.concurrent.TimeUnit.SECONDS
 
 class BuilderDefaultsTest {
     @Test
@@ -58,7 +57,7 @@ class BuilderDefaultsTest {
             identity { random() }
             transports { +::TcpTransport }
             secureChannels { +::SecIoSecureChannel }
-            muxers { +::MplexStreamMuxer }
+            muxers { + StreamMuxerProtocol.Mplex }
         }
 
         host.start().get(5, SECONDS)

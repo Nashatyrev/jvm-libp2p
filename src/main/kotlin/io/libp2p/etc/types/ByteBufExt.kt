@@ -1,6 +1,7 @@
 package io.libp2p.etc.types
 
 import io.netty.buffer.ByteBuf
+import java.lang.Integer.min
 
 /**
  * Extends ByteBuf to add a write* method for unsigned varints, as defined in https://github.com/multiformats/unsigned-varint.
@@ -8,6 +9,10 @@ import io.netty.buffer.ByteBuf
 fun ByteBuf.writeUvarint(value: Int): ByteBuf = writeUvarint(value.toLong())
 
 fun ByteBuf.writeUvarint(value: Long): ByteBuf {
+    if (value < 0) {
+        throw IllegalArgumentException("uvarint value must be positive")
+    }
+
     var v = value
     while (v >= 0x80) {
         this.writeByte((v or 0x80).toInt())
@@ -28,7 +33,7 @@ fun ByteBuf.readUvarint(): Long {
     var s = 0
 
     val originalReaderIndex = readerIndex()
-    for (i in 0..9) {
+    for (i in 0..8) {
         if (!this.isReadable) {
             // buffer contains just a fragment of uint
             readerIndex(originalReaderIndex)
@@ -36,13 +41,30 @@ fun ByteBuf.readUvarint(): Long {
         }
         val b = this.readUnsignedByte()
         if (b < 0x80) {
-            if (i == 9 && b > 1) {
-                throw IllegalStateException("Overflow reading uvarint")
-            }
             return x or (b.toLong() shl s)
         }
         x = x or (b.toLong() and 0x7f shl s)
         s += 7
     }
     throw IllegalStateException("uvarint too long")
+}
+
+fun ByteBuf.sliceMaxSize(maxSize: Int): List<ByteBuf> {
+    val length = this.readableBytes()
+    return when {
+        length == 0 -> {
+            this.release()
+            listOf()
+        }
+        length < maxSize -> listOf(this)
+        else -> {
+            val ret = generateSequence(0) { it + maxSize }
+                .map { off -> min(length - off, maxSize) }
+                .takeWhile { size -> size > 0 }
+                .map { size -> this.readSlice(size).retain() }
+                .toList()
+            this.release()
+            ret
+        }
+    }
 }

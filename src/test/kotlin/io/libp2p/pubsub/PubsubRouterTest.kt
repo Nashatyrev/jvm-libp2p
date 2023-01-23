@@ -1,20 +1,13 @@
 package io.libp2p.pubsub
 
-import io.libp2p.core.Stream
-import io.libp2p.core.pubsub.MessageApi
-import io.libp2p.core.pubsub.RESULT_INVALID
-import io.libp2p.core.pubsub.RESULT_VALID
-import io.libp2p.core.pubsub.Subscriber
+import io.libp2p.core.pubsub.*
 import io.libp2p.core.pubsub.Topic
-import io.libp2p.core.pubsub.ValidationResult
-import io.libp2p.core.pubsub.Validator
 import io.libp2p.etc.types.seconds
 import io.libp2p.etc.types.toByteBuf
 import io.libp2p.etc.types.toBytesBigEndian
 import io.libp2p.etc.types.toProtobuf
 import io.libp2p.pubsub.gossip.GossipRouter
 import io.libp2p.tools.TestChannel.TestConnection
-import io.libp2p.transport.implementation.P2PChannelOverNetty
 import io.netty.handler.logging.LogLevel
 import io.netty.util.ResourceLeakDetector
 import org.junit.jupiter.api.Assertions
@@ -27,26 +20,26 @@ import java.util.concurrent.TimeUnit
 
 typealias RouterCtor = () -> PubsubRouterDebug
 
-fun Stream.nettyChannel() = (this as P2PChannelOverNetty).nettyChannel
-
-abstract class PubsubRouterTest(val router: RouterCtor) {
+abstract class PubsubRouterTest(val routerFactory: DeterministicFuzzRouterFactory) {
     init {
         ResourceLeakDetector.setLevel(ResourceLeakDetector.Level.PARANOID)
     }
 
     fun newMessage(topic: String, seqNo: Long, data: ByteArray) =
-        Rpc.Message.newBuilder()
-            .addTopicIDs(topic)
-            .setSeqno(seqNo.toBytesBigEndian().toProtobuf())
-            .setData(data.toProtobuf())
-            .build()
+        DefaultPubsubMessage(
+            Rpc.Message.newBuilder()
+                .addTopicIDs(topic)
+                .setSeqno(seqNo.toBytesBigEndian().toProtobuf())
+                .setData(data.toProtobuf())
+                .build()
+        )
 
     @Test
     fun Fanout() {
         val fuzz = DeterministicFuzz()
 
-        val router1 = fuzz.createTestRouter(router())
-        val router2 = fuzz.createTestRouter(router())
+        val router1 = fuzz.createTestRouter(routerFactory)
+        val router2 = fuzz.createTestRouter(routerFactory)
         router2.router.subscribe("topic1")
 
         router1.connectSemiDuplex(router2, LogLevel.ERROR, LogLevel.ERROR)
@@ -63,8 +56,8 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
     fun testDoubleConnect() {
         val fuzz = DeterministicFuzz()
 
-        val router1 = fuzz.createTestRouter(router())
-        val router2 = fuzz.createTestRouter(router())
+        val router1 = fuzz.createTestRouter(routerFactory)
+        val router2 = fuzz.createTestRouter(routerFactory)
         router2.router.subscribe("topic1")
 
         router1.connectSemiDuplex(router2, LogLevel.ERROR, LogLevel.ERROR)
@@ -82,10 +75,10 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
     fun testUnsubscribe() {
         val fuzz = DeterministicFuzz()
 
-        val router1 = fuzz.createTestRouter(router())
-        val router2 = fuzz.createTestRouter(router())
-        val router3 = fuzz.createTestRouter(router())
-        val router4 = fuzz.createTestRouter(router())
+        val router1 = fuzz.createTestRouter(routerFactory)
+        val router2 = fuzz.createTestRouter(routerFactory)
+        val router3 = fuzz.createTestRouter(routerFactory)
+        val router4 = fuzz.createTestRouter(routerFactory)
         router1.router.subscribe("topic1")
         router1.router.subscribe("topic2")
         router2.router.subscribe("topic1")
@@ -134,9 +127,9 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
     fun scenario2() {
         val fuzz = DeterministicFuzz()
 
-        val router1 = fuzz.createTestRouter(router())
-        val router2 = fuzz.createTestRouter(router())
-        val router3 = fuzz.createTestRouter(router())
+        val router1 = fuzz.createTestRouter(routerFactory)
+        val router2 = fuzz.createTestRouter(routerFactory)
+        val router3 = fuzz.createTestRouter(routerFactory)
 
         val conn_1_2 = router1.connectSemiDuplex(router2, pubsubLogs = LogLevel.ERROR)
         val conn_2_3 = router2.connectSemiDuplex(router3, pubsubLogs = LogLevel.ERROR)
@@ -189,17 +182,17 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
         conn_1_2.disconnect()
     }
 
-    // scenario3_StarTopology { GossipRouter().withDConstants(3, 3, 100) }
+    // scenario3_StarTopology { Gossiprouter.withDConstants(3, 3, 100) }
     @Test
     fun StarTopology() {
         val fuzz = DeterministicFuzz()
 
         val allRouters = mutableListOf<TestRouter>()
 
-        val routerCenter = fuzz.createTestRouter(router())
+        val routerCenter = fuzz.createTestRouter(routerFactory)
         allRouters += routerCenter
         for (i in 1..20) {
-            val routerEnd = fuzz.createTestRouter(router())
+            val routerEnd = fuzz.createTestRouter(routerFactory)
             allRouters += routerEnd
             routerEnd.connectSemiDuplex(routerCenter, pubsubLogs = LogLevel.ERROR)
         }
@@ -219,7 +212,7 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
 
         val receiveRouters = allRouters - routerCenter
 
-        val msgCount = receiveRouters.sumBy { it.inboundMessages.size }
+        val msgCount = receiveRouters.sumOf { it.inboundMessages.size }
         println("Messages received: $msgCount")
 
         Assertions.assertEquals(receiveRouters.size, msgCount)
@@ -233,10 +226,10 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
         val allRouters = mutableListOf<TestRouter>()
         val allConnections = mutableListOf<TestConnection>()
 
-        val routerCenter = fuzz.createTestRouter(router())
+        val routerCenter = fuzz.createTestRouter(routerFactory)
         allRouters += routerCenter
         for (i in 1..20) {
-            val routerEnd = fuzz.createTestRouter(router())
+            val routerEnd = fuzz.createTestRouter(routerFactory)
             allRouters += routerEnd
             allConnections += routerEnd.connectSemiDuplex(routerCenter).connections
         }
@@ -255,8 +248,8 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
             Assertions.assertTrue(routerCenter.inboundMessages.isEmpty())
 
             val receiveRouters = allRouters - routerCenter
-            val msgCount = receiveRouters.sumBy { it.inboundMessages.size }
-            val wireMsgCount = allConnections.sumBy { it.getMessageCount().toInt() }
+            val msgCount = receiveRouters.sumOf { it.inboundMessages.size }
+            val wireMsgCount = allConnections.sumOf { it.getMessageCount().toInt() }
 
             println("Messages received: $msgCount, total wire count: $wireMsgCount")
 
@@ -271,8 +264,8 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
             Assertions.assertTrue(routerCenter.inboundMessages.isEmpty())
 
             val receiveRouters = allRouters - routerCenter
-            val msgCount = receiveRouters.sumBy { it.inboundMessages.size }
-            val wireMsgCount = allConnections.sumBy { it.getMessageCount().toInt() }
+            val msgCount = receiveRouters.sumOf { it.inboundMessages.size }
+            val wireMsgCount = allConnections.sumOf { it.getMessageCount().toInt() }
 
             println("Messages received: $msgCount, total wire count: $wireMsgCount")
 
@@ -286,7 +279,7 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
         doTenNeighborsTopology()
     }
 
-    fun doTenNeighborsTopology(randomSeed: Int = 0, routerFactory: RouterCtor = router) {
+    fun doTenNeighborsTopology(randomSeed: Int = 0, routerFactory: DeterministicFuzzRouterFactory = this.routerFactory) {
         val fuzz = DeterministicFuzz().also {
             it.randomSeed = randomSeed.toLong()
         }
@@ -298,7 +291,7 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
         val neighboursCount = 10
 
         for (i in 0 until nodesCount) {
-            val routerEnd = fuzz.createTestRouter(routerFactory())
+            val routerEnd = fuzz.createTestRouter(routerFactory)
             allRouters += routerEnd
         }
         for (i in 0 until nodesCount) {
@@ -322,8 +315,8 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
             fuzz.timeController.addTime(Duration.ofSeconds(5))
 
             val receiveRouters = allRouters - allRouters[0]
-            val msgCount = receiveRouters.sumBy { it.inboundMessages.size }
-            firstCount = allConnections.sumBy { it.getMessageCount().toInt() }
+            val msgCount = receiveRouters.sumOf { it.inboundMessages.size }
+            firstCount = allConnections.sumOf { it.getMessageCount().toInt() }
 
             Assertions.assertEquals(receiveRouters.size, msgCount)
             receiveRouters.forEach { it.inboundMessages.clear() }
@@ -339,8 +332,8 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
             fuzz.timeController.addTime(Duration.ofSeconds(5))
 
             val receiveRouters = allRouters - allRouters[0]
-            val msgCount = receiveRouters.sumBy { it.inboundMessages.size }
-            val wireMsgCount = allConnections.sumBy { it.getMessageCount().toInt() }
+            val msgCount = receiveRouters.sumOf { it.inboundMessages.size }
+            val wireMsgCount = allConnections.sumOf { it.getMessageCount().toInt() }
 
             println(" Messages received: $msgCount, wire count: warm up: $firstCount, regular: ${wireMsgCount - firstCount}")
 //           val missingRouters = receiveRouters.filter { it.inboundMessages.isEmpty() }
@@ -375,13 +368,13 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
     fun PublishFuture() {
         val fuzz = DeterministicFuzz()
 
-        val router1 = fuzz.createTestRouter(router())
+        val router1 = fuzz.createTestRouter(routerFactory)
 
         val msg0 = newMessage("topic1", 0L, "Hello".toByteArray())
         val publishFut0 = router1.router.publish(msg0)
         Assertions.assertThrows(ExecutionException::class.java, { publishFut0.get() })
 
-        val router2 = fuzz.createTestRouter(router())
+        val router2 = fuzz.createTestRouter(routerFactory)
         router2.router.subscribe("topic1")
 
         router1.connectSemiDuplex(router2, LogLevel.ERROR, LogLevel.ERROR)
@@ -399,12 +392,12 @@ abstract class PubsubRouterTest(val router: RouterCtor) {
     fun validateTest() {
         val fuzz = DeterministicFuzz()
 
-        val routers = List(3) { fuzz.createTestRouter(router()) }
+        val routers = List(3) { fuzz.createTestRouter(routerFactory) }
 
         routers[0].connectSemiDuplex(routers[1], pubsubLogs = LogLevel.ERROR)
         routers[1].connectSemiDuplex(routers[2], pubsubLogs = LogLevel.ERROR)
 
-        val apis = routers.map { it.api }
+        val apis = routers.map { createPubsubApi(it.router) }
         class RecordingSubscriber : Subscriber {
             var count = 0
             override fun accept(t: MessageApi) {
