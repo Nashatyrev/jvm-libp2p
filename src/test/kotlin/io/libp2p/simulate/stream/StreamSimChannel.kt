@@ -29,7 +29,7 @@ class StreamSimChannel(id: String, vararg handlers: ChannelHandler?) :
     var executor: ScheduledExecutorService by lazyVar { Executors.newSingleThreadScheduledExecutor() }
     var currentTime: () -> Long = System::currentTimeMillis
     var msgSizeEstimator = GeneralSizeEstimator
-    var msgDelayer: MessageDelayer = { 0L }
+    var msgDelayer: MessageDelayer = MessageDelayer { CompletableFuture.completedFuture(null) }
     var msgSizeHandler: (Int) -> Unit = {}
     var lastTimeToSend = 0L
 
@@ -52,25 +52,29 @@ class StreamSimChannel(id: String, vararg handlers: ChannelHandler?) :
 
     private fun send(other: StreamSimChannel, msg: Any) {
         val size = msgSizeEstimator(msg)
-        var delay = msgDelayer(size)
+        val delay = msgDelayer.delay(size)
 
         val sendNow: () -> Unit = {
             other.writeInbound(msg)
             msgSizeHandler(size)
         }
 
-        // this prevents message reordering
-        val curT = currentTime()
-        val timeToSend = curT + delay
-        if (timeToSend < lastTimeToSend) {
-            delay = lastTimeToSend - curT
-        }
-        lastTimeToSend = curT + delay
-        if (delay > 0) {
-            other.executor.schedule(sendNow, delay, TimeUnit.MILLISECONDS)
-        } else {
+        delay.thenApply {
             other.executor.execute(sendNow)
         }
+
+//        // this prevents message reordering
+//        val curT = currentTime()
+//        val timeToSend = curT + delay
+//        if (timeToSend < lastTimeToSend) {
+//            delay = lastTimeToSend - curT
+//        }
+//        lastTimeToSend = curT + delay
+//        if (delay > 0) {
+//            other.executor.schedule(sendNow, delay, TimeUnit.MILLISECONDS)
+//        } else {
+//            other.executor.execute(sendNow)
+//        }
     }
 
     private open class DelegatingEventLoop(val delegate: EventLoop) : EventLoop by delegate

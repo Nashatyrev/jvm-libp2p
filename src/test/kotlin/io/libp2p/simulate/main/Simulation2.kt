@@ -82,7 +82,7 @@ class Simulation2 {
         println("Creating simulation...")
         val simulation = GossipSimulation(simConfig, simNetwork)
 
-        for (j in 0..999) {
+        for (j in 0..10) {
             for (i in 0..9) {
                 simulation.publishMessage(j * i % simConfig.totalPeers)
                 simulation.forwardTime(1.seconds)

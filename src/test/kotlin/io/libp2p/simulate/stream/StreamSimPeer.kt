@@ -53,7 +53,7 @@ abstract class StreamSimPeer<TProtocolController>(
     override val peerId by lazy { PeerId.fromPubKey(keyPair.second) }
 
     var msgSizeEstimator = GeneralSizeEstimator
-    var msgDelayer: MessageDelayer = { 0L }
+    var msgDelayer: MessageDelayer = MessageDelayer{ CompletableFuture.completedFuture(null) }
     var wireLogs: LogLevel? = null
 
     override fun connectImpl(other: SimPeer): CompletableFuture<SimConnection> {
