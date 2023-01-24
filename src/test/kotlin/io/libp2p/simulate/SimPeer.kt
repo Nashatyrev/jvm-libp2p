@@ -15,7 +15,7 @@ interface SimPeer {
 
     fun connect(other: SimPeer): CompletableFuture<SimConnection>
 
-    fun setThroughput(througput: RandomValue)
+    fun setBandwidth(bandwidth: RandomValue)
 
     fun stop(): CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit)
 
@@ -42,7 +42,7 @@ abstract class AbstractSimPeer : SimPeer {
         }
     }
 
-    override fun setThroughput(througput: RandomValue): Unit = TODO()
+    override fun setBandwidth(bandwidth: RandomValue): Unit = TODO()
 
     abstract fun connectImpl(other: SimPeer): CompletableFuture<SimConnection>
 

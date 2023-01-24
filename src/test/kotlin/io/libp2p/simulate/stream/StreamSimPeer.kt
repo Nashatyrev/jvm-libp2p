@@ -41,7 +41,7 @@ abstract class StreamSimPeer<TProtocolController>(
 
     var address = Multiaddr(listOf(
         MultiaddrComponent(Protocol.IP4, counter.incrementAndGet().toBytesBigEndian()),
-        MultiaddrComponent(Protocol.TCP, byteArrayOf(0, 0, 0, 0xFF.toByte()))
+        MultiaddrComponent(Protocol.TCP, byteArrayOf(0, 0xFF.toByte()))
     ))
 
     abstract val random: Random
