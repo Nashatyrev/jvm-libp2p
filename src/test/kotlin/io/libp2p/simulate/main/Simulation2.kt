@@ -3,6 +3,7 @@ package io.libp2p.simulate.main
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.seconds
 import io.libp2p.pubsub.gossip.GossipRouter
+import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.pubsub.gossip.builders.GossipScoreParamsBuilder
 import io.libp2p.pubsub.gossip.builders.GossipTopicScoreParamsBuilder
 import io.libp2p.simulate.RandomDistribution
@@ -53,7 +54,10 @@ class Simulation2 {
         val gossipParams = Eth2DefaultGossipParams
         val gossipScoreParams = Eth2DefaultScoreParams
         val gossipRouterCtor = { _: Int ->
-            GossipRouter(gossipParams, gossipScoreParams)
+            GossipRouterBuilder().also {
+                it.params = gossipParams
+                it.scoreParams = gossipScoreParams
+            }
         }
 
         // prints interchange of 2 peers
@@ -125,7 +129,9 @@ class Simulation2 {
             it += network.peers.values
                 .map { it.router as GossipRouter }
                 .flatMap { gossip ->
-                    gossip.peers.map { gossip.score.score(it) }
+                    gossip.peers.map {
+                        gossip.score.score(it.peerId)
+                    }
                 }
         }
 

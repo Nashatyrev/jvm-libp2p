@@ -3,6 +3,7 @@ package io.libp2p.simulate.test
 import io.libp2p.core.ConnectionClosedException
 import io.libp2p.core.crypto.unmarshalPrivateKey
 import io.libp2p.core.multiformats.Multiaddr
+import io.libp2p.core.mux.StreamMuxerProtocol
 import io.libp2p.etc.types.fromHex
 import io.libp2p.etc.types.getX
 import io.libp2p.mux.mplex.MplexStreamMuxer
@@ -36,16 +37,16 @@ class SimHostTest {
                 +::SecIoSecureChannel
             }
             muxers {
-                +::MplexStreamMuxer
+                + StreamMuxerProtocol.Mplex
             }
             protocols {
                 +Ping()
                 +Identify()
             }
             debug {
-                beforeSecureHandler.setLogger(LogLevel.ERROR)
-                afterSecureHandler.setLogger(LogLevel.ERROR)
-                muxFramesHandler.setLogger(LogLevel.ERROR)
+                beforeSecureHandler.addLogger(LogLevel.ERROR)
+                afterSecureHandler.addLogger(LogLevel.ERROR)
+                muxFramesHandler.addLogger(LogLevel.ERROR)
             }
         }
 
@@ -57,7 +58,7 @@ class SimHostTest {
                 +::SecIoSecureChannel
             }
             muxers {
-                +::MplexStreamMuxer
+                + StreamMuxerProtocol.Mplex
             }
             network {
                 listen("/ip4/0.0.0.0/tcp/40002")
@@ -66,9 +67,9 @@ class SimHostTest {
                 +Ping()
             }
             debug {
-                beforeSecureHandler.setLogger(LogLevel.ERROR)
-                afterSecureHandler.setLogger(LogLevel.ERROR)
-                muxFramesHandler.setLogger(LogLevel.ERROR)
+                beforeSecureHandler.addLogger(LogLevel.ERROR)
+                afterSecureHandler.addLogger(LogLevel.ERROR)
+                muxFramesHandler.addLogger(LogLevel.ERROR)
             }
         }
 

@@ -391,11 +391,11 @@ class Simulation1 {
                         gossipHistoryLength = cfg.gossipHistory,
                         heartbeatInterval = cfg.gossipHeartbeat
                     )
-                    routerInstance = GossipRouter(gossipParams).apply {
+                    routerBuilder.apply {
                         heartbeatInitialDelay = gossipHeartbeatAddDelay.next().toInt().millis
                         serialize = false
                         val timeShift = peerTimeShift.next().toLong()
-                        curTimeMillis = { timeController.time + timeShift }
+                        currentTimeSuppluer = { timeController.time + timeShift }
                         random = commonRnd
                     }
 

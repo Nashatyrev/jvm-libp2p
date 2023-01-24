@@ -1,6 +1,7 @@
 package io.libp2p.simulate.gossip
 
 import io.libp2p.pubsub.gossip.GossipRouter
+import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.simulate.Network
 import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl
 import io.libp2p.tools.schedulers.TimeControllerImpl
@@ -10,7 +11,7 @@ import java.util.concurrent.Executors
 
 class GossipSimNetwork(
     val cfg: GossipSimConfig,
-    val routerFactory: (Int) -> GossipRouter,
+    val routerFactory: (Int) -> GossipRouterBuilder,
     val simPeerModifier: (Int, GossipSimPeer) -> Unit = { a, b -> }
 ) {
     val peers = sortedMapOf<Int, GossipSimPeer>()
@@ -24,9 +25,9 @@ class GossipSimNetwork(
         else
             listOf(Executor { it.run() })
 
-    var simPeerFactory: (Int, GossipRouter) -> GossipSimPeer = { number, router ->
+    var simPeerFactory: (Int, GossipRouterBuilder) -> GossipSimPeer = { number, router ->
         GossipSimPeer(cfg.topic, number.toString(), commonRnd).apply {
-            routerInstance = router
+            routerBuilder = router
 
             val delegateExecutor = peerExecutors[number % peerExecutors.size]
             simExecutor = ControlledExecutorServiceImpl(delegateExecutor, timeController)
@@ -43,9 +44,10 @@ class GossipSimNetwork(
 
     protected open fun createSimPeer(number: Int): GossipSimPeer {
         val router = routerFactory(number).also {
+            it.currentTimeSuppluer = { timeController.time }
             it.serialize = false
-            it.curTimeMillis = { timeController.time }
         }
+
         val simPeer = simPeerFactory(number, router)
         simPeerModifier(number, simPeer)
         return simPeer

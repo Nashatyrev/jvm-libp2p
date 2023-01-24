@@ -74,8 +74,8 @@ class GraphTest {
 //            generateRandomGraph(graph, 4, 2, random)
             RandomRegularGraphGenerator<Int, Int>(5000, 10, random).generateGraph(graph)
 
-            val min = graph.vertexSet().map { graph.edgesOf(it).size }.min()
-            val max = graph.vertexSet().map { graph.edgesOf(it).size }.max()
+            val min = graph.vertexSet().map { graph.edgesOf(it).size }.minOrNull()
+            val max = graph.vertexSet().map { graph.edgesOf(it).size }.maxOrNull()
             val hasLoops = graph.edgeSet().any { graph.getEdgeSource(it) == graph.getEdgeTarget(it) }
             println("$min, $max, $hasLoops")
         }

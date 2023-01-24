@@ -89,8 +89,8 @@ fun String.align(width: Int, alignLeft: Boolean = true, fillChar: Char = ' '): S
 
 fun String.formatTable(firstLineHeaders: Boolean = true, separator: String = "\t", alignLeft: Boolean = true): String {
     val list = this.split("\n").map { it.split(separator) }
-    require(list.map { it.size }.min() == list.map { it.size }.max()) { "Different number of columns" }
-    val colSizes = list[0].indices.map { col -> list.map { it[col].length + 1 }.max() }
+    require(list.map { it.size }.minOrNull() == list.map { it.size }.maxOrNull()) { "Different number of columns" }
+    val colSizes = list[0].indices.map { col -> list.map { it[col].length + 1 }.maxOrNull() }
     val strings = list.map { raw ->
         raw.indices.map { raw[it].align(colSizes[it]!!, alignLeft) }
             .joinToString("")

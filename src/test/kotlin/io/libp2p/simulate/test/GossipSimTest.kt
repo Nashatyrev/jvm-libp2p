@@ -3,6 +3,7 @@ package io.libp2p.simulate.test
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.toByteBuf
 import io.libp2p.pubsub.gossip.GossipRouter
+import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.simulate.gossip.GossipSimPeer
 import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl
 import io.libp2p.tools.schedulers.TimeControllerImpl
@@ -20,7 +21,10 @@ class GossipSimTest {
 
         val createPeer = {
             val peer = GossipSimPeer(Topic("aaa"), "1", Random())
-            peer.routerInstance = GossipRouter().also { it.serialize = true }
+            peer.routerBuilder = GossipRouterBuilder().also {
+                it.serialize = true
+            }
+
             peer.pubsubLogs = { true }
             peer.simExecutor = ControlledExecutorServiceImpl(timeController)
             peer.currentTime = { timeController.time }

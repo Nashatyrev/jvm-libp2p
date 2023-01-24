@@ -20,12 +20,12 @@ class LoopbackTransport(
     val listeners = mutableMapOf<Int, ConnectionHandler>()
     val portManager = PortManager()
 
-    override fun handles(addr: Multiaddr): Boolean = addr.getComponent(Protocol.TCP) != null
+    override fun handles(addr: Multiaddr): Boolean = addr.getFirstComponent(Protocol.TCP) != null
     override fun initialize() {}
     override fun close(): CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit)
 
     override fun listen(addr: Multiaddr, connHandler: ConnectionHandler): CompletableFuture<Unit> {
-        val port = addr.getStringComponent(Protocol.TCP)?.toInt()
+        val port = addr.getFirstComponent(Protocol.TCP)?.stringValue?.toInt()
             ?: throw IllegalArgumentException("No TCP component in listen addr: $addr")
         portManager.acquire(port)
         listeners[port] = connHandler
@@ -33,7 +33,7 @@ class LoopbackTransport(
     }
 
     override fun unlisten(addr: Multiaddr): CompletableFuture<Unit> {
-        val port = addr.getStringComponent(Protocol.TCP)?.toInt()
+        val port = addr.getFirstComponent(Protocol.TCP)?.stringValue?.toInt()
             ?: throw IllegalArgumentException("No TCP component in listen addr: $addr")
         portManager.free(port)
         listeners.remove(port)

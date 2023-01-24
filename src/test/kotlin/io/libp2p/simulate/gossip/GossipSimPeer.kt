@@ -13,6 +13,7 @@ import io.libp2p.etc.types.lazyVar
 import io.libp2p.pubsub.PubsubProtocol
 import io.libp2p.pubsub.PubsubRouterDebug
 import io.libp2p.pubsub.flood.FloodRouter
+import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.simulate.stream.StreamSimPeer
 import io.libp2p.simulate.util.MsgSizeEstimator
 import io.libp2p.tools.millis
@@ -30,14 +31,14 @@ class GossipSimPeer(
     protocol: PubsubProtocol = PubsubProtocol.Gossip_V_1_1
 ) : StreamSimPeer<Unit>(true, protocol.announceStr) {
 
-    var routerInstance: PubsubRouterDebug by lazyVar { FloodRouter() }
+    var routerBuilder = GossipRouterBuilder().also {
+        it.name = name
+        it.scheduledAsyncExecutor = simExecutor
+        it.currentTimeSuppluer = { currentTime() }
+        it.random = random
+    }
     var router by lazyVar {
-        routerInstance.also {
-            it.name = name
-            it.executor = simExecutor
-            it.curTimeMillis
-            it.random = random
-        }
+        routerBuilder.build()
     }
 
     val api by lazy { createPubsubApi(router) }
@@ -56,7 +57,7 @@ class GossipSimPeer(
         get() = allMessages.last().second
 
     fun onNewMsg(msg: MessageApi) {
-        allMessages += msg to router.curTimeMillis()
+        allMessages += msg to router.currentTimeSupplier()
     }
 
     override fun start(): CompletableFuture<Unit> {
@@ -78,7 +79,7 @@ class GossipSimPeer(
         return name
     }
 
-    override fun handleStream(stream: Stream): CompletableFuture<out Unit> {
+    override fun handleStream(stream: Stream): CompletableFuture<Unit> {
         stream.getProtocol()
         val logConnection = pubsubLogs(stream.remotePeerId())
         router.addPeerWithDebugHandler(stream, if (logConnection)
@@ -94,8 +95,8 @@ class GossipSimPeer(
                 subscriptionsList.sumBy { it.topicid.length + 2 } +
                         control.graftList.sumBy { it.topicID.length + 1 } +
                         control.pruneList.sumBy { it.topicID.length + 1 } +
-                        control.ihaveList.flatMap { it.messageIDsList }.sumBy { it.length + 1 } +
-                        control.iwantList.flatMap { it.messageIDsList }.sumBy { it.length + 1 } +
+                        control.ihaveList.flatMap { it.messageIDsList }.sumBy { it.size() + 1 } +
+                        control.iwantList.flatMap { it.messageIDsList }.sumBy { it.size() + 1 } +
                         publishList.sumBy { avrgMsgLen + it.topicIDsList.sumBy { it.length } + 224 } +
                         6
             }

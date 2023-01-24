@@ -5,6 +5,7 @@ import io.libp2p.core.StreamHandler
 import io.libp2p.core.crypto.KEY_TYPE
 import io.libp2p.core.crypto.generateKeyPair
 import io.libp2p.core.multiformats.Multiaddr
+import io.libp2p.core.multiformats.MultiaddrComponent
 import io.libp2p.core.multiformats.Protocol
 import io.libp2p.core.security.SecureChannel
 import io.libp2p.etc.PROTOCOL
@@ -39,8 +40,8 @@ abstract class StreamSimPeer<TProtocolController>(
     val protocolController: CompletableFuture<TProtocolController> = CompletableFuture()
 
     var address = Multiaddr(listOf(
-        Protocol.IP4 to counter.incrementAndGet().toBytesBigEndian(),
-        Protocol.TCP to byteArrayOf(0, 0, 0, 0xFF.toByte())
+        MultiaddrComponent(Protocol.IP4, counter.incrementAndGet().toBytesBigEndian()),
+        MultiaddrComponent(Protocol.TCP, byteArrayOf(0, 0, 0, 0xFF.toByte()))
     ))
 
     abstract val random: Random
