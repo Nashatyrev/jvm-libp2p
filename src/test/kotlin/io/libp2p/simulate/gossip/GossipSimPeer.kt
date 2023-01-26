@@ -31,14 +31,14 @@ class GossipSimPeer(
     protocol: PubsubProtocol = PubsubProtocol.Gossip_V_1_1
 ) : StreamSimPeer<Unit>(true, protocol.announceStr) {
 
-    var routerBuilder = GossipRouterBuilder().also {
-        it.name = name
-        it.scheduledAsyncExecutor = simExecutor
-        it.currentTimeSuppluer = { currentTime() }
-        it.random = random
-    }
+    var routerBuilder= GossipRouterBuilder()
     var router by lazyVar {
-        routerBuilder.build()
+        routerBuilder.also {
+            it.name = name
+            it.scheduledAsyncExecutor = simExecutor
+            it.currentTimeSuppluer = { currentTime() }
+            it.random = random
+        }.build()
     }
 
     val api by lazy { createPubsubApi(router) }
