@@ -4,6 +4,7 @@ import io.libp2p.core.pubsub.Topic
 import io.libp2p.simulate.RandomDistribution
 import io.libp2p.simulate.Topology
 import io.libp2p.simulate.topology.RandomNPeers
+import io.libp2p.simulate.util.MsgSizeEstimator
 import io.libp2p.tools.millis
 import io.libp2p.tools.seconds
 import java.time.Duration
@@ -14,7 +15,8 @@ data class GossipSimConfig(
 
     val topic: Topic,
 
-    val avrgMessageSize: Int = 32 * 1024,
+    val messageSizeEstimator: MsgSizeEstimator = GossipSimPeer.strictPubSubMsgSizeEstimator(true),
+
     val topology: Topology = RandomNPeers(10),
     val latency: RandomDistribution = RandomDistribution.const(1.0),
     val peersTimeShift: RandomDistribution = RandomDistribution.const(0.0),
@@ -26,5 +28,4 @@ data class GossipSimConfig(
     val startRandomSeed: Long = 0,
     val iterationThreadsCount: Int = 1,
     val parallelIterationsCount: Int = 1,
-    val measureTCPFramesOverhead: Boolean = true
 )

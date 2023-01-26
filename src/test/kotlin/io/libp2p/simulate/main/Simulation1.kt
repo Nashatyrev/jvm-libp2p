@@ -11,7 +11,6 @@ import io.libp2p.simulate.gossip.GossipSimPeer
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.stats.WritableStats
 import io.libp2p.simulate.topology.RandomNPeers
-import io.libp2p.simulate.TimeDelayer
 import io.libp2p.tools.formatTable
 import io.libp2p.tools.get
 import io.libp2p.tools.millis
@@ -30,7 +29,6 @@ import java.util.Random
 import java.util.concurrent.Callable
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
-import kotlin.time.Duration.Companion.milliseconds
 
 class Simulation1 {
 
@@ -403,7 +401,7 @@ class Simulation1 {
                     val delegateExecutor = peerExecutors[it % peerExecutors.size]
                     simExecutor = ControlledExecutorServiceImpl(delegateExecutor, timeController)
                     msgSizeEstimator =
-                        GossipSimPeer.rawPubSubMsgSizeEstimator(cfg.avrgMessageSize, opt.measureTCPFramesOverhead)
+                        GossipSimPeer.averagePubSubMsgSizeEstimator(cfg.avrgMessageSize, opt.measureTCPFramesOverhead)
                     val latencyRandomValue = cfg.latency.newValue(commonRnd)
                     validationDelay = cfg.gossipValidationDelay
 

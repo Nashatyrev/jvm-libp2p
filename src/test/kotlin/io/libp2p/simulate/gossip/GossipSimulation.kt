@@ -37,16 +37,22 @@ class GossipSimulation(
     }
 
     fun publishMessage(srcPeer: Int): SimMessage {
+        return publishMessage(srcPeer, 0)
+    }
+
+    fun publishMessage(srcPeer: Int, size: Int): SimMessage {
         val peer = network.peers[srcPeer] ?: throw IllegalArgumentException("Invalid peer index $srcPeer")
         val msgId = idCounter.incrementAndGet()
 
-        val future = peer.apiPublisher.publish(idToMsg(msgId), cfg.topic)
+        val msg = idToMsg(msgId)
+        msg.writeBytes(ByteArray(size))
+        val future = peer.apiPublisher.publish(msg, cfg.topic)
         val ret = SimMessage(msgId, srcPeer, network.timeController.time, future)
         publishedMessages += ret
         return ret
     }
 
-    fun gatherMessageResults(): Map<SimMessage, Collection<SimMessageDelivery>> {
+    fun gatherMessageResults(): Map<SimMessage, List<SimMessageDelivery>> {
         val deliveries = network.peers.flatMap { (peerId, peer) ->
             peer.allMessages.map { SimMessageDelivery(msgToId(it.first.data), peerId, it.second) }
         }.groupBy { it.msgId }

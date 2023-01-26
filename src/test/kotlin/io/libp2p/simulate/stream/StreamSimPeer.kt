@@ -112,7 +112,7 @@ abstract class StreamSimPeer<TProtocolController>(
 
         return StreamSimChannel(
             channelName,
-            inboundBandwidth,
+            remote.inboundBandwidth,
             outboundBandwidth,
             nettyInitializer {
                 val ch = it.channel

@@ -1,57 +1,143 @@
 package io.libp2p.simulate.test
 
-import io.libp2p.core.pubsub.Subscriber
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.SimpleBandwidthTracker
-import io.libp2p.simulate.gossip.GossipSimPeer
-import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl
-import io.libp2p.tools.schedulers.TimeControllerImpl
+import io.libp2p.simulate.TimeDelayer
+import io.libp2p.simulate.gossip.*
+import io.libp2p.simulate.topology.AllToAllTopology
+import io.libp2p.tools.millis
 import io.libp2p.tools.seconds
-import io.netty.buffer.Unpooled
+import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.data.Offset
 import org.junit.jupiter.api.Test
-import java.util.*
-import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.milliseconds
 
 class BandwidthTest {
 
+    val topic = Topic("aaa")
+    val simConfig = GossipSimConfig(
+        totalPeers = 2,
+        topic = topic,
+        topology = AllToAllTopology(),
+        gossipValidationDelay = 0.millis
+    )
+
+    val gossipParams = Eth2DefaultGossipParams
+    val gossipScoreParams = Eth2DefaultScoreParams
+    val gossipRouterCtor = { _: Int ->
+        GossipRouterBuilder().also {
+            it.params = gossipParams
+            it.scoreParams = gossipScoreParams
+//                it.serialize = true
+        }
+    }
+
+    val simPeerModifier = { num: Int, peer: GossipSimPeer ->
+//            peer.pubsubLogs = { true }
+    }
+
+    val simNetwork = GossipSimNetwork(simConfig, gossipRouterCtor, simPeerModifier).also {
+        println("Creating peers...")
+        it.createAllPeers()
+    }
+    val peer0 = simNetwork.peers[0]!!
+    val peer1 = simNetwork.peers[1]!!
+
     @Test
-    fun test1() {
-        val timeController = TimeControllerImpl()
-        val executor = ControlledExecutorServiceImpl(timeController)
-        val id = AtomicInteger()
+    fun testInboundLarger() {
+        peer0.outboundBandwidth = SimpleBandwidthTracker(Bandwidth(100000), peer0.simExecutor)
+        peer1.inboundBandwidth = SimpleBandwidthTracker(Bandwidth(200000), peer1.simExecutor)
+        println("Connecting peers...")
+        simNetwork.connectAllPeers()
 
-        val createPeer = {
-            val peer = GossipSimPeer(Topic("aaa"), "${id.incrementAndGet()}", Random())
-            peer.routerBuilder = GossipRouterBuilder().also {
-                it.serialize = true
-            }
+        println("Creating simulation...")
+        val simulation = GossipSimulation(simConfig, simNetwork)
+        simulation.forwardTime(1.seconds)
 
-            peer.pubsubLogs = { true }
-            peer.simExecutor = executor
-            peer.currentTime = { timeController.time }
-            peer
+        simulation.publishMessage(0, 200000)
+        simulation.forwardTime(10.seconds)
+
+        val messageResults = simulation.gatherMessageResults()
+        val (origMsg, res) = messageResults.entries.first()
+        run {
+            assertThat(res[0].receivedTime - origMsg.sentTime).isCloseTo(2100, Offset.offset(100))
+            println(res)
+        }
+    }
+
+    @Test
+    fun testInboundLargerWithLatency() {
+        peer0.outboundBandwidth = SimpleBandwidthTracker(Bandwidth(100000), peer0.simExecutor)
+        peer1.inboundBandwidth = SimpleBandwidthTracker(Bandwidth(200000), peer1.simExecutor)
+        println("Connecting peers...")
+        simNetwork.connectAllPeers()
+
+        simNetwork.network.activeConnections.forEach {
+            it.connectionLatency = TimeDelayer(peer0.simExecutor) { 1000.milliseconds }
         }
 
-        val p1 = createPeer().also {
-            it.outboundBandwidth = SimpleBandwidthTracker(Bandwidth(1000), executor)
+        println("Creating simulation...")
+        val simulation = GossipSimulation(simConfig, simNetwork)
+        simulation.forwardTime(1.seconds)
+
+        simulation.publishMessage(0, 200000)
+        simulation.forwardTime(10.seconds)
+
+        val messageResults = simulation.gatherMessageResults()
+        val (origMsg, res) = messageResults.entries.first()
+        run {
+            println(res)
+            assertThat(res[0].receivedTime - origMsg.sentTime).isCloseTo(3100, Offset.offset(100))
         }
-        val p2 = createPeer().also {
-            it.inboundBandwidth = SimpleBandwidthTracker(Bandwidth(2000), executor)
+    }
+
+    @Test
+    fun testInboundSmaller() {
+        peer0.outboundBandwidth = SimpleBandwidthTracker(Bandwidth(100000), peer0.simExecutor)
+        peer1.inboundBandwidth = SimpleBandwidthTracker(Bandwidth(50000), peer1.simExecutor)
+        println("Connecting peers...")
+        simNetwork.connectAllPeers()
+
+        println("Creating simulation...")
+        val simulation = GossipSimulation(simConfig, simNetwork)
+        simulation.forwardTime(1.seconds)
+
+        simulation.publishMessage(0, 200000)
+        simulation.forwardTime(10.seconds)
+
+        val messageResults = simulation.gatherMessageResults()
+        val (origMsg, res) = messageResults.entries.first()
+        run {
+            assertThat(res[0].receivedTime - origMsg.sentTime).isCloseTo(4100, Offset.offset(100))
+            println(res)
+        }
+    }
+
+    @Test
+    fun testInboundSmallerWithLatency() {
+        peer0.outboundBandwidth = SimpleBandwidthTracker(Bandwidth(100000), peer0.simExecutor)
+        peer1.inboundBandwidth = SimpleBandwidthTracker(Bandwidth(50000), peer1.simExecutor)
+        println("Connecting peers...")
+        simNetwork.connectAllPeers()
+
+        simNetwork.network.activeConnections.forEach {
+            it.connectionLatency = TimeDelayer(peer0.simExecutor) { 1000.milliseconds }
         }
 
-        val con = p1.connect(p2).join()
+        println("Creating simulation...")
+        val simulation = GossipSimulation(simConfig, simNetwork)
+        simulation.forwardTime(1.seconds)
 
-        val topic = Topic("topic-1")
-        p1.api.subscribe(Subscriber { }, topic)
+        simulation.publishMessage(0, 200000)
+        simulation.forwardTime(10.seconds)
 
-        p2.api.subscribe(Subscriber {
-            println("Received ${it.data.readableBytes()} bytes at ${timeController.time}")
-        }, topic)
-        timeController.addTime(10.seconds)
-
-        p1.apiPublisher.publish(Unpooled.wrappedBuffer(ByteArray(2000)))
-        timeController.addTime(10.seconds)
+        val messageResults = simulation.gatherMessageResults()
+        val (origMsg, res) = messageResults.entries.first()
+        run {
+            assertThat(res[0].receivedTime - origMsg.sentTime).isCloseTo(5100, Offset.offset(100))
+            println(res)
+        }
     }
 }

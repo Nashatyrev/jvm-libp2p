@@ -33,8 +33,7 @@ class GossipSimNetwork(
             val delegateExecutor = peerExecutors[number % peerExecutors.size]
             simExecutor = ControlledExecutorServiceImpl(delegateExecutor, timeController)
             currentTime = { timeController.time }
-            msgSizeEstimator =
-                GossipSimPeer.rawPubSubMsgSizeEstimator(cfg.avrgMessageSize, cfg.measureTCPFramesOverhead)
+            msgSizeEstimator = cfg.messageSizeEstimator
             val latencyRandomValue = cfg.latency.newValue(commonRnd)
             validationDelay = cfg.gossipValidationDelay
 

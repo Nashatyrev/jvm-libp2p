@@ -19,9 +19,9 @@ fun interface BandwidthDelayer : MessageDelayer {
             return MessageDelayer { size ->
                 CompletableFuture.allOf(
                     outboundBandwidthDelayer.delay(size)
-                        .thenCombine(connectionLatencyDelayer.delay(size)) { _,_ -> },
+                        .thenCompose { connectionLatencyDelayer.delay(size) },
                     connectionLatencyDelayer.delay(size)
-                        .thenCombine(inboundBandwidthDelayer.delay(size)) { _,_ -> }
+                        .thenCompose { inboundBandwidthDelayer.delay(size) }
                 ).thenApply { }
             }
         }
