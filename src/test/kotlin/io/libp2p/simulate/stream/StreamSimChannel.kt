@@ -2,8 +2,9 @@ package io.libp2p.simulate.stream
 
 import io.libp2p.etc.types.lazyVar
 import io.libp2p.etc.types.toVoidCompletableFuture
+import io.libp2p.simulate.BandwidthDelayer
 import io.libp2p.simulate.util.GeneralSizeEstimator
-import io.libp2p.simulate.util.MessageDelayer
+import io.libp2p.simulate.MessageDelayer
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelHandler
@@ -17,9 +18,13 @@ import org.apache.logging.log4j.LogManager
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.TimeUnit
 
-class StreamSimChannel(id: String, vararg handlers: ChannelHandler?) :
+class StreamSimChannel(
+    id: String,
+    val inboundBandwidth: BandwidthDelayer,
+    val outboundBandwidth: BandwidthDelayer,
+    vararg handlers: ChannelHandler?
+) :
     EmbeddedChannel(
         SimChannelId(id),
         *handlers
@@ -29,9 +34,13 @@ class StreamSimChannel(id: String, vararg handlers: ChannelHandler?) :
     var executor: ScheduledExecutorService by lazyVar { Executors.newSingleThreadScheduledExecutor() }
     var currentTime: () -> Long = System::currentTimeMillis
     var msgSizeEstimator = GeneralSizeEstimator
-    var msgDelayer: MessageDelayer = MessageDelayer { CompletableFuture.completedFuture(null) }
+    private var msgDelayer: MessageDelayer =
+        BandwidthDelayer.createMessageDelayer(outboundBandwidth, MessageDelayer.NO_DELAYER, inboundBandwidth)
     var msgSizeHandler: (Int) -> Unit = {}
-    var lastTimeToSend = 0L
+
+    fun setLatency(latency: MessageDelayer) {
+        msgDelayer = BandwidthDelayer.createMessageDelayer(outboundBandwidth, latency, inboundBandwidth)
+    }
 
     @Synchronized
     fun connect(other: StreamSimChannel) {
@@ -56,7 +65,7 @@ class StreamSimChannel(id: String, vararg handlers: ChannelHandler?) :
 
         val sendNow: () -> Unit = {
             other.writeInbound(msg)
-            msgSizeHandler(size)
+            msgSizeHandler(size.toInt())
         }
 
         delay.thenApply {
@@ -114,6 +123,11 @@ class StreamSimChannel(id: String, vararg handlers: ChannelHandler?) :
     }
 
     class Connection(val ch1: StreamSimChannel, val ch2: StreamSimChannel) {
+
+        fun setLatency(latency: MessageDelayer) {
+            ch1.setLatency(latency)
+            ch2.setLatency(latency)
+        }
         fun disconnect(): CompletableFuture<Unit> {
             return CompletableFuture.allOf(
                 ch1.close().toVoidCompletableFuture(),

@@ -2,6 +2,7 @@ package io.libp2p.simulate.wire
 
 import io.libp2p.core.Connection
 import io.libp2p.simulate.ConnectionStat
+import io.libp2p.simulate.MessageDelayer
 import io.libp2p.simulate.SimConnection
 import io.libp2p.simulate.SimPeer
 
@@ -21,4 +22,7 @@ class WireSimConnection(
         get() = TODO("not implemented")
     override val listenerStat: ConnectionStat
         get() = TODO("not implemented")
+    override var connectionLatency: MessageDelayer
+        get() = TODO("Not yet implemented")
+        set(value) {}
 }

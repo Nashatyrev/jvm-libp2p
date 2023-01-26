@@ -4,7 +4,6 @@ import io.libp2p.core.pubsub.RESULT_INVALID
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.toByteBuf
 import io.libp2p.pubsub.gossip.GossipParams
-import io.libp2p.pubsub.gossip.GossipRouter
 import io.libp2p.simulate.NetworkStats
 import io.libp2p.simulate.RandomDistribution
 import io.libp2p.simulate.Topology
@@ -12,7 +11,7 @@ import io.libp2p.simulate.gossip.GossipSimPeer
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.stats.WritableStats
 import io.libp2p.simulate.topology.RandomNPeers
-import io.libp2p.simulate.util.TimeDelayer
+import io.libp2p.simulate.TimeDelayer
 import io.libp2p.tools.formatTable
 import io.libp2p.tools.get
 import io.libp2p.tools.millis
@@ -406,7 +405,6 @@ class Simulation1 {
                     msgSizeEstimator =
                         GossipSimPeer.rawPubSubMsgSizeEstimator(cfg.avrgMessageSize, opt.measureTCPFramesOverhead)
                     val latencyRandomValue = cfg.latency.newValue(commonRnd)
-                    msgDelayer = TimeDelayer(simExecutor) { latencyRandomValue.next().toLong().milliseconds }
                     validationDelay = cfg.gossipValidationDelay
 
                     start()

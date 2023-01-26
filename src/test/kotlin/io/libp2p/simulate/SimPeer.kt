@@ -11,6 +11,10 @@ interface SimPeer {
     val peerId: PeerId
     val connections: List<SimConnection>
 
+    // TODO
+    var inboundBandwidth: BandwidthDelayer
+    var outboundBandwidth: BandwidthDelayer
+
     fun start() = CompletableFuture.completedFuture(Unit)
 
     fun connect(other: SimPeer): CompletableFuture<SimConnection>

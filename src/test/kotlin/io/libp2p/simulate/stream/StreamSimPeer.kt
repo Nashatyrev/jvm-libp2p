@@ -13,11 +13,8 @@ import io.libp2p.etc.types.forward
 import io.libp2p.etc.types.lazyVar
 import io.libp2p.etc.types.toBytesBigEndian
 import io.libp2p.etc.util.netty.nettyInitializer
-import io.libp2p.simulate.AbstractSimPeer
-import io.libp2p.simulate.SimConnection
-import io.libp2p.simulate.SimPeer
+import io.libp2p.simulate.*
 import io.libp2p.simulate.util.GeneralSizeEstimator
-import io.libp2p.simulate.util.MessageDelayer
 import io.libp2p.tools.DummyChannel
 import io.libp2p.tools.NullTransport
 import io.libp2p.transport.implementation.ConnectionOverNetty
@@ -37,6 +34,9 @@ abstract class StreamSimPeer<TProtocolController>(
     val streamProtocol: String
 ) : AbstractSimPeer(), StreamHandler<TProtocolController> {
 
+    override var inboundBandwidth: BandwidthDelayer = BandwidthDelayer.UNLIM_BANDWIDTH
+    override var outboundBandwidth: BandwidthDelayer = BandwidthDelayer.UNLIM_BANDWIDTH
+
     val protocolController: CompletableFuture<TProtocolController> = CompletableFuture()
 
     var address = Multiaddr(listOf(
@@ -53,7 +53,6 @@ abstract class StreamSimPeer<TProtocolController>(
     override val peerId by lazy { PeerId.fromPubKey(keyPair.second) }
 
     var msgSizeEstimator = GeneralSizeEstimator
-    var msgDelayer: MessageDelayer = MessageDelayer{ CompletableFuture.completedFuture(null) }
     var wireLogs: LogLevel? = null
 
     override fun connectImpl(other: SimPeer): CompletableFuture<SimConnection> {
@@ -113,6 +112,8 @@ abstract class StreamSimPeer<TProtocolController>(
 
         return StreamSimChannel(
             channelName,
+            inboundBandwidth,
+            outboundBandwidth,
             nettyInitializer {
                 val ch = it.channel
                 wireLogs?.also { ch.pipeline().addFirst(LoggingHandler(channelName, it)) }
@@ -124,7 +125,6 @@ abstract class StreamSimPeer<TProtocolController>(
             it.executor = simExecutor
             it.currentTime = currentTime
             it.msgSizeEstimator = msgSizeEstimator
-            it.msgDelayer = msgDelayer
         }
     }
 }

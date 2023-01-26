@@ -100,7 +100,7 @@ class GossipSimPeer(
                         publishList.sumBy { avrgMsgLen + it.topicIDsList.sumBy { it.length } + 224 } +
                         6
             }
-            payloadSize + if (measureTcpOverhead) ((payloadSize / 1460) + 1) * 40 else 0
+            (payloadSize + if (measureTcpOverhead) ((payloadSize / 1460) + 1) * 40 else 0).toLong()
         }
     }
 }

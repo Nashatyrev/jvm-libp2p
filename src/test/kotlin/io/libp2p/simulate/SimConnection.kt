@@ -12,11 +12,12 @@ interface SimConnection {
     val dialerStat: ConnectionStat
     val listenerStat: ConnectionStat
 
+    var connectionLatency: MessageDelayer
+
     fun close()
 
     fun isClosed() = closed.isDone
 
-    fun setLatency(latency: RandomValue): Unit = TODO()
 }
 
 data class ConnectionStat(

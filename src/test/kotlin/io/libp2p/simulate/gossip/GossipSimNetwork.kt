@@ -1,9 +1,8 @@
 package io.libp2p.simulate.gossip
 
-import io.libp2p.pubsub.gossip.GossipRouter
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.simulate.Network
-import io.libp2p.simulate.util.TimeDelayer
+import io.libp2p.simulate.TimeDelayer
 import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl
 import io.libp2p.tools.schedulers.TimeControllerImpl
 import java.util.Random
@@ -37,7 +36,6 @@ class GossipSimNetwork(
             msgSizeEstimator =
                 GossipSimPeer.rawPubSubMsgSizeEstimator(cfg.avrgMessageSize, cfg.measureTCPFramesOverhead)
             val latencyRandomValue = cfg.latency.newValue(commonRnd)
-            msgDelayer = TimeDelayer(simExecutor) { latencyRandomValue.next().toLong().milliseconds }
             validationDelay = cfg.gossipValidationDelay
 
             start()
