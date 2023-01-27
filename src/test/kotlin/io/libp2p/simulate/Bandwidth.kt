@@ -48,6 +48,21 @@ class SimpleBandwidthTracker(
         executor.delayedFuture(totalBandwidth.getTransmitTime(size))
 }
 
+class SequentialBandwidthTracker(
+    val totalBandwidth: Bandwidth,
+    val executor: ScheduledExecutorService
+) : BandwidthDelayer {
+
+    private var lastMessageFuture: CompletableFuture<Unit> = CompletableFuture.completedFuture(null)
+
+    override fun delay(size: Long): CompletableFuture<Unit> {
+        lastMessageFuture = lastMessageFuture.thenCompose {
+            executor.delayedFuture(totalBandwidth.getTransmitTime(size))
+        }
+        return lastMessageFuture
+    }
+}
+
 
 class BandwidthTracker(
     val totalBandwidth: Bandwidth

@@ -2,9 +2,7 @@ package io.libp2p.simulate.test
 
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
-import io.libp2p.simulate.Bandwidth
-import io.libp2p.simulate.SimpleBandwidthTracker
-import io.libp2p.simulate.TimeDelayer
+import io.libp2p.simulate.*
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.topology.AllToAllTopology
 import io.libp2p.tools.millis
@@ -138,6 +136,69 @@ class BandwidthTest {
         run {
             assertThat(res[0].receivedTime - origMsg.sentTime).isCloseTo(5100, Offset.offset(100))
             println(res)
+        }
+    }
+
+    @Test
+    fun testSequentialBandwidth() {
+        peer0.outboundBandwidth =
+            SequentialBandwidthTracker(Bandwidth(100000), peer0.simExecutor)
+        peer1.inboundBandwidth = BandwidthDelayer.UNLIM_BANDWIDTH
+        println("Connecting peers...")
+        simNetwork.connectAllPeers()
+
+        println("Creating simulation...")
+        val simulation = GossipSimulation(simConfig, simNetwork)
+        simulation.forwardTime(5.seconds)
+
+        simulation.publishMessage(0, 200000)
+        simulation.publishMessage(0, 100000)
+        simulation.publishMessage(0, 200000)
+        simulation.forwardTime(10.seconds)
+
+        run {
+            val messageResults = simulation.gatherMessageResults()
+            val resList = messageResults.entries.toList()
+            assertThat(resList).hasSize(3)
+            run {
+                val (origMsg, res) = resList[0]
+                assertThat(res[0].receivedTime - origMsg.sentTime).isCloseTo(2100, Offset.offset(100))
+            }
+            run {
+                val (origMsg, res) = resList[1]
+                assertThat(res[0].receivedTime - origMsg.sentTime).isCloseTo(3100, Offset.offset(100))
+            }
+            run {
+                val (origMsg, res) = resList[2]
+                assertThat(res[0].receivedTime - origMsg.sentTime).isCloseTo(5100, Offset.offset(100))
+            }
+        }
+
+        simulation.publishMessage(0, 200000)
+        simulation.forwardTime(500.millis)
+        simulation.publishMessage(0, 100000)
+        simulation.forwardTime(500.millis)
+        simulation.publishMessage(0, 200000)
+        simulation.forwardTime(10.seconds)
+
+        run {
+            val messageResults = simulation.gatherMessageResults()
+            val resList = messageResults.entries
+                .drop(3)
+                .toList()
+            assertThat(resList).hasSize(3)
+            run {
+                val (origMsg, res) = resList[0]
+                assertThat(res[0].receivedTime - origMsg.sentTime).isCloseTo(2100, Offset.offset(100))
+            }
+            run {
+                val (origMsg, res) = resList[1]
+                assertThat(res[0].receivedTime - origMsg.sentTime).isCloseTo(2600, Offset.offset(100))
+            }
+            run {
+                val (origMsg, res) = resList[2]
+                assertThat(res[0].receivedTime - origMsg.sentTime).isCloseTo(4100, Offset.offset(100))
+            }
         }
     }
 }
