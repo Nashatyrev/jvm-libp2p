@@ -17,7 +17,7 @@ class BandwidthTest {
     val topic = Topic("aaa")
     val simConfig = GossipSimConfig(
         totalPeers = 2,
-        topic = topic,
+        topics = listOf(topic),
         topology = AllToAllTopology(),
         gossipValidationDelay = 0.millis
     )
@@ -54,7 +54,7 @@ class BandwidthTest {
         val simulation = GossipSimulation(simConfig, simNetwork)
         simulation.forwardTime(1.seconds)
 
-        simulation.publishMessage(0, 200000)
+        simulation.publishMessage(0, 200000, topic)
         simulation.forwardTime(10.seconds)
 
         val messageResults = simulation.gatherMessageResults()
@@ -80,7 +80,7 @@ class BandwidthTest {
         val simulation = GossipSimulation(simConfig, simNetwork)
         simulation.forwardTime(1.seconds)
 
-        simulation.publishMessage(0, 200000)
+        simulation.publishMessage(0, 200000, topic)
         simulation.forwardTime(10.seconds)
 
         val messageResults = simulation.gatherMessageResults()
@@ -102,7 +102,7 @@ class BandwidthTest {
         val simulation = GossipSimulation(simConfig, simNetwork)
         simulation.forwardTime(1.seconds)
 
-        simulation.publishMessage(0, 200000)
+        simulation.publishMessage(0, 200000, topic)
         simulation.forwardTime(10.seconds)
 
         val messageResults = simulation.gatherMessageResults()
@@ -128,7 +128,7 @@ class BandwidthTest {
         val simulation = GossipSimulation(simConfig, simNetwork)
         simulation.forwardTime(1.seconds)
 
-        simulation.publishMessage(0, 200000)
+        simulation.publishMessage(0, 200000, topic)
         simulation.forwardTime(10.seconds)
 
         val messageResults = simulation.gatherMessageResults()
@@ -151,9 +151,9 @@ class BandwidthTest {
         val simulation = GossipSimulation(simConfig, simNetwork)
         simulation.forwardTime(5.seconds)
 
-        simulation.publishMessage(0, 200000)
-        simulation.publishMessage(0, 100000)
-        simulation.publishMessage(0, 200000)
+        simulation.publishMessage(0, 200000, topic)
+        simulation.publishMessage(0, 100000, topic)
+        simulation.publishMessage(0, 200000, topic)
         simulation.forwardTime(10.seconds)
 
         run {
@@ -174,11 +174,11 @@ class BandwidthTest {
             }
         }
 
-        simulation.publishMessage(0, 200000)
+        simulation.publishMessage(0, 200000, topic)
         simulation.forwardTime(500.millis)
-        simulation.publishMessage(0, 100000)
+        simulation.publishMessage(0, 100000, topic)
         simulation.forwardTime(500.millis)
-        simulation.publishMessage(0, 200000)
+        simulation.publishMessage(0, 200000, topic)
         simulation.forwardTime(10.seconds)
 
         run {

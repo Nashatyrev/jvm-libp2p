@@ -5,6 +5,7 @@ import io.libp2p.simulate.Network
 import io.libp2p.simulate.SimPeer
 import io.libp2p.simulate.Topology
 import org.jgrapht.Graph
+import org.jgrapht.GraphMetrics
 
 abstract class AbstractGraphTopology : Topology {
 
@@ -12,6 +13,7 @@ abstract class AbstractGraphTopology : Topology {
 
     override fun connect(peers: List<SimPeer>): Network {
         val graph = buildGraph(peers)
+        println("Graph diameter: " + GraphMetrics.getDiameter(graph))
         val conns = peers
             .flatMap {
                 graph.incomingEdgesOf(it).filter { graph.getEdgeSource(it) != graph.getEdgeTarget(it) }

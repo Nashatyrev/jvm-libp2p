@@ -27,14 +27,13 @@ class GossipSimNetwork(
             listOf(Executor { it.run() })
 
     var simPeerFactory: (Int, GossipRouterBuilder) -> GossipSimPeer = { number, router ->
-        GossipSimPeer(cfg.topic, number.toString(), commonRnd).apply {
+        GossipSimPeer(cfg.topics, number.toString(), commonRnd).apply {
             routerBuilder = router
 
             val delegateExecutor = peerExecutors[number % peerExecutors.size]
             simExecutor = ControlledExecutorServiceImpl(delegateExecutor, timeController)
             currentTime = { timeController.time }
             msgSizeEstimator = cfg.messageSizeEstimator
-            val latencyRandomValue = cfg.latency.newValue(commonRnd)
             validationDelay = cfg.gossipValidationDelay
 
             start()
@@ -48,6 +47,9 @@ class GossipSimNetwork(
         }
 
         val simPeer = simPeerFactory(number, router)
+        val (inbound, outbound) = cfg.bandwidthGenerator(simPeer)
+        simPeer.inboundBandwidth = inbound
+        simPeer.outboundBandwidth = outbound
         simPeerModifier(number, simPeer)
         return simPeer
     }
@@ -61,6 +63,10 @@ class GossipSimNetwork(
     fun connectAllPeers() {
         cfg.topology.random = commonRnd
         network = cfg.topology.connect(peers.values.toList())
+        network.activeConnections.forEach {
+            val latency = cfg.latencyGenerator(it)
+            it.connectionLatency = latency
+        }
     }
 
     fun getConnectedPeers(peerIndex: Int): Collection<GossipSimPeer> {

@@ -26,28 +26,13 @@ import java.time.Duration
 
 class Simulation2 {
 
-    fun iterateMeshMessageDeliveryWindow(values: List<Duration>) =
-        values.map {
-            GossipTopicScoreParamsBuilder(Eth2DefaultBlockTopicParams)
-                .meshMessageDeliveryWindow(it)
-                .build()
-        }.map {
-            Eth2DefaultTopicsParams.withTopic(BlocksTopic, it)
-        }.map {
-            GossipScoreParamsBuilder(Eth2DefaultScoreParams)
-                .peerScoreParams(Eth2DefaultPeerScoreParams)
-                .topicsScoreParams(it)
-                .build()
-        }
-
     @Test
     fun sim() {
 
         val simConfig = GossipSimConfig(
             totalPeers = 1000,
-            topic = Topic(BlocksTopic),
+            topics = listOf(Topic(BlocksTopic)),
             topology = RandomNPeers(30),
-            latency = RandomDistribution.uniform(5.0, 50.0),
             gossipValidationDelay = 50.millis
         )
 
@@ -137,6 +122,20 @@ class Simulation2 {
 
     @Test
     fun a() {
+        fun iterateMeshMessageDeliveryWindow(values: List<Duration>) =
+            values.map {
+                GossipTopicScoreParamsBuilder(Eth2DefaultBlockTopicParams)
+                    .meshMessageDeliveryWindow(it)
+                    .build()
+            }.map {
+                Eth2DefaultTopicsParams.withTopic(BlocksTopic, it)
+            }.map {
+                GossipScoreParamsBuilder(Eth2DefaultScoreParams)
+                    .peerScoreParams(Eth2DefaultPeerScoreParams)
+                    .topicsScoreParams(it)
+                    .build()
+            }
+
         val param =
             iterateMeshMessageDeliveryWindow(listOf(20, 50, 100, 200, 500, 1000).map { it.millis })
         val map = param[0].propertiesAsMap()

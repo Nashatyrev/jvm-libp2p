@@ -1,26 +1,37 @@
 package io.libp2p.simulate.gossip
 
 import io.libp2p.core.pubsub.Topic
-import io.libp2p.simulate.RandomDistribution
-import io.libp2p.simulate.Topology
+import io.libp2p.simulate.*
 import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.simulate.util.MsgSizeEstimator
 import io.libp2p.tools.millis
 import io.libp2p.tools.seconds
 import java.time.Duration
 
+data class PeerBandwidth(
+    val inbound: BandwidthDelayer,
+    val outbound: BandwidthDelayer
+) {
+    companion object {
+        val UNLIMITED = PeerBandwidth(BandwidthDelayer.UNLIM_BANDWIDTH, BandwidthDelayer.UNLIM_BANDWIDTH)
+    }
+}
+
 data class GossipSimConfig(
     val totalPeers: Int = 10000,
     val badPeers: Int = 0,
 
-    val topic: Topic,
+    val topics: List<Topic>,
 
-    val messageSizeEstimator: MsgSizeEstimator = GossipSimPeer.strictPubSubMsgSizeEstimator(true),
+    val messageSizeEstimator: MsgSizeEstimator =
+        GossipSimPeer.strictPubSubMsgSizeEstimator(true),
+
+    val bandwidthGenerator: (GossipSimPeer) -> PeerBandwidth = { PeerBandwidth.UNLIMITED },
+    val latencyGenerator: (SimConnection) -> MessageDelayer = { MessageDelayer.NO_DELAYER },
+    val gossipValidationDelay: Duration = 0.millis,
 
     val topology: Topology = RandomNPeers(10),
-    val latency: RandomDistribution = RandomDistribution.const(1.0),
     val peersTimeShift: RandomDistribution = RandomDistribution.const(0.0),
-    val gossipValidationDelay: Duration = 0.millis,
 
     val warmUpDelay: Duration = 5.seconds,
     val generatedNetworksCount: Int = 1,

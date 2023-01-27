@@ -18,7 +18,7 @@ class SimulationTest {
     fun test1() {
         val simConfig = GossipSimConfig(
             totalPeers = 3,
-            topic = Topic(BlocksTopic),
+            topics = listOf(Topic(BlocksTopic)),
             topology = AllToAllTopology(),
             gossipValidationDelay = 0.millis
         )

@@ -20,7 +20,7 @@ class GossipSimTest {
         val timeController = TimeControllerImpl()
 
         val createPeer = {
-            val peer = GossipSimPeer(Topic("aaa"), "1", Random())
+            val peer = GossipSimPeer(listOf(Topic("aaa")), "1", Random())
             peer.routerBuilder = GossipRouterBuilder().also {
                 it.serialize = true
             }

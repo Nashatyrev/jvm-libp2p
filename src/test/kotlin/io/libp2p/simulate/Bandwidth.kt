@@ -31,6 +31,10 @@ fun interface BandwidthDelayer : MessageDelayer {
 data class Bandwidth(val bytesPerSecond: Long) {
     fun getTransmitTime(size: Long): Duration =
         (size * 1000 / bytesPerSecond).milliseconds
+
+    companion object {
+        fun mbitsPerSec(mbsec: Int) = Bandwidth(mbsec.toLong() * (1 shl 20) / 10)
+    }
 }
 
 fun ScheduledExecutorService.delayedFuture(delay: Duration): CompletableFuture<Unit> {

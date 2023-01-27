@@ -380,7 +380,7 @@ class Simulation1 {
                     listOf(Executor { it.run() })
 
             val peers = (0 until cfg.totalPeers).map {
-                GossipSimPeer(Topic, it.toString(), commonRnd).apply {
+                GossipSimPeer(listOf(Topic), it.toString(), commonRnd).apply {
                     val gossipParams = GossipParams(
                         D = cfg.gossipD,
                         DLow = cfg.gossipDLow,
