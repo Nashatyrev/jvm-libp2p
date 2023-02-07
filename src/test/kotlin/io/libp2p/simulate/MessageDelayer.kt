@@ -27,34 +27,20 @@ class TimeDelayer(
     }
 }
 
-class SequentialDelayer(val delegate: MessageDelayer) : MessageDelayer {
+fun MessageDelayer.sequential(executor: ScheduledExecutorService) =
+    SequentialDelayer(this, executor)
 
-    private data class Message(
-        val size: Long,
-        val fut: CompletableFuture<Unit> = CompletableFuture()
-    )
+class SequentialDelayer(
+    val delegate: MessageDelayer,
+    val executor: ScheduledExecutorService,
+) : BandwidthDelayer {
 
-    private val msgQueue = ArrayDeque<Message>()
+    private var lastMessageFuture: CompletableFuture<Unit> = CompletableFuture.completedFuture(null)
 
     override fun delay(size: Long): CompletableFuture<Unit> {
-        synchronized(this) {
-            val msg = Message(size)
-            msgQueue += msg
-            popFromQueue()
-            return msg.fut
-        }
-    }
-
-    private fun popFromQueue() {
-        synchronized(this) {
-            msgQueue.removeFirstOrNull()?.also { msg ->
-                delegate
-                    .delay(msg.size)
-                    .thenAccept {
-                        msg.fut.complete(null)
-                        popFromQueue()
-                    }
-            }
-        }
+        lastMessageFuture = lastMessageFuture.thenComposeAsync({
+            delegate.delay(size)
+        }, executor)
+        return lastMessageFuture
     }
 }

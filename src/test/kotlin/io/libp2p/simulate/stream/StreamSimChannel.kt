@@ -5,6 +5,7 @@ import io.libp2p.etc.types.toVoidCompletableFuture
 import io.libp2p.simulate.BandwidthDelayer
 import io.libp2p.simulate.util.GeneralSizeEstimator
 import io.libp2p.simulate.MessageDelayer
+import io.libp2p.simulate.sequential
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelHandler
@@ -34,12 +35,18 @@ class StreamSimChannel(
     var executor: ScheduledExecutorService by lazyVar { Executors.newSingleThreadScheduledExecutor() }
     var currentTime: () -> Long = System::currentTimeMillis
     var msgSizeEstimator = GeneralSizeEstimator
-    private var msgDelayer: MessageDelayer =
-        BandwidthDelayer.createMessageDelayer(outboundBandwidth, MessageDelayer.NO_DELAYER, inboundBandwidth)
+    private var msgDelayer: MessageDelayer by lazyVar {
+        BandwidthDelayer
+            .createMessageDelayer(outboundBandwidth, MessageDelayer.NO_DELAYER, inboundBandwidth)
+            .sequential(executor)
+    }
+
     var msgSizeHandler: (Int) -> Unit = {}
 
     fun setLatency(latency: MessageDelayer) {
-        msgDelayer = BandwidthDelayer.createMessageDelayer(outboundBandwidth, latency, inboundBandwidth)
+        msgDelayer = BandwidthDelayer
+            .createMessageDelayer(outboundBandwidth, latency, inboundBandwidth)
+            .sequential(executor)
     }
 
     @Synchronized
