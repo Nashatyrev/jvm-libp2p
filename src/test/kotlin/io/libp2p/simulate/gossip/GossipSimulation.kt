@@ -47,7 +47,7 @@ class GossipSimulation(
         val msgId = idCounter.incrementAndGet()
 
         val msg = idToMsg(msgId)
-        msg.writeBytes(ByteArray(size))
+        cfg.messageSizeEstimator.msgGenerator(msg, size)
         val future = peer.apiPublisher.publish(msg, topic)
         val ret = SimMessage(msgId, srcPeer, network.timeController.time, future)
         publishedMessages += ret

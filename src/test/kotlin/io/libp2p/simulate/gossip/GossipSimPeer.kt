@@ -89,31 +89,5 @@ class GossipSimPeer(
 
     companion object {
         private val dummy = CompletableFuture.completedFuture(Unit)
-
-        fun averagePubSubMsgSizeEstimator(avrgMsgLen: Int, measureTcpOverhead: Boolean = true): MsgSizeEstimator = { msg: Any ->
-            val payloadSize = (msg as Rpc.RPC).run {
-                subscriptionsList.sumBy { it.topicid.length + 2 } +
-                        control.graftList.sumBy { it.topicID.length + 1 } +
-                        control.pruneList.sumBy { it.topicID.length + 1 } +
-                        control.ihaveList.flatMap { it.messageIDsList }.sumBy { it.size() + 1 } +
-                        control.iwantList.flatMap { it.messageIDsList }.sumBy { it.size() + 1 } +
-                        publishList.sumBy { avrgMsgLen + it.topicIDsList.sumBy { it.length } + 224 } +
-                        6
-            }
-            (payloadSize + if (measureTcpOverhead) ((payloadSize / 1460) + 1) * 40 else 0).toLong()
-        }
-
-        fun strictPubSubMsgSizeEstimator(measureTcpOverhead: Boolean = true): MsgSizeEstimator = { msg: Any ->
-            val payloadSize = (msg as Rpc.RPC).run {
-                subscriptionsList.sumBy { it.topicid.length + 2 } +
-                        control.graftList.sumBy { it.topicID.length + 1 } +
-                        control.pruneList.sumBy { it.topicID.length + 1 } +
-                        control.ihaveList.flatMap { it.messageIDsList }.sumBy { it.size() + 1 } +
-                        control.iwantList.flatMap { it.messageIDsList }.sumBy { it.size() + 1 } +
-                        publishList.sumBy { it.data.size() + it.topicIDsList.sumBy { it.length } + 224 } +
-                        6
-            }
-            (payloadSize + if (measureTcpOverhead) ((payloadSize / 1460) + 1) * 40 else 0).toLong()
-        }
     }
 }

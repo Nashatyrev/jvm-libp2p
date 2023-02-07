@@ -24,8 +24,7 @@ data class GossipSimConfig(
 
     val topics: List<Topic>,
 
-    val messageSizeEstimator: MsgSizeEstimator =
-        GossipSimPeer.strictPubSubMsgSizeEstimator(true),
+    val messageSizeEstimator: GossipMsgSizeEstimator = trickyPubSubMsgSizeEstimator(true),
 
     val bandwidthGenerator: (GossipSimPeer) -> PeerBandwidth = { PeerBandwidth.UNLIMITED },
     val latencyGenerator: (StreamSimConnection) -> MessageDelayer = { MessageDelayer.NO_DELAYER },

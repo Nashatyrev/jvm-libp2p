@@ -8,6 +8,7 @@ import io.libp2p.simulate.NetworkStats
 import io.libp2p.simulate.RandomDistribution
 import io.libp2p.simulate.Topology
 import io.libp2p.simulate.gossip.GossipSimPeer
+import io.libp2p.simulate.gossip.averagePubSubMsgSizeEstimator
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.stats.WritableStats
 import io.libp2p.simulate.topology.RandomNPeers
@@ -401,7 +402,7 @@ class Simulation1 {
                     val delegateExecutor = peerExecutors[it % peerExecutors.size]
                     simExecutor = ControlledExecutorServiceImpl(delegateExecutor, timeController)
                     msgSizeEstimator =
-                        GossipSimPeer.averagePubSubMsgSizeEstimator(cfg.avrgMessageSize, opt.measureTCPFramesOverhead)
+                        averagePubSubMsgSizeEstimator(cfg.avrgMessageSize, opt.measureTCPFramesOverhead).estimator
                     val latencyRandomValue = cfg.latency.newValue(commonRnd)
                     validationDelay = cfg.gossipValidationDelay
 
