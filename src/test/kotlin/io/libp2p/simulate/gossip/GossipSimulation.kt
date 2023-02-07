@@ -65,6 +65,10 @@ class GossipSimulation(
         return list
     }
 
+    fun clearAllMessages() {
+        network.peers.values.forEach { it.allMessages.clear() }
+    }
+
     private fun idToMsg(msgId: Long) = Unpooled.buffer().writeLong(msgId)
     private fun msgToId(msg: ByteBuf) = msg.slice().readLong()
 }

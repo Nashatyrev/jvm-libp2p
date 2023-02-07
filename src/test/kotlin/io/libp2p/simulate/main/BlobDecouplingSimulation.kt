@@ -2,15 +2,20 @@ package io.libp2p.simulate.main
 
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
-import io.libp2p.simulate.Bandwidth
-import io.libp2p.simulate.SequentialBandwidthTracker
+import io.libp2p.simulate.*
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.stats.StatsFactory
+import io.libp2p.simulate.stream.randomLatencyDelayer
+import io.libp2p.simulate.stream.simpleLatencyDelayer
 import io.libp2p.simulate.topology.CustomTopology
 import io.libp2p.simulate.topology.RandomNPeers
+import io.libp2p.tools.log
 import io.libp2p.tools.millis
 import io.libp2p.tools.minutes
+import io.libp2p.tools.seconds
 import org.junit.jupiter.api.Test
+import java.util.*
+import kotlin.time.Duration.Companion.milliseconds
 
 class BlobDecouplingSimulation {
 
@@ -19,159 +24,216 @@ class BlobDecouplingSimulation {
         val outbound: Bandwidth
     )
 
-    val peerBandwidths: (GossipSimPeer) -> PeerBandwidthValue = {
-        PeerBandwidthValue(Bandwidth.mbitsPerSec(10), Bandwidth.mbitsPerSec(10))
+    val zeroPeerBand = Bandwidth.mbitsPerSec(100)
+    val otherPeerBands = iterator {
+        while (true) {
+            yield(Bandwidth.mbitsPerSec(100))
+            yield(Bandwidth.mbitsPerSec(10))
+            yield(Bandwidth.mbitsPerSec(190))
+
+//            yield(Bandwidth.mbitsPerSec(100))
+//            yield(Bandwidth.mbitsPerSec(100))
+//            yield(Bandwidth.mbitsPerSec(10))
+//            yield(Bandwidth.mbitsPerSec(100))
+//            yield(Bandwidth.mbitsPerSec(100))
+//            yield(Bandwidth.mbitsPerSec(100))
+//            yield(Bandwidth.mbitsPerSec(100))
+//            yield(Bandwidth.mbitsPerSec(190))
+//            yield(Bandwidth.mbitsPerSec(100))
+//            yield(Bandwidth.mbitsPerSec(100))
+        }
+    }
+
+    val peerBandwidths: (GossipSimPeer) -> PeerBandwidthValue = { peer ->
+        val inOutBand = if (peer.name == "0") {
+            zeroPeerBand
+        } else {
+            otherPeerBands.next()
+        }
+        PeerBandwidthValue(inOutBand, inOutBand)
+//        PeerBandwidthValue(
+//            Bandwidth.mbitsPerSec(100),
+//            Bandwidth.mbitsPerSec(100)
+//        )
     }
     val bandwidthFactory: (PeerBandwidthValue, GossipSimPeer) -> PeerBandwidth = { band, peer ->
         PeerBandwidth(
-            SequentialBandwidthTracker(band.inbound, peer.simExecutor),
-            SequentialBandwidthTracker(band.outbound, peer.simExecutor)
+            AnotherBetterBandwidthTracker(band.inbound, peer.simExecutor, peer.currentTime),
+            AnotherBetterBandwidthTracker(band.outbound, peer.simExecutor, peer.currentTime)
         )
     }
+    val messageValidationDelay = 10.millis
+    val latency = RandomDistribution.uniform(0.0, 50.0)
 
     val nodeCount = 1000
     val nodePeerCount = 30
     val messageCount = 1
-    val blockSize = 1024 * (1 shl 10)
-    val blobSize = 1024 * (1 shl 10)
+
+//    val blockSize = 256 * (1 shl 10)
+//    val blobSize = 512 * (1 shl 10)
+    val blockSize = 1_100_000
+    val blobSize = 900_000
     val randomSeed = 2L
+    val rnd = Random(randomSeed)
+
+    val blockTopic = Topic(BlocksTopic)
+    val blobTopic = Topic("/eth2/00000000/beacon_blob/ssz_snappy")
+    val simConfig = GossipSimConfig(
+        totalPeers = nodeCount,
+        topics = listOf(blockTopic, blobTopic),
+        topology = RandomNPeers(nodePeerCount),
+        gossipValidationDelay = messageValidationDelay,
+        bandwidthGenerator = {
+            val band = peerBandwidths(it)
+            bandwidthFactory(band, it)
+        },
+        latencyGenerator = { it.randomLatencyDelayer(latency.newValue(rnd)) },
+        startRandomSeed = randomSeed
+    )
+
+    val gossipParams = Eth2DefaultGossipParams
+        .copy(
+//            heartbeatInterval = 1.minutes
+        )
+    val gossipScoreParams = Eth2DefaultScoreParams
+    val gossipRouterCtor = { _: Int ->
+        GossipRouterBuilder().also {
+            it.params = gossipParams
+            it.scoreParams = gossipScoreParams
+        }
+    }
+
+    val simNetwork = GossipSimNetwork(simConfig, gossipRouterCtor).also { simNetwork ->
+        log("Creating peers...")
+        simNetwork.createAllPeers()
+        log("Connecting peers...")
+        simNetwork.connectAllPeers()
+
+    }
+
+    val simulation = run {
+        log("Creating simulation...")
+        GossipSimulation(simConfig, simNetwork).also { simulation ->
+            log("Forwarding heartbeat time...")
+            simulation.forwardTime(gossipParams.heartbeatInterval)
+        }
+    }
+
+    fun printResults() {
+        log("Gathering results...")
+        val results = simulation.gatherMessageResults()
+
+        val msgDelayStats = StatsFactory.DEFAULT.createStats("msgDelay")
+
+        data class MsgDelivery(
+            val origMsg: SimMessage,
+            val deliveredMsg: SimMessageDelivery
+        )
+
+        val flattenedDeliveries = results.entries.flatMap { (origMsg, deliveries) ->
+            deliveries.map { MsgDelivery(origMsg, it) }
+        }
+        val deliveriesByTarget = flattenedDeliveries
+            .groupBy { it.deliveredMsg.receivedPeer }
+        val allMessagesDeliverTimes = deliveriesByTarget
+            .mapValues { (_, deliver) ->
+                    if (deliver.size < results.size) Int.MAX_VALUE.toLong()
+                    else {
+                        deliver.maxOf { it.deliveredMsg.receivedTime - it.origMsg.sentTime }
+                    }
+                }
+
+        msgDelayStats += allMessagesDeliverTimes.values
+
+        log("Results:")
+        println("Delivery stats: $msgDelayStats")
+        println("Network stats: " + simNetwork.network.networkStats)
+    }
 
     @Test
     fun testCoupled() {
-        val topic = Topic(BlocksTopic)
-        val simConfig = GossipSimConfig(
-            totalPeers = nodeCount,
-            topics = listOf(topic),
-            topology = RandomNPeers(nodePeerCount),
-            gossipValidationDelay = 10.millis,
-            bandwidthGenerator = {
-                val band = peerBandwidths(it)
-                bandwidthFactory(band, it)
-            },
-            startRandomSeed = randomSeed
-        )
-
-        val gossipParams = Eth2DefaultGossipParams
-        val gossipScoreParams = Eth2DefaultScoreParams
-        val gossipRouterCtor = { _: Int ->
-            GossipRouterBuilder().also {
-                it.params = gossipParams
-                it.scoreParams = gossipScoreParams
-            }
-        }
-
-        val simNetwork = GossipSimNetwork(simConfig, gossipRouterCtor)
-        println("Creating peers...")
-        simNetwork.createAllPeers()
-        println("Connecting peers...")
-        simNetwork.connectAllPeers()
-
-//        simNetwork.network.activeConnections.forEach { println("${it.dialer.name}  => ${it.listener.name}") }
-
-        println("Creating simulation...")
-        val simulation = GossipSimulation(simConfig, simNetwork)
-
         for (i in 0 until messageCount) {
-            println("Sending message $i")
-            simulation.publishMessage(i, blockSize + blobSize, topic)
-            simulation.forwardTime(1.minutes)
-        }
-
-        println("Gathering results...")
-        val results = simulation.gatherMessageResults()
-
-        val msgDelayStats = StatsFactory.DEFAULT.createStats("msgDelay").also {
-            it += results.entries.flatMap { e ->
-                e.value.map { it.receivedTime - e.key.sentTime }
+            log("Sending message $i")
+            simulation.publishMessage(i, blockSize + blobSize, blockTopic)
+            for (j in 0..59) {
+                log("Forwarding time...")
+                simulation.forwardTime(1.seconds)
             }
         }
-        println("Delivery stats: $msgDelayStats")
-        println("Network stats: " + simNetwork.network.networkStats)
+
+        printResults()
     }
 
     @Test
     fun testDecoupled() {
-        val blockTopic = Topic(BlocksTopic)
-        val blobTopic = Topic("/eth2/00000000/beacon_blob/ssz_snappy")
-        val simConfig = GossipSimConfig(
-            totalPeers = nodeCount,
-            topics = listOf(blockTopic, blobTopic),
-            topology = RandomNPeers(nodePeerCount),
-            gossipValidationDelay = 10.millis,
-            bandwidthGenerator = {
-                val band = peerBandwidths(it)
-                bandwidthFactory(band, it)
-            },
-            startRandomSeed = randomSeed
-        )
-
-        val gossipParams = Eth2DefaultGossipParams
-        val gossipScoreParams = Eth2DefaultScoreParams
-        val gossipRouterCtor = { _: Int ->
-            GossipRouterBuilder().also {
-                it.params = gossipParams
-                it.scoreParams = gossipScoreParams
-            }
-        }
-
-        val simNetwork = GossipSimNetwork(simConfig, gossipRouterCtor)
-        println("Creating peers...")
-        simNetwork.createAllPeers()
-        println("Connecting peers...")
-        simNetwork.connectAllPeers()
-
-        println("Creating simulation...")
-        val simulation = GossipSimulation(simConfig, simNetwork)
 
         for (i in 0 until messageCount) {
-            println("Sending message $i")
+            log("Sending message $i")
             simulation.publishMessage(i, blockSize, blockTopic)
             simulation.publishMessage(i, blobSize, blobTopic)
-            simulation.forwardTime(1.minutes)
-        }
-
-        println("Gathering results...")
-        val results = simulation.gatherMessageResults()
-
-        val msgDelayStats = StatsFactory.DEFAULT.createStats("msgDelay").also {
-            it += results.entries.flatMap { e ->
-                e.value.map { it.receivedTime - e.key.sentTime }
+            for (j in 0..59) {
+                log("Forwarding time...")
+                simulation.forwardTime(1.seconds)
             }
         }
-        println("Delivery stats: $msgDelayStats")
-        println("Network stats: " + simNetwork.network.networkStats)
+
+        printResults()
     }
 
     @Test
     fun testMinimal() {
-        testMinimalImpl(false)
+//        testMinimalImpl(false)
         testMinimalImpl(true)
     }
+
     fun testMinimalImpl(decoupled: Boolean) {
 //        val decoupled = false
+
         val blockTopic = Topic(BlocksTopic)
         val blobTopic = Topic("/eth2/00000000/beacon_blob/ssz_snappy")
         val simConfig = GossipSimConfig(
-            totalPeers = 100,
+            totalPeers = 4,
             topics = listOf(blockTopic, blobTopic),
-            topology = RandomNPeers(10),
-//            topology = CustomTopology(
-//                listOf(
-//                    0 to 1,
-//                    0 to 2,
-//                    1 to 3,
-//                    2 to 3
-//                )
-//            ),
+//            topology = RandomNPeers(10),
+            topology = CustomTopology(
+                listOf(
+                    0 to 1,
+                    0 to 2,
+                    0 to 3,
+//                    0 to 4,
+//                    0 to 5,
+//                    0 to 6,
+//                    0 to 7,
+//                    0 to 8,
+//                    0 to 9,
+//                    0 to 10,
+                )
+            ),
             gossipValidationDelay = 10.millis,
-            bandwidthGenerator = {
-                val band = peerBandwidths(it)
-                bandwidthFactory(band, it)
+            bandwidthGenerator = { peer ->
+                PeerBandwidth(
+                    AnotherBetterBandwidthTracker(Bandwidth(1_000_000), peer.simExecutor, peer.currentTime),
+//                        .logging { log("${peer.currentTime()}: [${peer.name}] <==   $it") }
+                    AnotherBetterBandwidthTracker(
+                        Bandwidth(1_000_000),
+                        peer.simExecutor,
+                        peer.currentTime,
+                        peer.name
+                    )
+                        .logging { log("${peer.currentTime()}: [${peer.name}]   ==> $it") },
+                )
             },
             startRandomSeed = randomSeed
         )
 
         val gossipParams = Eth2DefaultGossipParams
+            .copy(
+                D = 3,
+                DLow = 1,
+                DHigh = 3,
+                DOut = 0,
+                heartbeatInterval = 1.minutes
+            )
         val gossipScoreParams = Eth2DefaultScoreParams
         val gossipRouterCtor = { _: Int ->
             GossipRouterBuilder().also {
@@ -188,6 +250,12 @@ class BlobDecouplingSimulation {
 
         println("Creating simulation...")
         val simulation = GossipSimulation(simConfig, simNetwork)
+
+        log("Forwarding heartbeat time...")
+        simulation.forwardTime(65.seconds)
+
+        simulation.clearAllMessages()
+        simulation.network.network.resetStats()
 
         println("Sending message ")
         if (decoupled) {

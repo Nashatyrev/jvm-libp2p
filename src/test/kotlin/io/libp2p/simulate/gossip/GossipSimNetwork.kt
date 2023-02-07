@@ -3,6 +3,7 @@ package io.libp2p.simulate.gossip
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.simulate.Network
 import io.libp2p.simulate.TimeDelayer
+import io.libp2p.simulate.stream.StreamSimConnection
 import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl
 import io.libp2p.tools.schedulers.TimeControllerImpl
 import java.util.Random
@@ -64,7 +65,7 @@ class GossipSimNetwork(
         cfg.topology.random = commonRnd
         network = cfg.topology.connect(peers.values.toList())
         network.activeConnections.forEach {
-            val latency = cfg.latencyGenerator(it)
+            val latency = cfg.latencyGenerator(it as StreamSimConnection)
             it.connectionLatency = latency
         }
     }

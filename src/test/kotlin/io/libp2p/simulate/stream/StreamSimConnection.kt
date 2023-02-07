@@ -1,14 +1,14 @@
 package io.libp2p.simulate.stream
 
 import io.libp2p.etc.types.forward
-import io.libp2p.simulate.ConnectionStat
-import io.libp2p.simulate.MessageDelayer
-import io.libp2p.simulate.RandomValue
-import io.libp2p.simulate.SimConnection
+import io.libp2p.etc.types.millis
+import io.libp2p.simulate.*
 import io.libp2p.simulate.stats.StatsFactory
 import java.util.concurrent.CompletableFuture
 import kotlin.properties.Delegates
 import kotlin.properties.ObservableProperty
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 class StreamSimConnection(
     override val dialer: StreamSimPeer<*>,
@@ -45,3 +45,8 @@ class StreamSimConnection(
                 listenerConnection?.setLatency(n)
             }
 }
+
+fun StreamSimConnection.simpleLatencyDelayer(latency: Duration) =
+    TimeDelayer(this.listener.simExecutor, { latency })
+fun StreamSimConnection.randomLatencyDelayer(latency: RandomValue) =
+    TimeDelayer(this.listener.simExecutor, { latency.next().toLong().milliseconds })

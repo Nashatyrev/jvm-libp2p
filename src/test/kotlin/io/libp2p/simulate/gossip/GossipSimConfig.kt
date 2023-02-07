@@ -2,6 +2,7 @@ package io.libp2p.simulate.gossip
 
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.simulate.*
+import io.libp2p.simulate.stream.StreamSimConnection
 import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.simulate.util.MsgSizeEstimator
 import io.libp2p.tools.millis
@@ -27,7 +28,7 @@ data class GossipSimConfig(
         GossipSimPeer.strictPubSubMsgSizeEstimator(true),
 
     val bandwidthGenerator: (GossipSimPeer) -> PeerBandwidth = { PeerBandwidth.UNLIMITED },
-    val latencyGenerator: (SimConnection) -> MessageDelayer = { MessageDelayer.NO_DELAYER },
+    val latencyGenerator: (StreamSimConnection) -> MessageDelayer = { MessageDelayer.NO_DELAYER },
     val gossipValidationDelay: Duration = 0.millis,
 
     val topology: Topology = RandomNPeers(10),
