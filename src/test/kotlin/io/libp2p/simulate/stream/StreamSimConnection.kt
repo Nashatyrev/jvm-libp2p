@@ -4,7 +4,6 @@ import io.libp2p.etc.types.forward
 import io.libp2p.simulate.*
 import io.libp2p.simulate.stats.StatsFactory
 import java.util.concurrent.CompletableFuture
-import kotlin.properties.Delegates
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -22,7 +21,7 @@ class StreamSimConnection(
         listenerStream?.ch2?.msgSizeHandler = { dialerStatsS.addValue(it.toDouble()) }
     }
 
-    override val streams: List<SimStream>
+    override val streams: List<StreamSimStream>
         get() = listOfNotNull(dialerStream, listenerStream)
 
     override val closed = CompletableFuture<Unit>()
@@ -40,14 +39,16 @@ class StreamSimConnection(
     override val dialerStat = ConnectionStat(dialerStatsS)
     override val listenerStat = ConnectionStat(listenerStatsS)
 
-    override var connectionLatency by Delegates.observable(MessageDelayer.NO_DELAYER)
-            { _, _, n ->
-                dialerStream.setLatency(n)
-                listenerStream?.setLatency(n)
-            }
+    override var connectionLatency = MessageDelayer.NO_DELAYER
+        set(value) {
+            streams.forEach { it.setLatency(value) }
+            field = value
+        }
 }
+
 
 fun StreamSimConnection.simpleLatencyDelayer(latency: Duration) =
     TimeDelayer(this.listener.simExecutor, { latency })
+
 fun StreamSimConnection.randomLatencyDelayer(latency: RandomValue) =
     TimeDelayer(this.listener.simExecutor, { latency.next().toLong().milliseconds })
