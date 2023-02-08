@@ -5,7 +5,6 @@ import io.libp2p.core.multiformats.Multiaddr
 import io.libp2p.core.multistream.ProtocolId
 import io.libp2p.core.security.SecureChannel
 import io.libp2p.etc.PROTOCOL
-import io.libp2p.etc.types.forward
 import io.libp2p.etc.util.netty.nettyInitializer
 import io.libp2p.simulate.*
 import io.libp2p.simulate.stats.StatsFactory
@@ -54,9 +53,13 @@ class StreamSimConnection(
             if (streamInitiator == SimStream.StreamInitiator.CONNECTION_LISTENER) dialer
             else listener
 
-        val thisChannel = newChannel("${from.name}=>${to.name}", to, from, streamProtocol, wireLogs, true)
-        val anotherChannel = newChannel("${to.name}=>${from.name}", from, to, streamProtocol, wireLogs, false)
-        val stream = StreamSimStream.interConnect(thisChannel, anotherChannel, streamInitiator, streamProtocol)
+
+        val fromSideChannel = newChannel("${from.name}=>${to.name}",
+            from, to, streamProtocol, wireLogs, from === dialer, true)
+        val toSideChannel = newChannel("${to.name}=>${from.name}",
+            to, from, streamProtocol, wireLogs, to === dialer, false)
+
+        val stream = StreamSimStream.interConnect(toSideChannel, fromSideChannel, streamInitiator, streamProtocol)
         stream.connection = this
         streamsMut += stream
 
@@ -76,18 +79,11 @@ class StreamSimConnection(
         remote: StreamSimPeer<*>,
         streamProtocol: ProtocolId,
         wireLogs: LogLevel? = null,
-        initiator: Boolean
+        connectionInitiator: Boolean,
+        streamInitiator: Boolean
     ): StreamSimChannel {
 
-        val connection = object : ConnectionOverNetty(
-            DummyChannel(),
-            NullTransport(),
-            initiator
-        ) {
-            override fun remoteAddress(): Multiaddr {
-                return remote.address
-            }
-        }
+        val connection =  DummyConnection(remote.address, connectionInitiator)
 
         connection.setSecureSession(
             SecureChannel.Session(
@@ -104,7 +100,7 @@ class StreamSimConnection(
             nettyInitializer {
                 val ch = it.channel
                 wireLogs?.also { ch.pipeline().addFirst(LoggingHandler(channelName, it)) }
-                val stream = SimStreamImpl(connection, ch, initiator)
+                val stream = SimStreamImpl(connection, ch, streamInitiator)
                 ch.attr(PROTOCOL).get().complete(streamProtocol)
                 local.simHandleStream(stream)
             }
@@ -113,6 +109,14 @@ class StreamSimConnection(
             it.currentTime = local.currentTime
             it.msgSizeEstimator = local.msgSizeEstimator
         }
+    }
+
+    private class DummyConnection(val remoteAddr: Multiaddr, isInitiator: Boolean) : ConnectionOverNetty(
+        DummyChannel(),
+        NullTransport(),
+        isInitiator
+    ) {
+        override fun remoteAddress() = remoteAddr
     }
 }
 
