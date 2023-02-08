@@ -4,10 +4,15 @@ import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.toByteBuf
 import io.libp2p.pubsub.gossip.GossipRouter
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
-import io.libp2p.simulate.gossip.GossipSimPeer
+import io.libp2p.simulate.AnotherBetterBandwidthTracker
+import io.libp2p.simulate.Bandwidth
+import io.libp2p.simulate.gossip.*
+import io.libp2p.simulate.logging
+import io.libp2p.simulate.stats.StatsFactory
+import io.libp2p.simulate.topology.CustomTopology
+import io.libp2p.tools.*
 import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl
 import io.libp2p.tools.schedulers.TimeControllerImpl
-import io.libp2p.tools.transpose
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 import java.util.Random
@@ -70,5 +75,108 @@ class GossipSimTest {
 
         val t3 = t2.transpose()
         Assertions.assertEquals(t1, t3)
+    }
+
+    @Test
+    fun testMinimal() {
+        testMinimalImpl(false)
+//        testMinimalImpl(true)
+    }
+
+    fun testMinimalImpl(decoupled: Boolean) {
+//        val decoupled = false
+
+        val blockSize = 128 * 1024
+        val blobCount = 4
+        val blobSize = 128 * 1024
+
+        val blockTopic = Topic(BlocksTopic)
+        val blobTopic = Topic("/eth2/00000000/beacon_blob/ssz_snappy")
+        val simConfig = GossipSimConfig(
+            totalPeers = 4,
+            topics = listOf(blockTopic, blobTopic),
+//            topology = RandomNPeers(10),
+            topology = CustomTopology(
+                listOf(
+                    0 to 1,
+                    0 to 2,
+                    0 to 3,
+//                    0 to 4,
+//                    0 to 5,
+//                    0 to 6,
+//                    0 to 7,
+//                    0 to 8,
+//                    0 to 9,
+//                    0 to 10,
+                )
+            ),
+            gossipValidationDelay = 10.millis,
+            bandwidthGenerator = { peer ->
+                PeerBandwidth(
+                    AnotherBetterBandwidthTracker(Bandwidth(1_000_000), peer.simExecutor, peer.currentTime),
+//                        .logging { log("${peer.currentTime()}: [${peer.name}] <==   $it") }
+                    AnotherBetterBandwidthTracker(
+                        Bandwidth(1_000_000),
+                        peer.simExecutor,
+                        peer.currentTime,
+                        peer.name
+                    )
+                        .logging { log("${peer.currentTime()}: [${peer.name}]   ==> $it") },
+                )
+            },
+            startRandomSeed = 2
+        )
+
+        val gossipParams = Eth2DefaultGossipParams
+            .copy(
+                D = 3,
+                DLow = 1,
+                DHigh = 3,
+                DOut = 0,
+                heartbeatInterval = 1.minutes
+            )
+        val gossipScoreParams = Eth2DefaultScoreParams
+        val gossipRouterCtor = { _: Int ->
+            GossipRouterBuilder().also {
+                it.params = gossipParams
+                it.scoreParams = gossipScoreParams
+            }
+        }
+
+        val simNetwork = GossipSimNetwork(simConfig, gossipRouterCtor)
+        println("Creating peers...")
+        simNetwork.createAllPeers()
+        println("Connecting peers...")
+        simNetwork.connectAllPeers()
+
+        println("Creating simulation...")
+        val simulation = GossipSimulation(simConfig, simNetwork)
+
+        log("Forwarding heartbeat time...")
+        simulation.forwardTime(65.seconds)
+
+        simulation.clearAllMessages()
+        simulation.network.network.resetStats()
+
+        println("Sending message ")
+        if (decoupled) {
+            simulation.publishMessage(0, blockSize, blockTopic)
+            simulation.publishMessage(0, blobSize * blobCount, blobTopic)
+        } else {
+            simulation.publishMessage(0, blockSize + blobSize * blobCount, blockTopic)
+        }
+        simulation.forwardTime(1.minutes)
+
+
+        println("Gathering results...")
+        val results = simulation.gatherMessageResults()
+
+        val msgDelayStats = StatsFactory.DEFAULT.createStats("msgDelay").also {
+            it += results.entries.flatMap { e ->
+                e.value.map { it.receivedTime - e.key.sentTime }
+            }
+        }
+        println("Delivery stats: $msgDelayStats")
+        println("Network stats: " + simNetwork.network.networkStats)
     }
 }
