@@ -1,6 +1,7 @@
 package io.libp2p.simulate.stream
 
 import io.libp2p.core.PeerId
+import io.libp2p.core.Stream
 import io.libp2p.core.StreamHandler
 import io.libp2p.core.crypto.KEY_TYPE
 import io.libp2p.core.crypto.generateKeyPair
@@ -55,80 +56,18 @@ abstract class StreamSimPeer<TProtocolController>(
     override fun connectImpl(other: SimPeer): CompletableFuture<SimConnection> {
         other as StreamSimPeer<*>
 
-        val simConnection = if (isSemiDuplex) {
-            val streams = connectSemiDuplex(other, wireLogs)
-            val conn = StreamSimConnection(this, other, streams.first, streams.second)
-            streams.first.connection = conn
-            streams.second.connection = conn
-            conn
-        } else {
-            val stream = connect(other, wireLogs, SimStream.StreamInitiator.CONNECTION_DIALER)
-            val conn = StreamSimConnection(this, other, stream)
-            stream.connection = conn
-            conn
+        val conn = StreamSimConnection(this, other)
+        conn.createStream(SimStream.StreamInitiator.CONNECTION_DIALER, streamProtocol, wireLogs)
+        if (isSemiDuplex) {
+            conn.createStream(SimStream.StreamInitiator.CONNECTION_LISTENER, streamProtocol, wireLogs)
         }
-        return CompletableFuture.completedFuture(simConnection)
+        return CompletableFuture.completedFuture(conn)
     }
 
-    private fun connect(
-        another: StreamSimPeer<*>,
-        wireLogs: LogLevel? = null,
-        streamInitiator: SimStream.StreamInitiator
-    ): StreamSimStream {
-
-        val thisChannel = newChannel("$name=>${another.name}", another, wireLogs, true)
-        val anotherChannel = another.newChannel("${another.name}=>$name", this, wireLogs, false)
-        return StreamSimStream.interConnect(thisChannel, anotherChannel, streamInitiator, streamProtocol)
-    }
-
-    private fun connectSemiDuplex(
-        another: StreamSimPeer<*>,
-        wireLogs: LogLevel? = null
-    ): Pair<StreamSimStream, StreamSimStream> {
-        return connect(another, wireLogs, SimStream.StreamInitiator.CONNECTION_DIALER) to
-            another.connect(this, wireLogs, SimStream.StreamInitiator.CONNECTION_LISTENER)
-    }
-
-    private fun newChannel(
-        channelName: String,
-        remote: StreamSimPeer<*>,
-        wireLogs: LogLevel? = null,
-        initiator: Boolean
-    ): StreamSimChannel {
-
-        val connection = object : ConnectionOverNetty(
-            DummyChannel(),
-            NullTransport(),
-            initiator
-        ) {
-            override fun remoteAddress(): Multiaddr {
-                return remote.address
+    fun simHandleStream(stream: Stream): CompletableFuture<TProtocolController> =
+        handleStream(stream)
+            .thenApply {
+                protocolController.complete(it)
+                it
             }
-        }
-
-        connection.setSecureSession(
-            SecureChannel.Session(
-                PeerId.fromPubKey(keyPair.second),
-                PeerId.fromPubKey(remote.keyPair.second),
-                remote.keyPair.second
-            )
-        )
-
-        return StreamSimChannel(
-            channelName,
-            remote.inboundBandwidth,
-            outboundBandwidth,
-            nettyInitializer {
-                val ch = it.channel
-                wireLogs?.also { ch.pipeline().addFirst(LoggingHandler(channelName, it)) }
-                val stream = SimStreamImpl(connection, ch, initiator)
-                ch.attr(PROTOCOL).get().complete(streamProtocol)
-                handleStream(stream).forward(protocolController)
-            }
-        ).also {
-            it.executor = simExecutor
-            it.currentTime = currentTime
-            it.msgSizeEstimator = msgSizeEstimator
-        }
-    }
 }
