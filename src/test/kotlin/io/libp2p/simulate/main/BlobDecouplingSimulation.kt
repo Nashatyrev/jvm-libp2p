@@ -71,16 +71,21 @@ class BlobDecouplingSimulation {
 
 //    val blockSize = 256 * (1 shl 10)
 //    val blobSize = 512 * (1 shl 10)
-    val blockSize = 1_100_000
-    val blobSize = 900_000
+
+    val blockSize = 128 * 1024
+    val blobCount = 4
+    val blobSize = 128 * 1024
     val randomSeed = 2L
     val rnd = Random(randomSeed)
 
     val blockTopic = Topic(BlocksTopic)
-    val blobTopic = Topic("/eth2/00000000/beacon_blob/ssz_snappy")
+    val blobTopics = (0 until blobCount)
+        .map {
+            Topic("/eth2/00000000/beacon_blob_$it/ssz_snappy")
+        }
     val simConfig = GossipSimConfig(
         totalPeers = nodeCount,
-        topics = listOf(blockTopic, blobTopic),
+        topics = listOf(blockTopic) + blobTopics,
         topology = RandomNPeers(nodePeerCount),
         gossipValidationDelay = messageValidationDelay,
         bandwidthGenerator = {
@@ -94,6 +99,7 @@ class BlobDecouplingSimulation {
     val gossipParams = Eth2DefaultGossipParams
         .copy(
 //            heartbeatInterval = 1.minutes
+            floodPublish = false
         )
     val gossipScoreParams = Eth2DefaultScoreParams
     val gossipRouterCtor = { _: Int ->
@@ -150,14 +156,22 @@ class BlobDecouplingSimulation {
         println("Network stats: " + simNetwork.network.networkStats)
     }
 
+    fun allPublishedDelivered(msgCount: Int, sendingPeer: Int) =
+        (simNetwork.peers - sendingPeer).values.all { peer ->
+            peer.allMessages.size >= msgCount
+        }
+
+
     @Test
     fun testCoupled() {
         for (i in 0 until messageCount) {
             log("Sending message $i")
-            simulation.publishMessage(i, blockSize + blobSize, blockTopic)
+            simulation.publishMessage(i, blockSize + blobSize * blobCount, blockTopic)
             for (j in 0..59) {
-                log("Forwarding time...")
+                log("Forwarding time $j...")
                 simulation.forwardTime(1.seconds)
+                if (allPublishedDelivered(1, i))
+                    break
             }
         }
 
@@ -165,15 +179,37 @@ class BlobDecouplingSimulation {
     }
 
     @Test
-    fun testDecoupled() {
+    fun testOnlyBlockDecoupled() {
 
         for (i in 0 until messageCount) {
             log("Sending message $i")
             simulation.publishMessage(i, blockSize, blockTopic)
-            simulation.publishMessage(i, blobSize, blobTopic)
+            simulation.publishMessage(i, blobSize * blobCount, blobTopics[0])
             for (j in 0..59) {
-                log("Forwarding time...")
+                log("Forwarding time $j ...")
                 simulation.forwardTime(1.seconds)
+                if (allPublishedDelivered(2, i))
+                    break
+            }
+        }
+
+        printResults()
+    }
+
+    @Test
+    fun testAllDecoupled() {
+
+        for (i in 0 until messageCount) {
+            log("Sending message $i")
+            simulation.publishMessage(i, blockSize, blockTopic)
+            (0 until blobCount).forEach {
+                simulation.publishMessage(i, blobSize, blobTopics[it])
+            }
+            for (j in 0..59) {
+                log("Forwarding time $j ...")
+                simulation.forwardTime(1.seconds)
+                if (allPublishedDelivered(blobCount + 1, i))
+                    break
             }
         }
 
@@ -260,9 +296,9 @@ class BlobDecouplingSimulation {
         println("Sending message ")
         if (decoupled) {
             simulation.publishMessage(0, blockSize, blockTopic)
-            simulation.publishMessage(0, blobSize, blobTopic)
+            simulation.publishMessage(0, blobSize * blobCount, blobTopic)
         } else {
-            simulation.publishMessage(0, blockSize + blobSize, blockTopic)
+            simulation.publishMessage(0, blockSize + blobSize * blobCount, blockTopic)
         }
         simulation.forwardTime(1.minutes)
 
