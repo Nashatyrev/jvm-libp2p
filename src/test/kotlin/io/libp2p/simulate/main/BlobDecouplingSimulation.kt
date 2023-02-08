@@ -13,6 +13,7 @@ import io.libp2p.tools.log
 import io.libp2p.tools.millis
 import io.libp2p.tools.minutes
 import io.libp2p.tools.seconds
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
@@ -51,10 +52,6 @@ class BlobDecouplingSimulation {
             otherPeerBands.next()
         }
         PeerBandwidthValue(inOutBand, inOutBand)
-//        PeerBandwidthValue(
-//            Bandwidth.mbitsPerSec(100),
-//            Bandwidth.mbitsPerSec(100)
-//        )
     }
     val bandwidthFactory: (PeerBandwidthValue, GossipSimPeer) -> PeerBandwidth = { band, peer ->
         PeerBandwidth(
@@ -68,9 +65,6 @@ class BlobDecouplingSimulation {
     val nodeCount = 1000
     val nodePeerCount = 30
     val messageCount = 1
-
-//    val blockSize = 256 * (1 shl 10)
-//    val blobSize = 512 * (1 shl 10)
 
     val blockSize = 128 * 1024
     val blobCount = 4
@@ -122,6 +116,9 @@ class BlobDecouplingSimulation {
         GossipSimulation(simConfig, simNetwork).also { simulation ->
             log("Forwarding heartbeat time...")
             simulation.forwardTime(gossipParams.heartbeatInterval)
+            log("Cleaning warmup messages and network stats...")
+            simulation.clearAllMessages()
+            simulation.network.network.resetStats()
         }
     }
 
@@ -216,6 +213,7 @@ class BlobDecouplingSimulation {
         printResults()
     }
 
+    @Disabled
     @Test
     fun testMinimal() {
 //        testMinimalImpl(false)

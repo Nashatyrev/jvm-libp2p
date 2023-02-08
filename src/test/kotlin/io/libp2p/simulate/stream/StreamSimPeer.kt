@@ -27,8 +27,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.atomic.AtomicLong
 
-private val counter = AtomicLong()
-
 abstract class StreamSimPeer<TProtocolController>(
     val isSemiDuplex: Boolean = false,
     val streamProtocol: String
