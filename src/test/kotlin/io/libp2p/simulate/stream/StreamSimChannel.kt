@@ -1,11 +1,8 @@
 package io.libp2p.simulate.stream
 
 import io.libp2p.etc.types.lazyVar
-import io.libp2p.etc.types.toVoidCompletableFuture
-import io.libp2p.simulate.BandwidthDelayer
+import io.libp2p.simulate.*
 import io.libp2p.simulate.util.GeneralSizeEstimator
-import io.libp2p.simulate.MessageDelayer
-import io.libp2p.simulate.sequential
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelHandler
@@ -15,8 +12,6 @@ import io.netty.channel.DefaultChannelPromise
 import io.netty.channel.EventLoop
 import io.netty.channel.embedded.EmbeddedChannel
 import io.netty.util.internal.ObjectUtil
-import org.apache.logging.log4j.LogManager
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 
@@ -116,30 +111,6 @@ class StreamSimChannel(
                 channel.unsafe().register(this, promise)
                 return promise
             }
-        }
-    }
-
-    companion object {
-        fun interConnect(ch1: StreamSimChannel, ch2: StreamSimChannel): Connection {
-            ch1.connect(ch2)
-            ch2.connect(ch1)
-            return Connection(ch1, ch2)
-        }
-
-        private val logger = LogManager.getLogger(StreamSimChannel::class.java)
-    }
-
-    class Connection(val ch1: StreamSimChannel, val ch2: StreamSimChannel) {
-
-        fun setLatency(latency: MessageDelayer) {
-            ch1.setLatency(latency)
-            ch2.setLatency(latency)
-        }
-        fun disconnect(): CompletableFuture<Unit> {
-            return CompletableFuture.allOf(
-                ch1.close().toVoidCompletableFuture(),
-                ch2.close().toVoidCompletableFuture()
-            ).thenApply { Unit }
         }
     }
 }

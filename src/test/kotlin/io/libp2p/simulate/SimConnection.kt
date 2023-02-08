@@ -8,6 +8,9 @@ interface SimConnection {
 
     val dialer: SimPeer
     val listener: SimPeer
+
+    val streams: List<SimStream>
+
     val closed: CompletableFuture<Unit>
     val dialerStat: ConnectionStat
     val listenerStat: ConnectionStat

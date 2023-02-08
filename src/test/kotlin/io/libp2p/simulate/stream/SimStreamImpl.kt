@@ -8,7 +8,7 @@ import io.libp2p.transport.implementation.P2PChannelOverNetty
 import io.netty.channel.Channel
 import java.util.concurrent.CompletableFuture
 
-class SimStream(
+class SimStreamImpl(
     override val connection: Connection,
     ch: Channel,
     initiator: Boolean

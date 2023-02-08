@@ -1,10 +1,7 @@
 package io.libp2p.simulate.wire
 
 import io.libp2p.core.Connection
-import io.libp2p.simulate.ConnectionStat
-import io.libp2p.simulate.MessageDelayer
-import io.libp2p.simulate.SimConnection
-import io.libp2p.simulate.SimPeer
+import io.libp2p.simulate.*
 
 class WireSimConnection(
     override val dialer: SimPeer,
@@ -18,6 +15,8 @@ class WireSimConnection(
         conn.close()
     }
 
+    override val streams: List<SimStream>
+        get() = TODO("Not yet implemented")
     override val dialerStat: ConnectionStat
         get() = TODO("not implemented")
     override val listenerStat: ConnectionStat
