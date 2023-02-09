@@ -6,7 +6,6 @@ import io.libp2p.etc.types.toVoidCompletableFuture
 import io.libp2p.etc.util.netty.nettyInitializer
 import io.libp2p.simulate.MessageDelayer
 import io.libp2p.simulate.SimStream
-import io.libp2p.simulate.SimChannel
 import io.netty.handler.logging.LogLevel
 import io.netty.handler.logging.LoggingHandler
 import java.util.concurrent.CompletableFuture
@@ -18,8 +17,8 @@ class StreamSimStream(
     wireLogs: LogLevel? = null
 ) : SimStream {
 
-    val fromChannel: StreamNettyChannel
-    val toChannel: StreamNettyChannel
+    override val initiatorChannel: StreamNettyChannel
+    override val acceptorChannel: StreamNettyChannel
 
     init {
         val from =
@@ -37,13 +36,13 @@ class StreamSimStream(
         val fromChannelName = "$fromInitiatorSign${from.name}=>$toInitiatorSign${to.name}"
         val toChannelName = "$toInitiatorSign${to.name}=>$fromInitiatorSign${from.name}"
 
-        fromChannel =
+        initiatorChannel =
             newChannel(fromChannelName, from, to, streamProtocol, wireLogs, fromIsInitiator, true)
-        toChannel =
+        acceptorChannel =
             newChannel(toChannelName, to, from, streamProtocol, wireLogs, toIsInitiator, false)
 
-        fromChannel.connect(toChannel)
-        toChannel.connect(fromChannel)
+        initiatorChannel.connect(acceptorChannel)
+        acceptorChannel.connect(initiatorChannel)
     }
 
     private fun newChannel(
@@ -58,6 +57,8 @@ class StreamSimStream(
 
         return StreamNettyChannel(
             channelName,
+            this,
+            streamInitiator,
             remote.inboundBandwidth,
             local.outboundBandwidth,
             nettyInitializer {
@@ -82,18 +83,13 @@ class StreamSimStream(
     }
 
     fun setLatency(latency: MessageDelayer) {
-        fromChannel.setLatency(latency)
-        toChannel.setLatency(latency)
+        initiatorChannel.setLatency(latency)
+        acceptorChannel.setLatency(latency)
     }
     fun disconnect(): CompletableFuture<Unit> {
         return CompletableFuture.allOf(
-            fromChannel.close().toVoidCompletableFuture(),
-            toChannel.close().toVoidCompletableFuture()
+            initiatorChannel.close().toVoidCompletableFuture(),
+            acceptorChannel.close().toVoidCompletableFuture()
         ).thenApply { }
     }
-
-    override val initiatorChannel: SimChannel
-        get() = TODO("Not yet implemented")
-    override val acceptorChannel: SimChannel
-        get() = TODO("Not yet implemented")
 }

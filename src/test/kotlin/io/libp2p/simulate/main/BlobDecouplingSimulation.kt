@@ -175,7 +175,7 @@ class BlobDecouplingSimulation(
             logger("Sending message $i")
             simulation.publishMessage(i, blockSize + blobSize * blobCount, blockTopic)
             for (j in 0..59) {
-                logger("Forwarding time $j...")
+//                logger("Forwarding time $j...")
                 simulation.forwardTime(1.seconds)
                 if (allPublishedDelivered(1, i))
                     break
@@ -261,13 +261,13 @@ fun main() {
 //                logger = {},
                 nodeCount = 1000,
                 otherPeerBands = band,
-                floodPublish = true,
+                floodPublish = false,
 //                randomSeed = 2
             )
 
         createSimulation().also {
             it.testCoupled()
-            println("$name\tCoupled\t${getResults(it)}\n" + getRangedDelays(it))
+            println("$name\tCoupled\t${getResults(it)}\n" /*+ getRangedDelays(it)*/)
         }
 //        createSimulation().also {
 //            it.testOnlyBlockDecoupled()
@@ -275,7 +275,7 @@ fun main() {
 //        }
         createSimulation().also {
             it.testAllDecoupled()
-            println("$name\tDecoupled\t${getResults(it)}\n" + getRangedDelays(it))
+            println("$name\tDecoupled\t${getResults(it)}\n" /*+ getRangedDelays(it)*/)
         }
     }
 }

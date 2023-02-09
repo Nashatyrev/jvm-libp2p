@@ -1,12 +1,9 @@
 package io.libp2p.simulate.stream
 
 import io.libp2p.core.multistream.ProtocolId
-import io.libp2p.etc.PROTOCOL
-import io.libp2p.etc.util.netty.nettyInitializer
 import io.libp2p.simulate.*
 import io.libp2p.simulate.stats.StatsFactory
 import io.netty.handler.logging.LogLevel
-import io.netty.handler.logging.LoggingHandler
 import java.util.concurrent.CompletableFuture
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -44,11 +41,11 @@ class StreamSimConnection(
         streamsMut += stream
 
         if (streamInitiator == SimStream.StreamInitiator.CONNECTION_DIALER) {
-            stream.fromChannel.msgSizeHandler = { dialerStatsS.addValue(it.toDouble()) }
-            stream.toChannel.msgSizeHandler = { listenerStatsS.addValue(it.toDouble()) }
+            stream.initiatorChannel.msgSizeHandler = { dialerStatsS.addValue(it.toDouble()) }
+            stream.acceptorChannel.msgSizeHandler = { listenerStatsS.addValue(it.toDouble()) }
         } else {
-            stream.toChannel.msgSizeHandler = { listenerStatsS.addValue(it.toDouble()) }
-            stream.fromChannel.msgSizeHandler = { dialerStatsS.addValue(it.toDouble()) }
+            stream.acceptorChannel.msgSizeHandler = { listenerStatsS.addValue(it.toDouble()) }
+            stream.initiatorChannel.msgSizeHandler = { dialerStatsS.addValue(it.toDouble()) }
         }
         return stream
     }

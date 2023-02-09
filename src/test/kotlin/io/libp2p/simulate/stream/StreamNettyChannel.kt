@@ -17,14 +17,18 @@ import java.util.concurrent.ScheduledExecutorService
 
 class StreamNettyChannel(
     id: String,
+    override val stream: StreamSimStream,
+    override val isStreamInitiator: Boolean,
     val inboundBandwidth: BandwidthDelayer,
     val outboundBandwidth: BandwidthDelayer,
     vararg handlers: ChannelHandler?
 ) :
-    EmbeddedChannel(
+    SimChannel, EmbeddedChannel(
         SimChannelId(id),
         *handlers
     ) {
+
+    override val msgVisitors: MutableList<SimChannelMessageVisitor> = mutableListOf()
 
     var link: StreamNettyChannel? = null
     var executor: ScheduledExecutorService by lazyVar { Executors.newSingleThreadScheduledExecutor() }
@@ -52,6 +56,16 @@ class StreamNettyChannel(
         link = other
     }
 
+    override fun writeInbound(vararg msgs: Any): Boolean {
+        msgVisitors.forEach { visitor ->
+            msgs.forEach { msg ->
+                visitor.onInbound(msg)
+            }
+        }
+
+        return super.writeInbound(*msgs)
+    }
+
     @Synchronized
     override fun handleOutboundMessage(msg: Any) {
         if (link != null) {
@@ -62,6 +76,8 @@ class StreamNettyChannel(
     }
 
     private fun send(other: StreamNettyChannel, msg: Any) {
+        msgVisitors.forEach { it.onOutbound(msg) }
+
         val size = msgSizeEstimator(msg)
         val delay = msgDelayer.delay(size)
 
