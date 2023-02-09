@@ -1,6 +1,7 @@
 package io.libp2p.simulate.stream
 
 import io.libp2p.core.PeerId
+import io.libp2p.core.crypto.PubKey
 import io.libp2p.core.multiformats.Multiaddr
 import io.libp2p.core.multistream.ProtocolId
 import io.libp2p.core.security.SecureChannel
@@ -54,12 +55,20 @@ class StreamSimConnection(
             else listener
 
 
-        val fromSideChannel = newChannel("${from.name}=>${to.name}",
-            from, to, streamProtocol, wireLogs, from === dialer, true)
-        val toSideChannel = newChannel("${to.name}=>${from.name}",
-            to, from, streamProtocol, wireLogs, to === dialer, false)
+        val fromIsInitiator = from === dialer
+        val toIsInitiator = !fromIsInitiator
+        val fromInitiatorSign = if (fromIsInitiator) "*" else ""
+        val toInitiatorSign = if (toIsInitiator) "*" else ""
+        val fromChannelName = "$fromInitiatorSign${from.name}=>$toInitiatorSign${to.name}"
+        val toChannelName = "$toInitiatorSign${to.name}=>$fromInitiatorSign${from.name}"
 
-        val stream = StreamSimStream.interConnect(toSideChannel, fromSideChannel, streamInitiator, streamProtocol)
+        val fromSideChannel =
+            newChannel(fromChannelName, from, to, streamProtocol, wireLogs, fromIsInitiator, true)
+        val toSideChannel =
+            newChannel(toChannelName, to, from, streamProtocol, wireLogs, toIsInitiator, false)
+
+        val stream =
+            StreamSimStream.interConnect(toSideChannel, fromSideChannel, streamInitiator, streamProtocol)
         stream.connection = this
         streamsMut += stream
 
@@ -81,27 +90,19 @@ class StreamSimConnection(
         wireLogs: LogLevel? = null,
         connectionInitiator: Boolean,
         streamInitiator: Boolean
-    ): StreamSimChannel {
+    ): StreamNettyChannel {
 
-        val connection =  DummyConnection(remote.address, connectionInitiator)
-
-        connection.setSecureSession(
-            SecureChannel.Session(
-                PeerId.fromPubKey(local.keyPair.second),
-                PeerId.fromPubKey(remote.keyPair.second),
-                remote.keyPair.second
-            )
-        )
-
-        return StreamSimChannel(
+        return StreamNettyChannel(
             channelName,
             remote.inboundBandwidth,
             local.outboundBandwidth,
             nettyInitializer {
-                val ch = it.channel
-                wireLogs?.also { ch.pipeline().addFirst(LoggingHandler(channelName, it)) }
-                val stream = Libp2pStreamImpl(connection, ch, streamInitiator)
-                ch.attr(PROTOCOL).get().complete(streamProtocol)
+                val channel = it.channel
+                wireLogs?.also { channel.pipeline().addFirst(LoggingHandler(channelName, it)) }
+                val connection =
+                    DummyConnection(remote.address, connectionInitiator, local.keyPair.second, remote.keyPair.second)
+                val stream = Libp2pStreamImpl(connection, channel, streamInitiator)
+                channel.attr(PROTOCOL).get().complete(streamProtocol)
                 local.simHandleStream(stream)
             }
         ).also {
@@ -111,11 +112,27 @@ class StreamSimConnection(
         }
     }
 
-    private class DummyConnection(val remoteAddr: Multiaddr, isInitiator: Boolean) : ConnectionOverNetty(
+    private class DummyConnection(
+        val remoteAddr:
+        Multiaddr,
+        isInitiator: Boolean,
+        localPubkey: PubKey,
+        remotePubkey: PubKey,
+    ) : ConnectionOverNetty(
         DummyChannel(),
         NullTransport(),
         isInitiator
     ) {
+        init {
+            setSecureSession(
+                SecureChannel.Session(
+                    PeerId.fromPubKey(localPubkey),
+                    PeerId.fromPubKey(remotePubkey),
+                    remotePubkey
+                )
+            )
+        }
+
         override fun remoteAddress() = remoteAddr
     }
 }

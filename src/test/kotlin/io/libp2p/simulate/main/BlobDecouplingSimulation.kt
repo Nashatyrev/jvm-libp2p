@@ -231,7 +231,7 @@ fun main() {
 
     val bandwidths = bandwidthDistributions.entries.toList()
         .let {
-            listOf(it[1], it[3])
+            listOf(it[0], it[2])
         }.toMap()
 
     bandwidths.forEach { (name, band) ->
@@ -261,7 +261,7 @@ fun main() {
 //                logger = {},
                 nodeCount = 1000,
                 otherPeerBands = band,
-                floodPublish = false,
+                floodPublish = true,
 //                randomSeed = 2
             )
 

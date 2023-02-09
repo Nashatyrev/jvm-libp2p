@@ -9,8 +9,8 @@ import io.libp2p.simulate.SimChannel
 import java.util.concurrent.CompletableFuture
 
 class StreamSimStream(
-    val ch1: StreamSimChannel,
-    val ch2: StreamSimChannel,
+    val ch1: StreamNettyChannel,
+    val ch2: StreamNettyChannel,
     override val streamInitiator: SimStream.StreamInitiator,
     override val streamProtocol: ProtocolId
 ) : SimStream {
@@ -28,16 +28,16 @@ class StreamSimStream(
         ).thenApply { }
     }
 
-    override val initiatorOutboundChannel: SimChannel
+    override val initiatorChannel: SimChannel
         get() = TODO("Not yet implemented")
-    override val initiatorInboundChannel: SimChannel
+    override val acceptorChannel: SimChannel
         get() = TODO("Not yet implemented")
 
 
     companion object {
         fun interConnect(
-            ch1: StreamSimChannel,
-            ch2: StreamSimChannel,
+            ch1: StreamNettyChannel,
+            ch2: StreamNettyChannel,
             streamInitiator: SimStream.StreamInitiator,
             streamProtocol: ProtocolId
         ): StreamSimStream {

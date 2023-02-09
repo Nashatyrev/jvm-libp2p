@@ -10,12 +10,30 @@ interface SimStream {
     val streamInitiator: StreamInitiator
     val streamProtocol: ProtocolId
 
-    val initiatorOutboundChannel: SimChannel
-    val initiatorInboundChannel: SimChannel
+    val streamInitiatorPeer get() =
+        when(streamInitiator) {
+            StreamInitiator.CONNECTION_DIALER -> connection.dialer
+            StreamInitiator.CONNECTION_LISTENER -> connection.listener
+        }
+    val streamAcceptorPeer get() =
+        when(streamInitiator) {
+            StreamInitiator.CONNECTION_DIALER -> connection.listener
+            StreamInitiator.CONNECTION_LISTENER -> connection.dialer
+        }
+
+    val initiatorChannel: SimChannel
+    val acceptorChannel: SimChannel
 }
 
 interface SimChannel {
 
     val stream: SimStream
-    var msgHandler: ((SimChannel, message: Any) -> Unit)?
+    val isStreamInitiator: Boolean
+
+    val msgHandlers: MutableList<SimChannelMessageHandler>
+}
+
+interface SimChannelMessageHandler {
+    fun onInbound(message: Any)
+    fun onOutbound(message: Any)
 }

@@ -15,7 +15,7 @@ import io.netty.util.internal.ObjectUtil
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 
-class StreamSimChannel(
+class StreamNettyChannel(
     id: String,
     val inboundBandwidth: BandwidthDelayer,
     val outboundBandwidth: BandwidthDelayer,
@@ -26,7 +26,7 @@ class StreamSimChannel(
         *handlers
     ) {
 
-    var link: StreamSimChannel? = null
+    var link: StreamNettyChannel? = null
     var executor: ScheduledExecutorService by lazyVar { Executors.newSingleThreadScheduledExecutor() }
     var currentTime: () -> Long = System::currentTimeMillis
     var msgSizeEstimator = GeneralSizeEstimator
@@ -45,7 +45,7 @@ class StreamSimChannel(
     }
 
     @Synchronized
-    fun connect(other: StreamSimChannel) {
+    fun connect(other: StreamNettyChannel) {
         while (outboundMessages().isNotEmpty()) {
             send(other, outboundMessages().poll())
         }
@@ -61,7 +61,7 @@ class StreamSimChannel(
         }
     }
 
-    private fun send(other: StreamSimChannel, msg: Any) {
+    private fun send(other: StreamNettyChannel, msg: Any) {
         val size = msgSizeEstimator(msg)
         val delay = msgDelayer.delay(size)
 
