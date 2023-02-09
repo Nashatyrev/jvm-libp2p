@@ -100,7 +100,7 @@ class StreamSimConnection(
             nettyInitializer {
                 val ch = it.channel
                 wireLogs?.also { ch.pipeline().addFirst(LoggingHandler(channelName, it)) }
-                val stream = SimStreamImpl(connection, ch, streamInitiator)
+                val stream = Libp2pStreamImpl(connection, ch, streamInitiator)
                 ch.attr(PROTOCOL).get().complete(streamProtocol)
                 local.simHandleStream(stream)
             }
