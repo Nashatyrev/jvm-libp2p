@@ -30,10 +30,16 @@ interface SimChannel {
     val stream: SimStream
     val isStreamInitiator: Boolean
 
-    val msgHandlers: MutableList<SimChannelMessageHandler>
+    val peer get() =
+        when {
+            isStreamInitiator -> stream.streamInitiatorPeer
+            else -> stream.streamAcceptorPeer
+        }
+
+    val msgVisitors: MutableList<SimChannelMessageVisitor>
 }
 
-interface SimChannelMessageHandler {
+interface SimChannelMessageVisitor {
     fun onInbound(message: Any)
     fun onOutbound(message: Any)
 }
