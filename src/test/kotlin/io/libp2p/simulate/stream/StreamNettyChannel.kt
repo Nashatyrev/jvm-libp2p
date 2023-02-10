@@ -40,8 +40,6 @@ class StreamNettyChannel(
             .sequential(executor)
     }
 
-    var msgSizeHandler: (Int) -> Unit = {}
-
     fun setLatency(latency: MessageDelayer) {
         msgDelayer = BandwidthDelayer
             .createMessageDelayer(outboundBandwidth, latency, inboundBandwidth)
@@ -83,7 +81,6 @@ class StreamNettyChannel(
 
         val sendNow: () -> Unit = {
             other.writeInbound(msg)
-            msgSizeHandler(size.toInt())
         }
 
         delay.thenApply {

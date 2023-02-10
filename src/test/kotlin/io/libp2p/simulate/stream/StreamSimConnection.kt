@@ -25,11 +25,6 @@ class StreamSimConnection(
         ).thenAccept { closed.complete(Unit) }
     }
 
-    val dialerStatsS = StatsFactory.DEFAULT.createStats()
-    val listenerStatsS = StatsFactory.DEFAULT.createStats()
-    override val dialerStat = ConnectionStat(dialerStatsS)
-    override val listenerStat = ConnectionStat(listenerStatsS)
-
     override var connectionLatency = MessageDelayer.NO_DELAYER
         set(value) {
             streams.forEach { it.setLatency(value) }
@@ -40,13 +35,6 @@ class StreamSimConnection(
         val stream = StreamSimStream(this, streamInitiator, streamProtocol, wireLogs)
         streamsMut += stream
 
-        if (streamInitiator == SimStream.StreamInitiator.CONNECTION_DIALER) {
-            stream.initiatorChannel.msgSizeHandler = { dialerStatsS.addValue(it.toDouble()) }
-            stream.acceptorChannel.msgSizeHandler = { listenerStatsS.addValue(it.toDouble()) }
-        } else {
-            stream.acceptorChannel.msgSizeHandler = { listenerStatsS.addValue(it.toDouble()) }
-            stream.initiatorChannel.msgSizeHandler = { dialerStatsS.addValue(it.toDouble()) }
-        }
         return stream
     }
 }

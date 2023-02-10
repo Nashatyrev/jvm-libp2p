@@ -12,8 +12,6 @@ interface SimConnection {
     val streams: List<SimStream>
 
     val closed: CompletableFuture<Unit>
-    val dialerStat: ConnectionStat
-    val listenerStat: ConnectionStat
 
     var connectionLatency: MessageDelayer
 
@@ -22,8 +20,3 @@ interface SimConnection {
     fun isClosed() = closed.isDone
 
 }
-
-data class ConnectionStat(
-    val msgSize: WritableStats = StatsFactory.DUMMY,
-    val msgLatency: WritableStats = StatsFactory.DUMMY
-)

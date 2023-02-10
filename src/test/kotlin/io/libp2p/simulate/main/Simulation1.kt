@@ -4,14 +4,15 @@ import io.libp2p.core.pubsub.RESULT_INVALID
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.toByteBuf
 import io.libp2p.pubsub.gossip.GossipParams
-import io.libp2p.simulate.NetworkStats
 import io.libp2p.simulate.RandomDistribution
 import io.libp2p.simulate.Topology
 import io.libp2p.simulate.gossip.GossipSimPeer
 import io.libp2p.simulate.gossip.averagePubSubMsgSizeEstimator
+import io.libp2p.simulate.stats.GlobalNetworkStatsCollector
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.stats.WritableStats
 import io.libp2p.simulate.topology.RandomNPeers
+import io.libp2p.simulate.util.GeneralSizeEstimator
 import io.libp2p.tools.formatTable
 import io.libp2p.tools.get
 import io.libp2p.tools.millis
@@ -26,10 +27,25 @@ import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import java.lang.Integer.max
 import java.time.Duration
-import java.util.Random
+import java.util.*
 import java.util.concurrent.Callable
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import kotlin.collections.List
+import kotlin.collections.asSequence
+import kotlin.collections.distinct
+import kotlin.collections.emptyList
+import kotlin.collections.filter
+import kotlin.collections.forEach
+import kotlin.collections.joinToString
+import kotlin.collections.listOf
+import kotlin.collections.map
+import kotlin.collections.mapOf
+import kotlin.collections.mapValues
+import kotlin.collections.minus
+import kotlin.collections.mutableListOf
+import kotlin.collections.plus
+import kotlin.collections.plusAssign
 
 class Simulation1 {
 
@@ -417,13 +433,25 @@ class Simulation1 {
 
             println("Connecting peers")
             val net = cfg.topology.connect(peers)
+            val networkStatsCollector = GlobalNetworkStatsCollector(net, GeneralSizeEstimator)
+
+            data class NetworkStats(
+                val msgCount: Long,
+                val traffic: Long
+            ) {
+                operator fun minus(other: NetworkStats) =
+                    NetworkStats(msgCount - other.msgCount, traffic - other.traffic)
+                operator fun plus(other: NetworkStats) =
+                    NetworkStats(msgCount + other.msgCount, traffic + other.traffic)
+            }
+            fun getNetStats() = NetworkStats(networkStatsCollector.msgCount, networkStatsCollector.msgsSize)
 
             println("Some warm up")
             timeController.addTime(opt.warmUpDelay)
 
-            var lastNS = net.networkStats
+            var lastNS = getNetStats()
             println("Initial stat: $lastNS")
-            net.resetStats()
+            networkStatsCollector.msgSizeStats.reset()
 
             for (i in 0 until opt.sentMessageCount) {
                 println("Sending message #$i...")
@@ -436,7 +464,7 @@ class Simulation1 {
                 if (opt.isZeroHeartbeatsEnabled()) {
                     timeController.addTime(opt.zeroHeartbeatsDelay)
                     run {
-                        val ns = net.networkStats
+                        val ns = getNetStats()
                         val gs = calcGossipStats(receivePeers, sentTime)
                         ret.zeroHeartbeats.packetCountPerMessage.addValue(ns.msgCount.toDouble() / peers.size)
                         ret.zeroHeartbeats.trafficPerMessage.addValue(ns.traffic.toDouble() / peers.size)
@@ -452,7 +480,7 @@ class Simulation1 {
 
                 val ns0: NetworkStats
                 run {
-                    val ns = net.networkStats
+                    val ns = getNetStats()
                     ns0 = ns
                     val gs = calcGossipStats(receivePeers, sentTime)
                     ret.manyHeartbeats.packetCountPerMessage.addValue(ns.msgCount.toDouble() / peers.size)
@@ -465,10 +493,10 @@ class Simulation1 {
                 }
 
                 timeController.addTime(Duration.ofSeconds(10))
-                val nsDiff = net.networkStats - ns0
+                val nsDiff = getNetStats() - ns0
                 println("Empty time: $nsDiff")
 
-                net.resetStats()
+                networkStatsCollector.msgSizeStats.reset()
                 clearGossipStats(peers)
             }
         }

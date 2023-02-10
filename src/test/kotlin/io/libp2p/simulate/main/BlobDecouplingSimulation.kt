@@ -5,6 +5,7 @@ import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.security.logger
 import io.libp2p.simulate.*
 import io.libp2p.simulate.gossip.*
+import io.libp2p.simulate.stats.GlobalNetworkStatsCollector
 import io.libp2p.simulate.stats.Stats
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.stream.randomLatencyDelayer
@@ -110,6 +111,9 @@ class BlobDecouplingSimulation(
 
     }
 
+    val globalNetworkStatsCollector =
+        GlobalNetworkStatsCollector(simNetwork.network, simConfig.messageSizeEstimator.estimator)
+
     val simulation = run {
         logger("Creating simulation...")
         GossipSimulation(simConfig, simNetwork).also { simulation ->
@@ -117,7 +121,7 @@ class BlobDecouplingSimulation(
             simulation.forwardTime(gossipParams.heartbeatInterval)
             logger("Cleaning warmup messages and network stats...")
             simulation.clearAllMessages()
-            simulation.network.network.resetStats()
+            globalNetworkStatsCollector.msgSizeStats.reset()
         }
     }
 
@@ -128,7 +132,8 @@ class BlobDecouplingSimulation(
 
         logger("Results:")
         logger("Delivery stats: $messageDelayStats")
-        logger("Network stats: " + simNetwork.network.networkStats)
+        logger("Network stats: msgCount: " + globalNetworkStatsCollector.msgSizeStats.getCount() + ", msgsSize: " +
+                globalNetworkStatsCollector.msgSizeStats.getSum().toLong())
     }
 
     fun gatherMessageDelaysByPeer(): Map<Int, Long> {
@@ -237,12 +242,11 @@ fun main() {
     bandwidths.forEach { (name, band) ->
         fun getResults(sim: BlobDecouplingSimulation): String {
             val messageDelayStats = sim.gatherMessageDelayStats().getStatisticalSummary()
-            val networkStats = sim.simNetwork.network.networkStats
             return "${messageDelayStats.min.toLong()}\t" +
                     "${messageDelayStats.mean.toLong()}\t" +
                     "${messageDelayStats.max.toLong()}\t" +
-                    "${networkStats.msgCount}\t" +
-                    "${networkStats.traffic}"
+                    "${sim.globalNetworkStatsCollector.msgCount}\t" +
+                    "${sim.globalNetworkStatsCollector.msgsSize}"
         }
 
         fun getRangedDelays(sim: BlobDecouplingSimulation): String {

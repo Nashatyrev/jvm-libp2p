@@ -46,10 +46,6 @@ class GossipSimTest {
         val m1 = p1Pub.publish("Hello".toByteArray().toByteBuf(), Topic("a"))
 
         Assertions.assertTrue(gotIt)
-        val c1_1 = c1.dialerStat
-        val c1_2 = c1.listenerStat
-
-        println("$c1_1, $c1_2")
     }
 
     @Test
@@ -156,7 +152,6 @@ class GossipSimTest {
         simulation.forwardTime(65.seconds)
 
         simulation.clearAllMessages()
-        simulation.network.network.resetStats()
 
         println("Sending message ")
         if (decoupled) {
@@ -177,6 +172,5 @@ class GossipSimTest {
             }
         }
         println("Delivery stats: $msgDelayStats")
-        println("Network stats: " + simNetwork.network.networkStats)
     }
 }

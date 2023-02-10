@@ -17,10 +17,6 @@ class WireSimConnection(
 
     override val streams: List<SimStream>
         get() = TODO("Not yet implemented")
-    override val dialerStat: ConnectionStat
-        get() = TODO("not implemented")
-    override val listenerStat: ConnectionStat
-        get() = TODO("not implemented")
     override var connectionLatency: MessageDelayer
         get() = TODO("Not yet implemented")
         set(value) {}
