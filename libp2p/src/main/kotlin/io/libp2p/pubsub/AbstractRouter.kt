@@ -51,6 +51,8 @@ abstract class AbstractRouter(
     protected open val pendingRpcParts = PendingRpcPartsMap<RpcPartsQueue> { DefaultRpcPartsQueue() }
     protected open val pendingMessagePromises = MultiSet<PeerHandler, CompletableFuture<Unit>>()
 
+    var serialize = true
+
     protected class PendingRpcPartsMap<out TPartsQueue : RpcPartsQueue>(
         private val queueFactory: () -> TPartsQueue
     ) {
@@ -114,10 +116,12 @@ abstract class AbstractRouter(
     override fun initChannel(streamHandler: StreamHandler) = initChannelWithHandler(streamHandler, null)
     protected open fun initChannelWithHandler(streamHandler: StreamHandler, handler: ChannelHandler?) {
         with(streamHandler.stream) {
-            pushHandler(LimitedProtobufVarint32FrameDecoder(maxMsgSize))
-            pushHandler(ProtobufVarint32LengthFieldPrepender())
-            pushHandler(ProtobufDecoder(Rpc.RPC.getDefaultInstance()))
-            pushHandler(ProtobufEncoder())
+            if (serialize) {
+                pushHandler(LimitedProtobufVarint32FrameDecoder(maxMsgSize))
+                pushHandler(ProtobufVarint32LengthFieldPrepender())
+                pushHandler(ProtobufDecoder(Rpc.RPC.getDefaultInstance()))
+                pushHandler(ProtobufEncoder())
+            }
             handler?.also { pushHandler(it) }
             pushHandler(streamHandler)
         }

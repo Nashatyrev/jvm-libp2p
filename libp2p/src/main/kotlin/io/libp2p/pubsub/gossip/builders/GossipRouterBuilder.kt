@@ -38,6 +38,8 @@ open class GossipRouterBuilder(
             eventsSubscriber(gossipScore)
             gossipScore
         },
+    var serialize: Boolean = true,
+
     val gossipRouterEventListeners: MutableList<GossipRouterEventListener> = mutableListOf()
 ) {
 
@@ -64,6 +66,7 @@ open class GossipRouterBuilder(
             seenMessages = seenCache,
             messageValidator = messageValidator
         )
+        router.serialize = serialize
 
         router.eventBroadcaster.listeners += gossipRouterEventListeners
         return router
