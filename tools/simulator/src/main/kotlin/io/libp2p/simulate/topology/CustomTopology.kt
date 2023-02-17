@@ -9,7 +9,7 @@ import java.util.*
 class CustomTopology(val connections: List<Pair<Int, Int>>) : Topology {
     override var random: Random
         get() = TODO("Not yet implemented")
-        set(value) {}
+        set(_) {}
 
     override fun connect(peers: List<SimPeer>): Network {
         return connections.map {

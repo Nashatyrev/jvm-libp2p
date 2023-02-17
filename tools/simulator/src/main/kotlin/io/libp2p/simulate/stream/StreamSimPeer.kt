@@ -9,19 +9,11 @@ import io.libp2p.core.multiformats.Multiaddr
 import io.libp2p.core.multiformats.MultiaddrComponent
 import io.libp2p.core.multiformats.Protocol
 import io.libp2p.core.multistream.ProtocolId
-import io.libp2p.core.security.SecureChannel
-import io.libp2p.etc.PROTOCOL
-import io.libp2p.etc.types.forward
 import io.libp2p.etc.types.lazyVar
 import io.libp2p.etc.types.toBytesBigEndian
-import io.libp2p.etc.util.netty.nettyInitializer
 import io.libp2p.simulate.*
 import io.libp2p.simulate.util.GeneralSizeEstimator
-import io.libp2p.tools.DummyChannel
-import io.libp2p.tools.NullTransport
-import io.libp2p.transport.implementation.ConnectionOverNetty
 import io.netty.handler.logging.LogLevel
-import io.netty.handler.logging.LoggingHandler
 import java.security.SecureRandom
 import java.util.Random
 import java.util.concurrent.CompletableFuture
@@ -37,17 +29,23 @@ abstract class StreamSimPeer<TProtocolController>(
 
     val protocolController: CompletableFuture<TProtocolController> = CompletableFuture()
 
-    var address = Multiaddr(listOf(
-        MultiaddrComponent(Protocol.IP4, counter.incrementAndGet().toBytesBigEndian()),
-        MultiaddrComponent(Protocol.TCP, byteArrayOf(0, 0xFF.toByte()))
-    ))
+    var address = Multiaddr(
+        listOf(
+            MultiaddrComponent(Protocol.IP4, counter.incrementAndGet().toBytesBigEndian()),
+            MultiaddrComponent(Protocol.TCP, byteArrayOf(0, 0xFF.toByte()))
+        )
+    )
 
     abstract val random: Random
 
     lateinit var simExecutor: ScheduledExecutorService
     var currentTime: () -> Long = System::currentTimeMillis
-    var keyPair by lazyVar { generateKeyPair(KEY_TYPE.ECDSA,
-        random = SecureRandom(ByteArray(4).also { random.nextBytes(it) })) }
+    var keyPair by lazyVar {
+        generateKeyPair(
+            KEY_TYPE.ECDSA,
+            random = SecureRandom(ByteArray(4).also { random.nextBytes(it) })
+        )
+    }
     override val peerId by lazy { PeerId.fromPubKey(keyPair.second) }
 
     var msgSizeEstimator = GeneralSizeEstimator

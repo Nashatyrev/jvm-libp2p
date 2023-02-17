@@ -13,11 +13,10 @@ class TopologyGraph(
 ) {
 
     constructor(vararg edges: Pair<Int, Int>) :
-            this(
-                edges.toList()
-                    .map { Edge(it.first, it.second) }
-            )
-
+        this(
+            edges.toList()
+                .map { Edge(it.first, it.second) }
+        )
 
     data class Edge(val srcV: Int, val destV: Int) {
         fun hasVertex(v: Int): Boolean = v == srcV || v == destV
@@ -48,4 +47,3 @@ class TopologyGraph(
         return recurse(vertex, vertices.toSet() - vertex)
     }
 }
-

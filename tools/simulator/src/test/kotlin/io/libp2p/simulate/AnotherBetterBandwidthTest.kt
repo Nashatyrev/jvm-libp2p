@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Test
 
 class AnotherBetterBandwidthTest {
 
-
     @Test
     fun testCalcDeliverTimes1() {
         val bandwidth = Bandwidth(1000)
@@ -165,7 +164,7 @@ class AnotherBetterBandwidthTest {
         }
     }
 
-    val simPeerModifier = { num: Int, peer: GossipSimPeer ->
+    val simPeerModifier = { _: Int, _: GossipSimPeer ->
 //            peer.pubsubLogs = { true }
     }
 

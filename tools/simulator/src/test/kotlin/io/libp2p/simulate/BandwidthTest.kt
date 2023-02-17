@@ -2,7 +2,6 @@ package io.libp2p.simulate
 
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
-import io.libp2p.simulate.*
 import io.libp2p.simulate.BetterBandwidthTracker.Companion.split
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.topology.AllToAllTopology
@@ -33,7 +32,7 @@ class BandwidthTest {
         }
     }
 
-    val simPeerModifier = { num: Int, peer: GossipSimPeer ->
+    val simPeerModifier = { _: Int, _: GossipSimPeer ->
 //            peer.pubsubLogs = { true }
     }
 
@@ -279,7 +278,8 @@ class BandwidthTest {
     fun testCalcDeliverTimes1() {
         val bandwidth = Bandwidth(1000)
         val t1 = BetterBandwidthTracker.calcDeliverTimes(
-            bandwidth, listOf(
+            bandwidth,
+            listOf(
                 BetterBandwidthTracker.Message(1000, 200_000),
                 BetterBandwidthTracker.Message(1000, 200_000)
             ),
@@ -293,7 +293,8 @@ class BandwidthTest {
     fun testCalcDeliverTimes2() {
         val bandwidth = Bandwidth(1000)
         val t1 = BetterBandwidthTracker.calcDeliverTimes(
-            bandwidth, listOf(
+            bandwidth,
+            listOf(
                 BetterBandwidthTracker.Message(1000, 200_000),
                 BetterBandwidthTracker.Message(1000, 200_800)
             ),
@@ -307,7 +308,8 @@ class BandwidthTest {
     fun testCalcDeliverTimes3() {
         val bandwidth = Bandwidth(1000)
         val t1 = BetterBandwidthTracker.calcDeliverTimes(
-            bandwidth, listOf(
+            bandwidth,
+            listOf(
                 BetterBandwidthTracker.Message(1000, 200_000),
                 BetterBandwidthTracker.Message(50, 200_850)
             ),
@@ -321,7 +323,8 @@ class BandwidthTest {
     fun testCalcDeliverTimes4() {
         val bandwidth = Bandwidth(1000)
         val t1 = BetterBandwidthTracker.calcDeliverTimes(
-            bandwidth, listOf(
+            bandwidth,
+            listOf(
                 BetterBandwidthTracker.Message(1000, 200_000),
                 BetterBandwidthTracker.Message(1, 200_100)
             ),
@@ -335,7 +338,8 @@ class BandwidthTest {
     fun testCalcDeliverTimes5() {
         val bandwidth = Bandwidth(1_000_000)
         val t1 = BetterBandwidthTracker.calcDeliverTimes(
-            bandwidth, listOf(
+            bandwidth,
+            listOf(
                 BetterBandwidthTracker.Message(1, 200_000),
                 BetterBandwidthTracker.Message(1, 200_000)
             ),
@@ -349,7 +353,8 @@ class BandwidthTest {
     fun testCalcDeliverTimes6() {
         val bandwidth = Bandwidth(1000)
         val t1 = BetterBandwidthTracker.calcDeliverTimes(
-            bandwidth, listOf(
+            bandwidth,
+            listOf(
                 BetterBandwidthTracker.Message(1000, 200_000),
                 BetterBandwidthTracker.Message(1000, 200_800),
                 BetterBandwidthTracker.Message(20, 200_850)
@@ -364,7 +369,8 @@ class BandwidthTest {
     fun testCalcDeliverTimes7() {
         val bandwidth = Bandwidth(1000)
         val t1 = BetterBandwidthTracker.calcDeliverTimes(
-            bandwidth, listOf(
+            bandwidth,
+            listOf(
                 BetterBandwidthTracker.Message(1000, 200_000),
                 BetterBandwidthTracker.Message(1000, 200_200),
                 BetterBandwidthTracker.Message(20, 202_100)

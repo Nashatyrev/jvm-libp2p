@@ -35,7 +35,7 @@ class GossipPubDeliveryStats(
     fun selectSlowestPeerDeliveries(): GossipPubDeliveryStats =
         deliveries
             .groupingBy { it.deliveredMsg.receivedPeer }
-            .reduce { key, accumulator, element ->
+            .reduce { _, accumulator, element ->
                 listOf(accumulator, element).maxByOrNull { it.deliveredMsg.receivedTime }!!
             }
             .values

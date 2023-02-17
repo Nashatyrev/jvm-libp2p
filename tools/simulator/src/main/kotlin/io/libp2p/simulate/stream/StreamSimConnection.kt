@@ -2,7 +2,6 @@ package io.libp2p.simulate.stream
 
 import io.libp2p.core.multistream.ProtocolId
 import io.libp2p.simulate.*
-import io.libp2p.simulate.stats.StatsFactory
 import io.netty.handler.logging.LogLevel
 import java.util.concurrent.CompletableFuture
 import kotlin.time.Duration
@@ -56,10 +55,7 @@ class StreamSimConnection(
         result = 31 * result + listener.hashCode()
         return result
     }
-
-
 }
-
 
 fun StreamSimConnection.simpleLatencyDelayer(latency: Duration) =
     TimeDelayer(this.listener.simExecutor, { latency })

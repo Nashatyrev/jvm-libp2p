@@ -28,7 +28,6 @@ class StreamSimStream(
             if (streamInitiator == SimStream.StreamInitiator.CONNECTION_LISTENER) connection.dialer
             else connection.listener
 
-
         val fromIsInitiator = from === connection.dialer
         val toIsInitiator = !fromIsInitiator
         val fromInitiatorSign = if (fromIsInitiator) "*" else ""

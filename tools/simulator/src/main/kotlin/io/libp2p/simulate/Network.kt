@@ -10,7 +10,7 @@ interface Network {
         get() = peers.flatMap { it.connections }.distinct()
 
     fun getTopologyGraph(): TopologyGraph {
-        val peerIdxMap = peers.withIndex().associateByTo(IdentityHashMap(), { it.value }, {it.index})
+        val peerIdxMap = peers.withIndex().associateByTo(IdentityHashMap(), { it.value }, { it.index })
         return activeConnections
             .map { TopologyGraph.Edge(peerIdxMap[it.dialer]!!, peerIdxMap[it.listener]!!) }
             .let { TopologyGraph(it) }

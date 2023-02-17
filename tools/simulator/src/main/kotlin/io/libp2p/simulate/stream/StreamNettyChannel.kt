@@ -24,9 +24,9 @@ class StreamNettyChannel(
     vararg handlers: ChannelHandler?
 ) :
     SimChannel, EmbeddedChannel(
-        SimChannelId(id),
-        *handlers
-    ) {
+    SimChannelId(id),
+    *handlers
+) {
 
     override val msgVisitors: MutableList<SimChannelMessageVisitor> = mutableListOf()
 
@@ -120,6 +120,7 @@ class StreamNettyChannel(
                 return promise
             }
 
+            @Deprecated("Deprecated in Java")
             override fun register(channel: Channel, promise: ChannelPromise): ChannelFuture {
                 channel.unsafe().register(this, promise)
                 return promise

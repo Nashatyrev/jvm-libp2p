@@ -82,7 +82,6 @@ class SequentialBandwidthTracker(
     }
 }
 
-
 class BetterBandwidthTracker(
     override val totalBandwidth: Bandwidth,
     val executor: ScheduledExecutorService,
@@ -122,7 +121,7 @@ class BetterBandwidthTracker(
 
         fun recalcDeliverTimes(totalBandwidth: Bandwidth, msgs: List<Message>, precision: Int = 10) {
             val deliverTimes = calcDeliverTimes(totalBandwidth, msgs, precision)
-            msgs.zip(deliverTimes).forEach { (msg, t) ->  msg.deliverTime = t }
+            msgs.zip(deliverTimes).forEach { (msg, t) -> msg.deliverTime = t }
         }
 
         fun calcDeliverTimes(totalBandwidth: Bandwidth, msgs: List<Message>, precision: Int = 10): List<Long> {
@@ -151,9 +150,9 @@ class BetterBandwidthTracker(
                         if (i == 0) {
                             0
                         } else {
-                            val prevWinBand = winBands[i-1]
+                            val prevWinBand = winBands[i - 1]
                             val prevWinBytesPerMsg = prevWinBand.getTransmitSize(tWin.length)
-                            max(0L, remainingSizes[j][i-1] - prevWinBytesPerMsg)
+                            max(0L, remainingSizes[j][i - 1] - prevWinBytesPerMsg)
                         }
                     }
                     remainingSizes[j][i] = newRemainSize
@@ -169,7 +168,7 @@ class BetterBandwidthTracker(
                 var remainingSize = msg.size
                 var time = msg.sendTime
 
-                while(i < precision) {
+                while (i < precision) {
                     val timeWin = timeWindows[i]
                     val winBand = winBands[i]
 
@@ -202,7 +201,6 @@ class BetterBandwidthTracker(
         }
     }
 }
-
 
 class AnotherBetterBandwidthTracker(
     override val totalBandwidth: Bandwidth,
@@ -302,8 +300,10 @@ class AnotherBetterBandwidthTracker(
                     if (!msg.delivered && msg.lastUpdateSizeLeft > 0) {
                         if (msg.msg.sendTime < curTime) {
                             val transmittedTillNowBytes = prevBand.getTransmitSize(curTime - prevTime)
-                            msg.lastUpdateSizeLeft = max(0,
-                                msg.lastUpdateSizeLeft - transmittedTillNowBytes)
+                            msg.lastUpdateSizeLeft = max(
+                                0,
+                                msg.lastUpdateSizeLeft - transmittedTillNowBytes
+                            )
                             msg.deliverTime = curTime + curBand.getTransmitTimeMillis(msg.lastUpdateSizeLeft)
                         } else {
                             msg.deliverTime = curTime + max(1, curBand.getTransmitTimeMillis(msg.lastUpdateSizeLeft))
@@ -316,8 +316,7 @@ class AnotherBetterBandwidthTracker(
             var prevTime: Long
             var curMsgCount = 0
 
-
-            for(i in msgs.indices) {
+            for (i in msgs.indices) {
                 val msg = iMsgs[i]
 
                 while (true) {
@@ -365,7 +364,7 @@ class AnotherBetterBandwidthTracker(
 
 private fun <T : Comparable<T>> Collection<T>.isOrdered() =
     this
-        .windowed(2) { l -> l[1] >= l[0]}
+        .windowed(2) { l -> l[1] >= l[0] }
         .all { it }
 
 fun BandwidthDelayer.logging(logger: (String) -> Unit) = LoggingDelayer(this, logger)

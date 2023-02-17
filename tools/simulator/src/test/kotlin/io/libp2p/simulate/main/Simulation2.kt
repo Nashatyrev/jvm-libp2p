@@ -2,20 +2,12 @@ package io.libp2p.simulate.main
 
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.seconds
-import io.libp2p.pubsub.gossip.GossipRouter
+import io.libp2p.pubsub.gossip.GossipTopicScoreParams
+import io.libp2p.pubsub.gossip.GossipTopicsScoreParams
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.pubsub.gossip.builders.GossipScoreParamsBuilder
 import io.libp2p.pubsub.gossip.builders.GossipTopicScoreParamsBuilder
-import io.libp2p.simulate.gossip.BlocksTopic
-import io.libp2p.simulate.gossip.Eth2DefaultBlockTopicParams
-import io.libp2p.simulate.gossip.Eth2DefaultGossipParams
-import io.libp2p.simulate.gossip.Eth2DefaultPeerScoreParams
-import io.libp2p.simulate.gossip.Eth2DefaultScoreParams
-import io.libp2p.simulate.gossip.Eth2DefaultTopicsParams
-import io.libp2p.simulate.gossip.GossipSimConfig
-import io.libp2p.simulate.gossip.GossipSimNetwork
-import io.libp2p.simulate.gossip.GossipSimPeer
-import io.libp2p.simulate.gossip.GossipSimulation
+import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.tools.millis
@@ -55,7 +47,7 @@ class Simulation2 {
 //                peer.pubsubLogs = { it == peer_90 }
 //            }
 //        }
-        val simPeerModifier = { num: Int, peer: GossipSimPeer -> }
+        val simPeerModifier = { _: Int, _: GossipSimPeer -> }
 
         val simNetwork = GossipSimNetwork(simConfig, gossipRouterCtor, simPeerModifier)
         println("Creating peers...")
@@ -72,12 +64,14 @@ class Simulation2 {
                 simulation.forwardTime(1.seconds)
             }
             val stats = getScoreStats(simNetwork).getDescriptiveStatistics()
-            println("" + j +
+            println(
+                "" + j +
                     "\t" + stats.min +
                     "\t" + stats.getPercentile(5.0) +
                     "\t" + stats.mean + "" +
                     "\t" + stats.getPercentile(95.0) +
-                    "\t" + stats.max)
+                    "\t" + stats.max
+            )
         }
         println("Wrapping up...")
         simulation.forwardTime(10.seconds)
@@ -111,13 +105,16 @@ class Simulation2 {
     fun getScoreStats(network: GossipSimNetwork) =
         StatsFactory.DEFAULT.createStats("gossipScore").also {
             it += network.peers.values
-                .map { it.router as GossipRouter }
+                .map { it.router }
                 .flatMap { gossip ->
                     gossip.peers.map {
                         gossip.score.score(it.peerId)
                     }
                 }
         }
+
+    fun GossipTopicsScoreParams.withTopic(topic: String, params: GossipTopicScoreParams) =
+        GossipTopicsScoreParams(defaultParams, topicParams + mapOf(topic to params))
 
     @Test
     fun a() {

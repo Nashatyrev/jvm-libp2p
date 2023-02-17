@@ -38,14 +38,14 @@ class GossipMessageResult(
         override val origMsg: CollectedMessage<Rpc.ControlIHave>,
     ) : MessageWrapper<Rpc.ControlIHave> {
         override fun toString() = "IHave[$origMsg, messageIds: [" +
-                "${origMsg.message.messageIDsList.map { it.toWBytes() }.joinToString(", ")}]]"
+            "${origMsg.message.messageIDsList.map { it.toWBytes() }.joinToString(", ")}]]"
     }
 
     data class IWantMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.ControlIWant>,
     ) : MessageWrapper<Rpc.ControlIWant> {
         override fun toString() = "IWant[$origMsg, messageIds: [" +
-                "${origMsg.message.messageIDsList.map { it.toWBytes() }.joinToString(", ")}]]"
+            "${origMsg.message.messageIDsList.map { it.toWBytes() }.joinToString(", ")}]]"
     }
 
     data class PubMessageWrapper(
@@ -81,16 +81,16 @@ class GossipMessageResult(
             }
 
     val graftMessages by lazy {
-        flattenControl ({ it.graftList }, { GraftMessageWrapper(it) })
+        flattenControl({ it.graftList }, { GraftMessageWrapper(it) })
     }
     val pruneMessages by lazy {
-        flattenControl ({ it.pruneList }, { PruneMessageWrapper(it) })
+        flattenControl({ it.pruneList }, { PruneMessageWrapper(it) })
     }
     val iHaveMessages by lazy {
-        flattenControl ({ it.ihaveList }, { IHaveMessageWrapper(it) })
+        flattenControl({ it.ihaveList }, { IHaveMessageWrapper(it) })
     }
     val iWantMessages by lazy {
-        flattenControl ({ it.iwantList }, { IWantMessageWrapper(it) })
+        flattenControl({ it.iwantList }, { IWantMessageWrapper(it) })
     }
 
     val allGossipMessages by lazy {
@@ -142,7 +142,6 @@ class GossipMessageResult(
             .filter { it.origMsg.receivingPeer === peer && it.msgId == msgId }
             .minByOrNull { it.origMsg.receiveTime }
 
-
     fun getPeerGossipMessages(peer: SimPeer) =
         allGossipMessages
             .filter { peer in setOf(it.origMsg.sendingPeer, it.origMsg.receivingPeer) }
@@ -153,4 +152,3 @@ class GossipMessageResult(
             .filter { peer in setOf(it.sendingPeer, it.receivingPeer) }
             .sortedBy { if (it.sendingPeer == peer) it.sendTime else it.receiveTime }
 }
-

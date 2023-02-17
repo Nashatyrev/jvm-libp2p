@@ -27,7 +27,7 @@ class GossipSimPeer(
     protocol: PubsubProtocol = PubsubProtocol.Gossip_V_1_1
 ) : StreamSimPeer<Unit>(true, protocol.announceStr) {
 
-    var routerBuilder= GossipRouterBuilder()
+    var routerBuilder = GossipRouterBuilder()
     var router by lazyVar {
         routerBuilder.also {
             it.name = name
@@ -58,16 +58,19 @@ class GossipSimPeer(
 
     override fun start(): CompletableFuture<Unit> {
         val subs = topics.map { topic ->
-            api.subscribe(Validator {
-                onNewMsg(it)
-                if (validationDelay.toMillis() == 0L) {
-                    validationResult
-                } else {
-                    val ret = CompletableFuture<ValidationResult>()
-                    simExecutor.schedule({ ret.complete(validationResult.get()) }, validationDelay.toMillis(), TimeUnit.MILLISECONDS)
-                    ret
-                }
-            }, topic)
+            api.subscribe(
+                Validator {
+                    onNewMsg(it)
+                    if (validationDelay.toMillis() == 0L) {
+                        validationResult
+                    } else {
+                        val ret = CompletableFuture<ValidationResult>()
+                        simExecutor.schedule({ ret.complete(validationResult.get()) }, validationDelay.toMillis(), TimeUnit.MILLISECONDS)
+                        ret
+                    }
+                },
+                topic
+            )
         }
         subscriptions += subs
         return super.start()
@@ -80,8 +83,11 @@ class GossipSimPeer(
     override fun handleStream(stream: Stream): CompletableFuture<Unit> {
         stream.getProtocol()
         val logConnection = pubsubLogs(stream.remotePeerId())
-        router.addPeerWithDebugHandler(stream, if (logConnection)
-            LoggingHandler(name, LogLevel.ERROR) else null)
+        router.addPeerWithDebugHandler(
+            stream,
+            if (logConnection)
+                LoggingHandler(name, LogLevel.ERROR) else null
+        )
         return dummy
     }
 

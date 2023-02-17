@@ -53,7 +53,7 @@ class BlobDecouplingSimulation(
 
 ) {
 
-    val peerBandwidths: (GossipSimPeer) -> PeerBandwidthValue = { peer ->
+    val peerBandwidths: (GossipSimPeer) -> PeerBandwidthValue = { _ ->
         val inOutBand = peerBands.next()
         PeerBandwidthValue(inOutBand, inOutBand)
     }
@@ -130,7 +130,7 @@ class BlobDecouplingSimulation(
         logger("Delivery stats: $messageDelayStats")
         logger(
             "Network stats: msgCount: " + globalNetworkStatsCollector.msgSizeStats.getCount() + ", msgsSize: " +
-                    globalNetworkStatsCollector.msgSizeStats.getSum().toLong()
+                globalNetworkStatsCollector.msgSizeStats.getSum().toLong()
         )
     }
 
@@ -191,7 +191,6 @@ class BlobDecouplingSimulation(
         }
 
         printResults()
-
     }
 
     fun testOnlyBlockDecoupled() {
@@ -227,10 +226,10 @@ class BlobDecouplingSimulation(
             val t2 = simulation.currentTimeSupplier()
             println(
                 "All messages delivered in ${t2 - t1}, " +
-                        "Pending message count: ${simulation.gossipMessageCollector.pendingMessages.size}, " +
-                        getGossipStats(
-                            simulation.gossipMessageCollector.gatherResult().slice(t1, t2)
-                        )
+                    "Pending message count: ${simulation.gossipMessageCollector.pendingMessages.size}, " +
+                    getGossipStats(
+                        simulation.gossipMessageCollector.gatherResult().slice(t1, t2)
+                    )
             )
             simulation.forwardTimeUntilNoPendingMessages()
 //            println("Traffic by bandwidth: " + gatherAvrgTrafficByBandwidth(t1, simulation.currentTimeSupplier()))
@@ -247,8 +246,8 @@ class BlobDecouplingSimulation(
         val pubMsgCount = results.publishMessages.size
         val rawMsgCount = results.messages.size
         return "GossipMessagesStats: Total raw: $rawMsgCount, " +
-                "Total parts: ${pubMsgCount + graftMsgCount + pruneMsgCount + iHaveMsgCount + iWantMsgCount}, " +
-                "PUBLISH: $pubMsgCount, GRAFT: $graftMsgCount, PRUNE: $pruneMsgCount, IHAVE: $iHaveMsgCount, IWANT: $iWantMsgCount"
+            "Total parts: ${pubMsgCount + graftMsgCount + pruneMsgCount + iHaveMsgCount + iWantMsgCount}, " +
+            "PUBLISH: $pubMsgCount, GRAFT: $graftMsgCount, PRUNE: $pruneMsgCount, IHAVE: $iHaveMsgCount, IWANT: $iWantMsgCount"
     }
 
     fun printGossipDetailedResults() {
@@ -330,10 +329,10 @@ fun main() {
         fun getResults(sim: BlobDecouplingSimulation): String {
             val messageDelayStats = sim.gatherMessageDelayStats().getStatisticalSummary()
             return "${messageDelayStats.min.toLong()}\t" +
-                    "${messageDelayStats.mean.toLong()}\t" +
-                    "${messageDelayStats.max.toLong()}\t" +
-                    "${sim.globalNetworkStatsCollector.msgCount}\t" +
-                    "${sim.globalNetworkStatsCollector.msgsSize}"
+                "${messageDelayStats.mean.toLong()}\t" +
+                "${messageDelayStats.max.toLong()}\t" +
+                "${sim.globalNetworkStatsCollector.msgCount}\t" +
+                "${sim.globalNetworkStatsCollector.msgsSize}"
         }
 
         fun getRangedDelays(sim: BlobDecouplingSimulation): String {

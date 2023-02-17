@@ -12,16 +12,16 @@ import java.util.concurrent.Executors
 class GossipSimNetwork(
     val cfg: GossipSimConfig,
     val routerFactory: (Int) -> GossipRouterBuilder,
-    val simPeerModifier: (Int, GossipSimPeer) -> Unit = { a, b -> }
+    val simPeerModifier: (Int, GossipSimPeer) -> Unit = { _, _ -> }
 ) {
     val peers = sortedMapOf<Int, GossipSimPeer>()
     lateinit var network: Network
 
-    open val timeController = TimeControllerImpl()
-    open val commonRnd = Random(cfg.startRandomSeed)
-    open val commonExecutor = ControlledExecutorServiceImpl(timeController)
+    val timeController = TimeControllerImpl()
+    val commonRnd = Random(cfg.startRandomSeed)
+    val commonExecutor = ControlledExecutorServiceImpl(timeController)
 
-    protected open val peerExecutors =
+    protected val peerExecutors =
         if (cfg.iterationThreadsCount > 1)
             (0 until cfg.iterationThreadsCount).map { Executors.newSingleThreadScheduledExecutor() }
         else
@@ -41,7 +41,7 @@ class GossipSimNetwork(
         }
     }
 
-    protected open fun createSimPeer(number: Int): GossipSimPeer {
+    protected fun createSimPeer(number: Int): GossipSimPeer {
         val router = routerFactory(number).also {
             it.currentTimeSuppluer = { timeController.time }
             it.serialize = false

@@ -1,7 +1,5 @@
 package io.libp2p.simulate
 
-import io.libp2p.simulate.stats.StatsFactory
-import io.libp2p.simulate.stats.WritableStats
 import java.util.concurrent.CompletableFuture
 
 interface SimConnection {
@@ -18,5 +16,4 @@ interface SimConnection {
     fun close()
 
     fun isClosed() = closed.isDone
-
 }

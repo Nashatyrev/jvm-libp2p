@@ -19,5 +19,5 @@ class WireSimConnection(
         get() = TODO("Not yet implemented")
     override var connectionLatency: MessageDelayer
         get() = TODO("Not yet implemented")
-        set(value) {}
+        set(_) {}
 }

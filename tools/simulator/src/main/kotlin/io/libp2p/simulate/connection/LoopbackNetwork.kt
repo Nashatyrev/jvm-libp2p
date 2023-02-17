@@ -33,24 +33,26 @@ class LoopbackNetwork : Network {
         }
 
     fun newPeer(fn: Builder.() -> Unit): HostSimPeer {
-        val host = (object : Builder() {
-            init {
-                transports += createLoopbackTransportCtor()
-            }
+        val host = (
+            object : Builder() {
+                init {
+                    transports += createLoopbackTransportCtor()
+                }
 
-            override fun transports(fn: TransportsBuilder.() -> Unit): Builder {
-                throw UnsupportedOperationException("Transports shouldn't be configured by client code")
+                override fun transports(fn: TransportsBuilder.() -> Unit): Builder {
+                    throw UnsupportedOperationException("Transports shouldn't be configured by client code")
+                }
             }
-        }).apply(fn).build(Builder.Defaults.None)
+            ).apply(fn).build(Builder.Defaults.None)
         return newPeer(host)
     }
 
     private fun newIp(): String {
         val ip = ipCounter.getAndIncrement()
         return "" + ip.shr(24) +
-                "." + ip.shr(16).and(0xFF) +
-                "." + ip.shr(8).and(0xFF) +
-                "." + ip.and(0xFF)
+            "." + ip.shr(16).and(0xFF) +
+            "." + ip.shr(8).and(0xFF) +
+            "." + ip.and(0xFF)
     }
 
     override val peers: MutableList<HostSimPeer> = mutableListOf()

@@ -8,7 +8,7 @@ import io.libp2p.simulate.util.MsgSizeEstimator
 class GlobalNetworkStatsCollector(
     network: Network,
     private val msgEstimator: MsgSizeEstimator
-) : SimChannelMessageVisitor{
+) : SimChannelMessageVisitor {
 
     val msgSizeStats = StatsFactory.DEFAULT.createStats()
 

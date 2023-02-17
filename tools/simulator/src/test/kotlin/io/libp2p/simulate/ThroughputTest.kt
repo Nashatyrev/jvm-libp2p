@@ -1,6 +1,5 @@
 package io.libp2p.simulate
 
-import io.libp2p.simulate.RandomValue
 import io.libp2p.simulate.util.Throughput
 import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl
 import io.libp2p.tools.schedulers.TimeControllerImpl

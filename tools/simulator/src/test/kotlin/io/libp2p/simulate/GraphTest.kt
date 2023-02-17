@@ -17,8 +17,8 @@ class GraphTest {
 
     @Test
     fun a() {
-        val random = Random(0)
-        val peersCount = 10
+//        val random = Random(0)
+//        val peersCount = 10
         val vertexes = List(1000) { Any() }
         val vertexIt = vertexes.iterator()
         val graph = DefaultUndirectedGraph(vertexIt::next, { Any() }, false)

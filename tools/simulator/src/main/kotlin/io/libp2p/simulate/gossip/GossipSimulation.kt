@@ -49,7 +49,7 @@ class GossipSimulation(
 
     fun forwardTimeUntilAllPubDelivered(step: Duration = 1.seconds, maxDuration: Duration = 1.minutes) {
         var totalDuration = 0.seconds
-        while(totalDuration <= maxDuration && !isAllMessagesDelivered()) {
+        while (totalDuration <= maxDuration && !isAllMessagesDelivered()) {
             network.timeController.addTime(step)
             totalDuration += step
         }

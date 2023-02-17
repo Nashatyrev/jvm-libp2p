@@ -9,7 +9,6 @@ import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.logging.LogLevel
 import org.junit.jupiter.api.Test
 
-
 class AAANettyTest {
 
     @Test

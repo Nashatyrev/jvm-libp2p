@@ -48,8 +48,6 @@ fun Int.pow(n: Int): Long {
 }
 
 fun Double.smartRound(meaningCount: Int = 3): Double {
-    val d: Double = this
-//    if (d.isNaN()) return this
     if (this <= 0.0) return this
 
     var cnt = 0

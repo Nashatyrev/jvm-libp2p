@@ -43,8 +43,8 @@ data class DescriptiveStatsImpl(
 
     override fun toString(): String {
         return "" + getCount() + ":" +
-                getDescriptiveStatistics().min.smartRound() + "/" +
-                getDescriptiveStatistics().getPercentile(50.0).smartRound() + "/" +
-                getDescriptiveStatistics().max.smartRound()
+            getDescriptiveStatistics().min.smartRound() + "/" +
+            getDescriptiveStatistics().getPercentile(50.0).smartRound() + "/" +
+            getDescriptiveStatistics().max.smartRound()
     }
 }

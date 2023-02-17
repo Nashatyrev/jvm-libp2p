@@ -3,14 +3,13 @@ package io.libp2p.simulate.main
 import io.libp2p.core.pubsub.RESULT_INVALID
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.toByteBuf
-import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.simulate.RandomDistribution
 import io.libp2p.simulate.Topology
 import io.libp2p.simulate.gossip.GossipSimPeer
 import io.libp2p.simulate.gossip.averagePubSubMsgSizeEstimator
-import io.libp2p.simulate.stats.collect.GlobalNetworkStatsCollector
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.stats.WritableStats
+import io.libp2p.simulate.stats.collect.GlobalNetworkStatsCollector
 import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.simulate.util.GeneralSizeEstimator
 import io.libp2p.tools.formatTable
@@ -31,21 +30,7 @@ import java.util.*
 import java.util.concurrent.Callable
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
-import kotlin.collections.List
-import kotlin.collections.asSequence
-import kotlin.collections.distinct
-import kotlin.collections.emptyList
-import kotlin.collections.filter
-import kotlin.collections.forEach
-import kotlin.collections.joinToString
-import kotlin.collections.listOf
-import kotlin.collections.map
-import kotlin.collections.mapOf
-import kotlin.collections.mapValues
-import kotlin.collections.minus
-import kotlin.collections.mutableListOf
 import kotlin.collections.plus
-import kotlin.collections.plusAssign
 
 class Simulation1 {
 
@@ -114,7 +99,7 @@ class Simulation1 {
         fun getData(includeZero: Boolean = true) =
             if (includeZero) {
                 zeroHeartbeats.getData().setKeys { "0-$it" } +
-                manyHeartbeats.getData().setKeys { "N-$it" }
+                    manyHeartbeats.getData().setKeys { "N-$it" }
             } else {
                 manyHeartbeats.getData()
             }
@@ -238,23 +223,23 @@ class Simulation1 {
     fun testSizeOptimizationDLazy() {
         val cfgs = sequence {
             for (avrgMessageSize in arrayOf(32 * 1024, 512))
-            for (gossipDLazy in arrayOf(0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20))
-                yield(
-                    SimConfig(
-                        totalPeers = 5000,
-                        badPeers = 0,
-                        topology = RandomNPeers(20),
+                for (gossipDLazy in arrayOf(0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20))
+                    yield(
+                        SimConfig(
+                            totalPeers = 5000,
+                            badPeers = 0,
+                            topology = RandomNPeers(20),
 
-                        gossipD = 6,
-                        gossipDLow = 5,
-                        gossipDHigh = 7,
-                        gossipDLazy = gossipDLazy,
-                        gossipHeartbeatAddDelay = RandomDistribution.uniform(0.0, 1000.0),
+                            gossipD = 6,
+                            gossipDLow = 5,
+                            gossipDHigh = 7,
+                            gossipDLazy = gossipDLazy,
+                            gossipHeartbeatAddDelay = RandomDistribution.uniform(0.0, 1000.0),
 
-                        avrgMessageSize = avrgMessageSize,
-                        latency = RandomDistribution.uniform(1.0, 50.0)
+                            avrgMessageSize = avrgMessageSize,
+                            latency = RandomDistribution.uniform(1.0, 50.0)
+                        )
                     )
-                )
         }
         val opt = SimOptions(
             zeroHeartbeatsDelay = 0.millis,
@@ -346,12 +331,14 @@ class Simulation1 {
         val cfgList = cfg.toList()
         val resFut = cfgList
             .map { config ->
-                executorService.submit(Callable {
-                    println("Starting sim: \n\t$config\n\t$opt")
-                    val r = sim(config, opt)
-                    println("Complete: $r")
-                    r
-                })
+                executorService.submit(
+                    Callable {
+                        println("Starting sim: \n\t$config\n\t$opt")
+                        val r = sim(config, opt)
+                        println("Complete: $r")
+                        r
+                    }
+                )
             }
 
         val res = resFut.map { it.get() }
@@ -398,15 +385,15 @@ class Simulation1 {
 
             val peers = (0 until cfg.totalPeers).map {
                 GossipSimPeer(listOf(Topic), it.toString(), commonRnd).apply {
-                    val gossipParams = GossipParams(
-                        D = cfg.gossipD,
-                        DLow = cfg.gossipDLow,
-                        DHigh = cfg.gossipDHigh,
-                        DLazy = cfg.gossipDLazy,
-                        gossipSize = cfg.gossipAdvertise,
-                        gossipHistoryLength = cfg.gossipHistory,
-                        heartbeatInterval = cfg.gossipHeartbeat
-                    )
+//                    val gossipParams = GossipParams(
+//                        D = cfg.gossipD,
+//                        DLow = cfg.gossipDLow,
+//                        DHigh = cfg.gossipDHigh,
+//                        DLazy = cfg.gossipDLazy,
+//                        gossipSize = cfg.gossipAdvertise,
+//                        gossipHistoryLength = cfg.gossipHistory,
+//                        heartbeatInterval = cfg.gossipHeartbeat
+//                    )
                     routerBuilder.apply {
                         heartbeatInitialDelay = gossipHeartbeatAddDelay.next().toInt().millis
                         serialize = false
@@ -419,7 +406,7 @@ class Simulation1 {
                     simExecutor = ControlledExecutorServiceImpl(delegateExecutor, timeController)
                     msgSizeEstimator =
                         averagePubSubMsgSizeEstimator(cfg.avrgMessageSize, opt.measureTCPFramesOverhead).sizeEstimator
-                    val latencyRandomValue = cfg.latency.newValue(commonRnd)
+//                    val latencyRandomValue = cfg.latency.newValue(commonRnd)
                     validationDelay = cfg.gossipValidationDelay
 
                     start()

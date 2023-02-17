@@ -19,10 +19,10 @@ class HostSimPeer(val host: Host) : AbstractSimPeer() {
 
     override var inboundBandwidth: BandwidthDelayer
         get() = TODO("Not yet implemented")
-        set(value) {}
+        set(_) {}
     override var outboundBandwidth: BandwidthDelayer
         get() = TODO("Not yet implemented")
-        set(value) {}
+        set(_) {}
 
     override fun start() = host.start().thenApply { }
     override fun stop() = host.stop().thenApply { }

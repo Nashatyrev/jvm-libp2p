@@ -30,10 +30,10 @@ class WireSimPeer(val host: Host) : AbstractSimPeer() {
 
     override var inboundBandwidth: BandwidthDelayer
         get() = TODO("Not yet implemented")
-        set(value) {}
+        set(_) {}
     override var outboundBandwidth: BandwidthDelayer
         get() = TODO("Not yet implemented")
-        set(value) {}
+        set(_) {}
 
     fun getMultiaddr() = Multiaddr("/ip/127.0.0.1/tcp/$port")
 

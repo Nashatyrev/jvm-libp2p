@@ -35,11 +35,11 @@ class GossipSimTest {
         val p1 = createPeer()
         val p2 = createPeer()
 
-        val c1 = p1.connect(p2).get()
+        p1.connect(p2).get()
         var gotIt = false
         p2.api.subscribe(Consumer { gotIt = true }, Topic("a"))
         val p1Pub = p1.api.createPublisher(p1.keyPair.first, 0)
-        val m1 = p1Pub.publish("Hello".toByteArray().toByteBuf(), Topic("a"))
+        p1Pub.publish("Hello".toByteArray().toByteBuf(), Topic("a"))
 
         Assertions.assertTrue(gotIt)
     }
@@ -157,7 +157,6 @@ class GossipSimTest {
             simulation.publishMessage(0, blockSize + blobSize * blobCount, blockTopic)
         }
         simulation.forwardTime(1.minutes)
-
 
         println("Gathering results...")
         val results = simulation.gatherMessageResults()

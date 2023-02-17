@@ -33,7 +33,7 @@ class ClusteredNPeers(val peersCount: Int, val clusters: Graph<WVertex, WEdge>) 
                     .take((edge.cnt + 1) / 2)
                     .flatMap {
                         val ret = listOf(cluster.getEdgeSource(it), cluster.getEdgeTarget(it))
-                        val rc = targetGraph.removeEdge(it)
+                        targetGraph.removeEdge(it)
                         ret
                     }
             }

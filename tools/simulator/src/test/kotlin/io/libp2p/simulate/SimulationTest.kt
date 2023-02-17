@@ -30,7 +30,7 @@ class SimulationTest {
             }
         }
 
-        val simPeerModifier = { num: Int, peer: GossipSimPeer ->
+        val simPeerModifier = { _: Int, _: GossipSimPeer ->
 //            peer.pubsubLogs = { true }
         }
 
