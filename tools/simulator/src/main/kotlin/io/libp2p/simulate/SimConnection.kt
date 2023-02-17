@@ -14,6 +14,4 @@ interface SimConnection {
     var connectionLatency: MessageDelayer
 
     fun close()
-
-    fun isClosed() = closed.isDone
 }

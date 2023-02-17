@@ -18,12 +18,7 @@ interface SimPeer {
 
     fun connect(other: SimPeer): CompletableFuture<SimConnection>
 
-    fun setBandwidth(bandwidth: RandomValue)
-
     fun stop(): CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit)
-
-    fun getConnectedPeers() =
-        connections.flatMap { listOf(it.dialer, it.listener) }.distinct() - this
 }
 
 abstract class AbstractSimPeer : SimPeer {
@@ -44,8 +39,6 @@ abstract class AbstractSimPeer : SimPeer {
             conn
         }
     }
-
-    override fun setBandwidth(bandwidth: RandomValue): Unit = TODO()
 
     abstract fun connectImpl(other: SimPeer): CompletableFuture<SimConnection>
 

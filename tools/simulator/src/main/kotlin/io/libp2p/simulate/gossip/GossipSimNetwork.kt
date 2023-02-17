@@ -69,9 +69,4 @@ class GossipSimNetwork(
             it.connectionLatency = latency
         }
     }
-
-    fun getConnectedPeers(peerIndex: Int): Collection<GossipSimPeer> {
-        val peer = peers[peerIndex] ?: throw IllegalArgumentException("Invalid peer index $peerIndex")
-        return peer.getConnectedPeers().map { it as GossipSimPeer }
-    }
 }
