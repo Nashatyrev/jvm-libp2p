@@ -1,7 +1,6 @@
 package io.libp2p.simulate
 
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ScheduledExecutorService
 
 fun interface MessageDelayer {
     fun delay(size: Long): CompletableFuture<Unit>
@@ -10,4 +9,3 @@ fun interface MessageDelayer {
         val NO_DELAYER = MessageDelayer { CompletableFuture.completedFuture(null) }
     }
 }
-

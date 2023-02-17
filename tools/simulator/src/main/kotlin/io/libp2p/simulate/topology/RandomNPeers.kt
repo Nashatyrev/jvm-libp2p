@@ -3,9 +3,7 @@ package io.libp2p.simulate.topology
 import io.libp2p.etc.types.copy
 import org.jgrapht.Graph
 import org.jgrapht.generate.RandomRegularGraphGenerator
-import org.jgrapht.graph.DefaultDirectedGraph
 import org.jgrapht.graph.DefaultUndirectedGraph
-import java.util.Random
 
 data class RandomNPeers(val peersCount: Int = 10) : AbstractGraphTopology() {
 

@@ -37,13 +37,12 @@ class StreamNettyChannel(
     var currentTime: () -> Long = System::currentTimeMillis
     var msgSizeEstimator = GeneralSizeEstimator
     private var msgDelayer: MessageDelayer by lazyVar {
-            createMessageDelayer(outboundBandwidth, MessageDelayer.NO_DELAYER, inboundBandwidth)
+        createMessageDelayer(outboundBandwidth, MessageDelayer.NO_DELAYER, inboundBandwidth)
             .sequential(executor)
     }
 
     fun setLatency(latency: MessageDelayer) {
         msgDelayer = createMessageDelayer(outboundBandwidth, latency, inboundBandwidth)
-
     }
 
     private fun createMessageDelayer(
@@ -61,7 +60,6 @@ class StreamNettyChannel(
         }
             .sequential(executor)
     }
-
 
     @Synchronized
     fun connect(other: StreamNettyChannel) {

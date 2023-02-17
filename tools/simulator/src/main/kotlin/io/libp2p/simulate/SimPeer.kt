@@ -18,4 +18,3 @@ interface SimPeer {
 
     fun stop(): CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit)
 }
-

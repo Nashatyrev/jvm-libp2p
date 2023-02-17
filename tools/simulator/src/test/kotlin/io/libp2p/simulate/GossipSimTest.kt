@@ -91,9 +91,9 @@ class GossipSimTest {
             topics = listOf(blockTopic, blobTopic),
 //            topology = RandomNPeers(10),
             topology = TopologyGraph.customTopology(
-                    0 to 1,
-                    0 to 2,
-                    0 to 3,
+                0 to 1,
+                0 to 2,
+                0 to 3,
 //                    0 to 4,
 //                    0 to 5,
 //                    0 to 6,

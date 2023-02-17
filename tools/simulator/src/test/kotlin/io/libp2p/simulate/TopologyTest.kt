@@ -19,7 +19,6 @@ class TopologyTest {
             else -> throw IllegalArgumentException()
         }
 
-
     @Test
     fun allToAllTopologyTest() {
         val graph = AllToAllTopology().generateGraph(100)

@@ -2,7 +2,6 @@ package io.libp2p.simulate.topology
 
 import io.libp2p.simulate.*
 import org.jgrapht.Graph
-import org.jgrapht.GraphMetrics
 import java.util.*
 
 abstract class AbstractGraphTopology : Topology {

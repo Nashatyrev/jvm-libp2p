@@ -4,7 +4,6 @@ import io.libp2p.tools.get
 import org.jgrapht.Graph
 import org.jgrapht.Graphs
 import org.jgrapht.generate.RandomRegularGraphGenerator
-import org.jgrapht.graph.DefaultDirectedGraph
 import org.jgrapht.graph.DefaultUndirectedGraph
 
 class WVertex(val weight: Double)

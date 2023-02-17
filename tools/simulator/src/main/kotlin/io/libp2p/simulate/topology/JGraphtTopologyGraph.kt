@@ -3,7 +3,6 @@ package io.libp2p.simulate.topology
 import io.libp2p.simulate.TopologyGraph
 import org.jgrapht.Graph
 import org.jgrapht.GraphMetrics
-import org.jgrapht.graph.DefaultDirectedGraph
 
 class JGraphtTopologyGraph(
     val graph: Graph<Int, Any>
