@@ -41,7 +41,7 @@ class LoopbackNetwork : Network {
             override fun transports(fn: TransportsBuilder.() -> Unit): Builder {
                 throw UnsupportedOperationException("Transports shouldn't be configured by client code")
             }
-        }).apply(fn).build()
+        }).apply(fn).build(Builder.Defaults.None)
         return newPeer(host)
     }
 

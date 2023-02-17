@@ -6,7 +6,6 @@ import io.libp2p.pubsub.gossip.GossipRouter
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.pubsub.gossip.builders.GossipScoreParamsBuilder
 import io.libp2p.pubsub.gossip.builders.GossipTopicScoreParamsBuilder
-import io.libp2p.simulate.RandomDistribution
 import io.libp2p.simulate.gossip.BlocksTopic
 import io.libp2p.simulate.gossip.Eth2DefaultBlockTopicParams
 import io.libp2p.simulate.gossip.Eth2DefaultGossipParams
