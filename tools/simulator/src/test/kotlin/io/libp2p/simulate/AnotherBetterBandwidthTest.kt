@@ -2,7 +2,8 @@ package io.libp2p.simulate
 
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
-import io.libp2p.simulate.AnotherBetterBandwidthTracker.Message
+import io.libp2p.simulate.delay.AccurateBandwidthTracker
+import io.libp2p.simulate.delay.AccurateBandwidthTracker.Message
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.topology.AllToAllTopology
 import io.libp2p.tools.millis
@@ -20,7 +21,7 @@ class AnotherBetterBandwidthTest {
             Message(1000, 200_000),
             Message(1000, 200_000)
         )
-        val t = AnotherBetterBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
+        val t = AccurateBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
 
         Assertions.assertThat(t[0]).isCloseTo(202_000, Offset.offset(2))
         Assertions.assertThat(t[1]).isCloseTo(202_000, Offset.offset(2))
@@ -33,7 +34,7 @@ class AnotherBetterBandwidthTest {
             Message(1000, 200_000),
             Message(1000, 200_500)
         )
-        val t = AnotherBetterBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
+        val t = AccurateBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
 
         Assertions.assertThat(t[0]).isCloseTo(201_500, Offset.offset(2))
         Assertions.assertThat(t[1]).isCloseTo(202_000, Offset.offset(2))
@@ -46,7 +47,7 @@ class AnotherBetterBandwidthTest {
             Message(1000, 200_000),
             Message(50, 200_500)
         )
-        val t = AnotherBetterBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
+        val t = AccurateBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
 
         Assertions.assertThat(t[0]).isCloseTo(201_050, Offset.offset(2))
         Assertions.assertThat(t[1]).isCloseTo(200_600, Offset.offset(2))
@@ -59,7 +60,7 @@ class AnotherBetterBandwidthTest {
             Message(1000, 200_000),
             Message(1, 200_500)
         )
-        val t = AnotherBetterBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
+        val t = AccurateBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
 
         Assertions.assertThat(t[0]).isCloseTo(201_002, Offset.offset(2))
         Assertions.assertThat(t[1]).isCloseTo(200_502, Offset.offset(2))
@@ -72,7 +73,7 @@ class AnotherBetterBandwidthTest {
             Message(1, 200_000),
             Message(1, 200_000)
         )
-        val t = AnotherBetterBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
+        val t = AccurateBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
 
         Assertions.assertThat(t[0]).isCloseTo(200_000, Offset.offset(2))
         Assertions.assertThat(t[1]).isCloseTo(200_000, Offset.offset(2))
@@ -88,7 +89,7 @@ class AnotherBetterBandwidthTest {
             Message(1, 200_000),
             Message(1, 200_000)
         )
-        val t = AnotherBetterBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
+        val t = AccurateBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
 
         Assertions.assertThat(t[0]).isCloseTo(200_000, Offset.offset(2))
         Assertions.assertThat(t[1]).isCloseTo(200_000, Offset.offset(2))
@@ -106,7 +107,7 @@ class AnotherBetterBandwidthTest {
             Message(1000, 201_900),
             Message(10, 202_900),
         )
-        val t = AnotherBetterBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
+        val t = AccurateBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
 
         Assertions.assertThat(t[0]).isCloseTo(202_050, Offset.offset(2))
         Assertions.assertThat(t[1]).isCloseTo(202_050, Offset.offset(2))
@@ -123,7 +124,7 @@ class AnotherBetterBandwidthTest {
             Message(924956, 70_000),
             Message(1130435, 72_774),
         )
-        val t = AnotherBetterBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
+        val t = AccurateBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
 
         Assertions.assertThat(t[0]).isCloseTo(72_775, Offset.offset(2))
         Assertions.assertThat(t[1]).isCloseTo(72_775, Offset.offset(2))
@@ -139,7 +140,7 @@ class AnotherBetterBandwidthTest {
             Message(900_000, 10_000),
             Message(1_100_000, 11_800),
         )
-        val t = AnotherBetterBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
+        val t = AccurateBandwidthTracker.calcDeliverTimes(bandwidth, msgs)
 
         Assertions.assertThat(t[0]).isCloseTo(11_800, Offset.offset(2))
         Assertions.assertThat(t[1]).isCloseTo(11_800, Offset.offset(2))
@@ -178,9 +179,9 @@ class AnotherBetterBandwidthTest {
     @Test
     fun `test smaller inbound bandwidth preserves sequential message delivery`() {
         peer0.outboundBandwidth =
-            AnotherBetterBandwidthTracker(Bandwidth(150000), peer0.simExecutor, peer0.currentTime, "[0]-out")
+            AccurateBandwidthTracker(Bandwidth(150000), peer0.simExecutor, peer0.currentTime, "[0]-out")
         peer1.inboundBandwidth =
-            AnotherBetterBandwidthTracker(Bandwidth(100000), peer1.simExecutor, peer1.currentTime, "[1]-in")
+            AccurateBandwidthTracker(Bandwidth(100000), peer1.simExecutor, peer1.currentTime, "[1]-in")
 
         println("Connecting peers...")
         simNetwork.connectAllPeers()

@@ -3,6 +3,7 @@ package io.libp2p.simulate.main
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.simulate.*
+import io.libp2p.simulate.delay.AccurateBandwidthTracker
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.stats.Stats
 import io.libp2p.simulate.stats.StatsFactory
@@ -59,8 +60,8 @@ class BlobDecouplingSimulation(
     }
     val bandwidthFactory: (PeerBandwidthValue, GossipSimPeer) -> PeerBandwidth = { band, peer ->
         PeerBandwidth(
-            AnotherBetterBandwidthTracker(band.inbound, peer.simExecutor, peer.currentTime, name = "[$peer]-in"),
-            AnotherBetterBandwidthTracker(band.outbound, peer.simExecutor, peer.currentTime, name = "[$peer]-out")
+            AccurateBandwidthTracker(band.inbound, peer.simExecutor, peer.currentTime, name = "[$peer]-in"),
+            AccurateBandwidthTracker(band.outbound, peer.simExecutor, peer.currentTime, name = "[$peer]-out")
         )
     }
 

@@ -2,6 +2,7 @@ package io.libp2p.simulate.stream
 
 import io.libp2p.core.multistream.ProtocolId
 import io.libp2p.simulate.*
+import io.libp2p.simulate.delay.TimeDelayer
 import io.netty.handler.logging.LogLevel
 import java.util.concurrent.CompletableFuture
 import kotlin.time.Duration

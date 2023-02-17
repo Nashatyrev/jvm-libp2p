@@ -3,6 +3,8 @@ package io.libp2p.simulate
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.toByteBuf
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
+import io.libp2p.simulate.delay.AccurateBandwidthTracker
+import io.libp2p.simulate.delay.LoggingDelayer.Companion.logging
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.topology.CustomTopology
@@ -105,9 +107,9 @@ class GossipSimTest {
             gossipValidationDelay = 10.millis,
             bandwidthGenerator = { peer ->
                 PeerBandwidth(
-                    AnotherBetterBandwidthTracker(Bandwidth(1_000_000), peer.simExecutor, peer.currentTime),
+                    AccurateBandwidthTracker(Bandwidth(1_000_000), peer.simExecutor, peer.currentTime),
 //                        .logging { log("${peer.currentTime()}: [${peer.name}] <==   $it") }
-                    AnotherBetterBandwidthTracker(
+                    AccurateBandwidthTracker(
                         Bandwidth(1_000_000),
                         peer.simExecutor,
                         peer.currentTime,

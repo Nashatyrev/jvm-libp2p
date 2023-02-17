@@ -3,6 +3,9 @@ package io.libp2p.tools
 import java.text.SimpleDateFormat
 import java.time.Duration
 import java.util.*
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import kotlin.math.roundToLong
 import kotlin.reflect.full.memberProperties
@@ -90,3 +93,15 @@ fun String.formatTable(firstLineHeaders: Boolean = true, separator: String = "\t
 }
 
 fun Any.propertiesAsMap() = javaClass.kotlin.memberProperties.map { it.name to it.get(this) }.toMap()
+
+fun <T : Comparable<T>> Collection<T>.isOrdered() =
+    this
+        .windowed(2) { l -> l[1] >= l[0] }
+        .all { it }
+
+fun ScheduledExecutorService.delayedFuture(delay: kotlin.time.Duration): CompletableFuture<Unit> {
+    val fut = CompletableFuture<Unit>()
+    this.schedule({ fut.complete(null) }, delay.inWholeMilliseconds, TimeUnit.MILLISECONDS)
+    return fut
+}
+
