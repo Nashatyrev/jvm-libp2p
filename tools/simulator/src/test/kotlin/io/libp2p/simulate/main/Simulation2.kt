@@ -10,8 +10,8 @@ import io.libp2p.pubsub.gossip.builders.GossipTopicScoreParamsBuilder
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.topology.RandomNPeers
-import io.libp2p.tools.millis
-import io.libp2p.tools.propertiesAsMap
+import io.libp2p.simulate.util.millis
+import io.libp2p.simulate.util.propertiesAsMap
 import org.junit.jupiter.api.Test
 import java.time.Duration
 

@@ -14,10 +14,10 @@ import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.simulate.util.chunked
 import io.libp2p.simulate.util.countByRanges
 import io.libp2p.simulate.util.countValues
+import io.libp2p.simulate.util.millis
+import io.libp2p.simulate.util.minutes
 import io.libp2p.simulate.util.toMap
 import io.libp2p.tools.log
-import io.libp2p.tools.millis
-import io.libp2p.tools.minutes
 import java.time.Duration
 import java.util.*
 

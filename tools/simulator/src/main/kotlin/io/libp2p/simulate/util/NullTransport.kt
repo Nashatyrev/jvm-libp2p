@@ -1,4 +1,4 @@
-package io.libp2p.tools
+package io.libp2p.simulate.util
 
 import io.libp2p.core.ChannelVisitor
 import io.libp2p.core.Connection

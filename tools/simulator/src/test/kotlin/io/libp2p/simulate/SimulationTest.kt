@@ -5,7 +5,7 @@ import io.libp2p.etc.types.seconds
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.topology.AllToAllTopology
-import io.libp2p.tools.millis
+import io.libp2p.simulate.util.millis
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 

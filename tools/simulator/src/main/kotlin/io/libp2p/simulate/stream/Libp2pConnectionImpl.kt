@@ -4,8 +4,8 @@ import io.libp2p.core.PeerId
 import io.libp2p.core.crypto.PubKey
 import io.libp2p.core.multiformats.Multiaddr
 import io.libp2p.core.security.SecureChannel
-import io.libp2p.tools.DummyChannel
-import io.libp2p.tools.NullTransport
+import io.libp2p.simulate.util.DummyChannel
+import io.libp2p.simulate.util.NullTransport
 import io.libp2p.transport.implementation.ConnectionOverNetty
 
 class Libp2pConnectionImpl(

@@ -1,6 +1,6 @@
 package io.libp2p.simulate.topology
 
-import io.libp2p.tools.get
+import io.libp2p.simulate.util.get
 import org.jgrapht.Graph
 import org.jgrapht.Graphs
 import org.jgrapht.generate.RandomRegularGraphGenerator

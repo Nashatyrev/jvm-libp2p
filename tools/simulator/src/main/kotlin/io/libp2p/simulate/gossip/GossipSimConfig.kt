@@ -4,8 +4,8 @@ import io.libp2p.core.pubsub.Topic
 import io.libp2p.simulate.*
 import io.libp2p.simulate.stream.StreamSimConnection
 import io.libp2p.simulate.topology.RandomNPeers
-import io.libp2p.tools.millis
-import io.libp2p.tools.seconds
+import io.libp2p.simulate.util.millis
+import io.libp2p.simulate.util.seconds
 import java.time.Duration
 
 data class PeerBandwidth(

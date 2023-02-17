@@ -1,6 +1,6 @@
 package io.libp2p.simulate.stats
 
-import io.libp2p.tools.smartRound
+import io.libp2p.simulate.util.smartRound
 import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics
 

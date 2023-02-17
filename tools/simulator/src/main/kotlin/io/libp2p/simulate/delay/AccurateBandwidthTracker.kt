@@ -3,7 +3,7 @@ package io.libp2p.simulate.delay
 import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.BandwidthDelayer
-import io.libp2p.tools.isOrdered
+import io.libp2p.simulate.util.isOrdered
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit

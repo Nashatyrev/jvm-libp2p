@@ -13,7 +13,7 @@ import io.libp2p.etc.types.lazyVar
 import io.libp2p.pubsub.PubsubProtocol
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.simulate.stream.StreamSimPeer
-import io.libp2p.tools.millis
+import io.libp2p.simulate.util.millis
 import io.netty.handler.logging.LogLevel
 import io.netty.handler.logging.LoggingHandler
 import java.util.Random

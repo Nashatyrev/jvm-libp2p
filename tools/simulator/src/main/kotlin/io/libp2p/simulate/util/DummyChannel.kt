@@ -1,4 +1,4 @@
-package io.libp2p.tools
+package io.libp2p.simulate.util
 
 import io.netty.buffer.ByteBufAllocator
 import io.netty.channel.Channel
