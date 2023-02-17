@@ -5,6 +5,7 @@ import io.libp2p.core.dsl.Builder
 import io.libp2p.core.dsl.TransportsBuilder
 import io.libp2p.etc.types.lazyVar
 import io.libp2p.simulate.Network
+import io.libp2p.simulate.TopologyGraph
 import io.libp2p.transport.ConnectionUpgrader
 import java.util.Random
 import java.util.concurrent.ScheduledExecutorService
@@ -13,6 +14,9 @@ import java.util.concurrent.atomic.AtomicInteger
 class LoopbackNetwork : Network {
     var random = Random(0)
     var simExecutor: ScheduledExecutorService by lazyVar { TODO() }
+
+    override val topologyGraph: TopologyGraph
+        get() = TODO("Not yet implemented")
 
     private var ipCounter = AtomicInteger(1)
     internal val ipTransportMap = mutableMapOf<String, LoopbackTransport>()

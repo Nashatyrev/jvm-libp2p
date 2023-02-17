@@ -60,7 +60,7 @@ class GraphTest {
         val nPeers = ClusteredNPeers(2, clusters).also {
             it.random = Random(1)
         }
-        val graph = nPeers.buildGraph(List(20) { it })
+        val graph = nPeers.buildGraph(20)
         println(graph)
     }
 

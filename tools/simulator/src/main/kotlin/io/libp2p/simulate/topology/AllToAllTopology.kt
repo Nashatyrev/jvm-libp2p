@@ -9,13 +9,13 @@ class AllToAllTopology : Topology {
         get() = TODO("Not yet implemented")
         set(_) {}
 
-    override fun connect(peers: List<SimPeer>): Network {
-        val conns = mutableListOf<SimConnection>()
-        for (i in peers.indices) {
-            for (j in (i + 1) until peers.size) {
-                conns += peers[i].connect(peers[j]).join()
+    override fun generateGraph(verticesCount: Int): TopologyGraph =
+        (0 until verticesCount)
+            .flatMap { src ->
+                (src + 1 until verticesCount)
+                    .map { dest ->
+                        TopologyGraph.Edge(src, dest)
+                    }
             }
-        }
-        return ImmutableNetworkImpl(conns)
-    }
+            .let { CustomTopologyGraph(it) }
 }

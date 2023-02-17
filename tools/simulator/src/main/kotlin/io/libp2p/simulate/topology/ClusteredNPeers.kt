@@ -4,30 +4,30 @@ import io.libp2p.tools.get
 import org.jgrapht.Graph
 import org.jgrapht.Graphs
 import org.jgrapht.generate.RandomRegularGraphGenerator
+import org.jgrapht.graph.DefaultDirectedGraph
 import org.jgrapht.graph.DefaultUndirectedGraph
-import java.util.Random
 
 class WVertex(val weight: Double)
 class WEdge(val cnt: Int)
 
 class ClusteredNPeers(val peersCount: Int, val clusters: Graph<WVertex, WEdge>) : AbstractGraphTopology() {
-    override var random = Random()
 
-    override fun <T> buildGraph(peers: List<T>): Graph<T, Any> {
+    override fun buildGraph(vertexCount: Int): Graph<Int, Any> {
+        val peers = (0 until vertexCount).toList()
         val clusterVertexes = clusters.vertexSet().toList()
         val clusterGraphs =
             split(peers, clusterVertexes.map { it.weight }).map {
                 val graph = DefaultUndirectedGraph(it.iterator()::next, { Any() }, false)
-                RandomRegularGraphGenerator<T, Any>(it.size, peersCount, random).generateGraph(graph)
+                RandomRegularGraphGenerator<Int, Any>(it.size, peersCount, random).generateGraph(graph)
                 graph
             }
-        val targetGraph = clusterGraphs.fold(DefaultUndirectedGraph<T, Any>(Any::class.java)) { tg, g ->
+        val targetGraph = clusterGraphs.fold(DefaultUndirectedGraph<Int, Any>(Any::class.java)) { tg, g ->
             Graphs.addGraph(tg, g)
             tg
         }
 
         clusters.edgeSet().forEach { edge ->
-            val freeUpNodes: (Graph<T, Any>) -> List<T> = { cluster ->
+            val freeUpNodes: (Graph<Int, Any>) -> List<Int> = { cluster ->
                 cluster.edgeSet()
                     .shuffled(random)
                     .take((edge.cnt + 1) / 2)

@@ -1,26 +1,16 @@
 package io.libp2p.simulate.topology
 
-import io.libp2p.simulate.ImmutableNetworkImpl
-import io.libp2p.simulate.Network
-import io.libp2p.simulate.SimPeer
-import io.libp2p.simulate.Topology
+import io.libp2p.simulate.*
 import org.jgrapht.Graph
 import org.jgrapht.GraphMetrics
+import java.util.*
 
 abstract class AbstractGraphTopology : Topology {
 
-    abstract fun <T> buildGraph(peers: List<T>): Graph<T, Any>
+    override var random = Random()
 
-    override fun connect(peers: List<SimPeer>): Network {
-        val graph = buildGraph(peers)
-        println("Graph diameter: " + GraphMetrics.getDiameter(graph))
-        val conns = peers
-            .flatMap {
-                graph.incomingEdgesOf(it).filter { graph.getEdgeSource(it) != graph.getEdgeTarget(it) }
-            }
-            .distinct()
-            .map { graph.getEdgeSource(it).connect(graph.getEdgeTarget(it)) }
-            .map { it.get() }
-        return ImmutableNetworkImpl(conns)
-    }
+    abstract fun buildGraph(vertexCount: Int): Graph<Int, Any>
+
+    override fun generateGraph(verticesCount: Int): TopologyGraph =
+        JGraphtTopologyGraph(buildGraph(verticesCount))
 }

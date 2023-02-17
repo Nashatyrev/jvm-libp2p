@@ -5,6 +5,7 @@ import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.toByteBuf
 import io.libp2p.simulate.RandomDistribution
 import io.libp2p.simulate.Topology
+import io.libp2p.simulate.generateAndConnect
 import io.libp2p.simulate.gossip.GossipSimPeer
 import io.libp2p.simulate.gossip.averagePubSubMsgSizeEstimator
 import io.libp2p.simulate.stats.StatsFactory
@@ -419,7 +420,7 @@ class Simulation1 {
             cfg.topology.random = commonRnd
 
             println("Connecting peers")
-            val net = cfg.topology.connect(peers)
+            val net = cfg.topology.generateAndConnect(peers)
             val networkStatsCollector = GlobalNetworkStatsCollector(net, GeneralSizeEstimator)
 
             data class NetworkStats(

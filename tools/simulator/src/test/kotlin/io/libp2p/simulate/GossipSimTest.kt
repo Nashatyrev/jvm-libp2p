@@ -7,13 +7,13 @@ import io.libp2p.simulate.delay.AccurateBandwidthTracker
 import io.libp2p.simulate.delay.LoggingDelayer.Companion.logging
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.stats.StatsFactory
-import io.libp2p.simulate.topology.CustomTopology
+import io.libp2p.simulate.topology.asFixedTopology
 import io.libp2p.tools.*
 import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl
 import io.libp2p.tools.schedulers.TimeControllerImpl
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
-import java.util.Random
+import java.util.*
 import java.util.function.Consumer
 
 class GossipSimTest {
@@ -90,8 +90,7 @@ class GossipSimTest {
             totalPeers = 4,
             topics = listOf(blockTopic, blobTopic),
 //            topology = RandomNPeers(10),
-            topology = CustomTopology(
-                listOf(
+            topology = TopologyGraph.customTopology(
                     0 to 1,
                     0 to 2,
                     0 to 3,
@@ -102,8 +101,7 @@ class GossipSimTest {
 //                    0 to 8,
 //                    0 to 9,
 //                    0 to 10,
-                )
-            ),
+            ).asFixedTopology(),
             gossipValidationDelay = 10.millis,
             bandwidthGenerator = { peer ->
                 PeerBandwidth(

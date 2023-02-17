@@ -101,6 +101,7 @@ class BlobDecouplingSimulation(
         simNetwork.createAllPeers()
         logger("Connecting peers...")
         simNetwork.connectAllPeers()
+        logger("Peers connected. Graph diameter is " + simNetwork.network.topologyGraph.calcDiameter())
     }
 
     val peerIndexesByBandwidth = simNetwork.peers.entries
