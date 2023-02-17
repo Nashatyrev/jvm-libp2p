@@ -3,8 +3,10 @@ package io.libp2p.pubsub.gossip.builders
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.etc.types.lazyVar
+import io.libp2p.etc.types.millis
 import io.libp2p.pubsub.*
 import io.libp2p.pubsub.gossip.*
+import java.time.Duration
 import java.util.*
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -39,6 +41,7 @@ open class GossipRouterBuilder(
             gossipScore
         },
     var serialize: Boolean = true,
+    var heartbeatInitialDelay: Duration = 0.millis,
 
     val gossipRouterEventListeners: MutableList<GossipRouterEventListener> = mutableListOf()
 ) {
@@ -67,6 +70,7 @@ open class GossipRouterBuilder(
             messageValidator = messageValidator
         )
         router.serialize = serialize
+        router.heartbeatInitialDelay = heartbeatInitialDelay
 
         router.eventBroadcaster.listeners += gossipRouterEventListeners
         return router

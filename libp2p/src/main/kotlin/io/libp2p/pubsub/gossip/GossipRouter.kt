@@ -113,6 +113,10 @@ open class GossipRouter(
     val mesh: MutableMap<Topic, MutableSet<PeerHandler>> = linkedMapOf()
     val eventBroadcaster = GossipRouterEventBroadcaster()
 
+    // duration to delay the first heartbeat
+    // primarily for tests and simulation to disperse heartbeats of routers
+    var heartbeatInitialDelay = 0.millis
+
     private val lastPublished = linkedMapOf<Topic, Long>()
     private var heartbeatsCount = 0
     private val backoffExpireTimes = createLRUMap<Pair<PeerId, Topic>, Long>(MaxBackoffEntries)
@@ -122,7 +126,7 @@ open class GossipRouter(
     private val heartbeatTask by lazy {
         executor.scheduleWithFixedDelay(
             ::catchingHeartbeat,
-            params.heartbeatInterval.toMillis(),
+            (params.heartbeatInterval + heartbeatInitialDelay).toMillis(),
             params.heartbeatInterval.toMillis(),
             TimeUnit.MILLISECONDS
         )
