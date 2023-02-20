@@ -5,6 +5,7 @@ import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.simulate.*
 import io.libp2p.simulate.delay.AccurateBandwidthTracker
 import io.libp2p.simulate.gossip.*
+import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
 import io.libp2p.simulate.stats.Stats
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.stats.collect.GlobalNetworkStatsCollector
@@ -90,7 +91,7 @@ class BlobDecouplingSimulation(
         )
     val gossipScoreParams = Eth2DefaultScoreParams
     val gossipRouterCtor = { _: Int ->
-        GossipRouterBuilder().also {
+        SimGossipRouterBuilder().also {
             it.params = gossipParams
             it.scoreParams = gossipScoreParams
         }

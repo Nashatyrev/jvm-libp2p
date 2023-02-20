@@ -8,6 +8,7 @@ import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.pubsub.gossip.builders.GossipScoreParamsBuilder
 import io.libp2p.pubsub.gossip.builders.GossipTopicScoreParamsBuilder
 import io.libp2p.simulate.gossip.*
+import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.simulate.util.millis
@@ -30,7 +31,7 @@ class Simulation2 {
         val gossipParams = Eth2DefaultGossipParams
         val gossipScoreParams = Eth2DefaultScoreParams
         val gossipRouterCtor = { _: Int ->
-            GossipRouterBuilder().also {
+            SimGossipRouterBuilder().also {
                 it.params = gossipParams
                 it.scoreParams = gossipScoreParams
             }

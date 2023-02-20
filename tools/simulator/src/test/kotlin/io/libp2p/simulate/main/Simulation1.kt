@@ -389,7 +389,7 @@ class Simulation1 {
 //                    )
                     routerBuilder.apply {
                         heartbeatInitialDelay = gossipHeartbeatAddDelay.next().toInt().millis
-                        serialize = false
+                        serializeMessagesToBytes = false
                         val timeShift = peerTimeShift.next().toLong()
                         currentTimeSuppluer = { timeController.time + timeShift }
                         random = commonRnd

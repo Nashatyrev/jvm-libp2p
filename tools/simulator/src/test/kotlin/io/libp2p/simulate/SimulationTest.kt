@@ -4,6 +4,7 @@ import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.seconds
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.simulate.gossip.*
+import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
 import io.libp2p.simulate.topology.AllToAllTopology
 import io.libp2p.simulate.util.millis
 import org.assertj.core.api.Assertions.assertThat
@@ -23,7 +24,7 @@ class SimulationTest {
         val gossipParams = Eth2DefaultGossipParams
         val gossipScoreParams = Eth2DefaultScoreParams
         val gossipRouterCtor = { _: Int ->
-            GossipRouterBuilder().also {
+            SimGossipRouterBuilder().also {
                 it.params = gossipParams
                 it.scoreParams = gossipScoreParams
 //                it.serialize = true

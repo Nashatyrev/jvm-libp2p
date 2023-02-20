@@ -6,13 +6,14 @@ import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.simulate.delay.AccurateBandwidthTracker
 import io.libp2p.simulate.delay.LoggingDelayer.Companion.logging
 import io.libp2p.simulate.gossip.*
+import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.topology.asFixedTopology
 import io.libp2p.simulate.util.millis
 import io.libp2p.simulate.util.minutes
 import io.libp2p.simulate.util.seconds
 import io.libp2p.simulate.util.transpose
-import io.libp2p.tools.*
+import io.libp2p.tools.log
 import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl
 import io.libp2p.tools.schedulers.TimeControllerImpl
 import org.junit.jupiter.api.Assertions
@@ -28,8 +29,8 @@ class GossipSimTest {
 
         val createPeer = {
             val peer = GossipSimPeer(listOf(Topic("aaa")), "1", Random())
-            peer.routerBuilder = GossipRouterBuilder().also {
-                it.serialize = true
+            peer.routerBuilder = SimGossipRouterBuilder().also {
+                it.serializeMessagesToBytes = true
             }
 
             peer.pubsubLogs = { true }
@@ -133,7 +134,7 @@ class GossipSimTest {
             )
         val gossipScoreParams = Eth2DefaultScoreParams
         val gossipRouterCtor = { _: Int ->
-            GossipRouterBuilder().also {
+            SimGossipRouterBuilder().also {
                 it.params = gossipParams
                 it.scoreParams = gossipScoreParams
             }
