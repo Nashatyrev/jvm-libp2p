@@ -4,6 +4,7 @@ import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.pubsub.*
 import io.libp2p.pubsub.gossip.*
 import io.netty.channel.ChannelHandler
+import java.time.Duration
 import java.util.*
 import java.util.concurrent.ScheduledExecutorService
 
@@ -21,7 +22,8 @@ class SimGossipRouter(
     messageFactory: PubsubMessageFactory,
     seenMessages: SeenCache<Optional<ValidationResult>>,
     messageValidator: PubsubRouterMessageValidator,
-    val serializeToBytes: Boolean
+    val serializeToBytes: Boolean,
+    additionalHeartbeatDelay: Duration
 ) : GossipRouter(
     params,
     scoreParams,
@@ -37,6 +39,8 @@ class SimGossipRouter(
     seenMessages,
     messageValidator
 ) {
+
+    override val heartbeatInitialDelay: Duration = params.heartbeatInterval + additionalHeartbeatDelay
 
     override fun initChannelWithHandler(streamHandler: StreamHandler, handler: ChannelHandler?) {
         if (serializeToBytes) {

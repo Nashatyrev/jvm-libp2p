@@ -9,6 +9,7 @@ import io.libp2p.etc.util.P2PService
 import io.libp2p.pubsub.*
 import org.apache.logging.log4j.LogManager
 import pubsub.pb.Rpc
+import java.time.Duration
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ScheduledExecutorService
@@ -113,9 +114,7 @@ open class GossipRouter(
     val mesh: MutableMap<Topic, MutableSet<PeerHandler>> = linkedMapOf()
     val eventBroadcaster = GossipRouterEventBroadcaster()
 
-    // duration to delay the first heartbeat
-    // primarily for tests and simulation to disperse heartbeats of routers
-    var heartbeatInitialDelay = 0.millis
+    open val heartbeatInitialDelay: Duration = params.heartbeatInterval
 
     private val lastPublished = linkedMapOf<Topic, Long>()
     private var heartbeatsCount = 0
@@ -126,7 +125,7 @@ open class GossipRouter(
     private val heartbeatTask by lazy {
         executor.scheduleWithFixedDelay(
             ::catchingHeartbeat,
-            (params.heartbeatInterval + heartbeatInitialDelay).toMillis(),
+            heartbeatInitialDelay.toMillis(),
             params.heartbeatInterval.toMillis(),
             TimeUnit.MILLISECONDS
         )

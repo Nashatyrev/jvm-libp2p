@@ -388,7 +388,7 @@ class Simulation1 {
 //                        heartbeatInterval = cfg.gossipHeartbeat
 //                    )
                     routerBuilder.apply {
-                        heartbeatInitialDelay = gossipHeartbeatAddDelay.next().toInt().millis
+                        additionalHeartbeatDelay = gossipHeartbeatAddDelay.next().toInt().millis
                         serializeMessagesToBytes = false
                         val timeShift = peerTimeShift.next().toLong()
                         currentTimeSuppluer = { timeController.time + timeShift }
