@@ -20,7 +20,7 @@ class UdpTest(
     val destPort: Int = 7777,
     val srcPort: Int = 8888,
     val msgSize: Int = 512,
-    val msgCount: Int = 1024
+    val msgCount: Int = 2 * 1024
 ) {
 
     fun run() {

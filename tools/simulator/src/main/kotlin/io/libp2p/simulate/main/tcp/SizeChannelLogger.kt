@@ -23,6 +23,8 @@ class SizeChannelLogger(
     var writeCount: Int = 0
     var firstByteReadTime: Long = 0
     var lastReadTime = 0L
+    var firstByteWriteTime: Long = 0
+    var lastWrittenTime = 0L
 
     val executor = Executors.newSingleThreadScheduledExecutor()
     var printTask: ScheduledFuture<*>? = null
@@ -51,7 +53,8 @@ class SizeChannelLogger(
         if (writeCount > lastPrintedWriteCount) {
             lastPrintedWriteCount = writeCount
             val totSize = ReadableSize.create(writeBytes)
-            log("[$name] Write total count: $writeCount, size: $totSize)")
+            val t = lastWrittenTime - firstByteWriteTime
+            log("[$name] Write total count: $writeCount, size: $totSize in $t ms)")
         }
     }
 
@@ -79,18 +82,25 @@ class SizeChannelLogger(
     override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
         val msgSize = sizeExtractor(msg)
         val size = ReadableSize.create(msgSize)
+        val curTime = System.currentTimeMillis()
+        if (firstByteWriteTime == 0L) firstByteWriteTime = curTime
         writeBytes += msgSize
         writeCount++
         val totSize = ReadableSize.create(writeBytes)
 
-        if (printPeriod == Duration.ZERO || writeCount <= printFirstIndividualPackets) {
+        val printLog = printPeriod == Duration.ZERO || writeCount <= printFirstIndividualPackets
+        if (printLog) {
             log("[$name] Write $size (count: $writeCount, total: $totSize)")
-            promise.addListener {
-                log("[$name] Written $size (count: $writeCount, total: $totSize)")
-            }
             lastPrintedWriteCount = writeCount
         } else {
             maybeStartPeriodicLog()
+        }
+        promise.addListener {
+            lastWrittenTime = System.currentTimeMillis()
+            if (printLog) {
+                val t = lastWrittenTime - firstByteWriteTime
+                log("[$name] Written $size (count: $writeCount, total: $totSize in $t ms)")
+            }
         }
         super.write(ctx, msg, promise)
     }
@@ -104,6 +114,8 @@ class SizeChannelLogger(
         lastPrintedWriteCount = 0
         firstByteReadTime = 0
         lastReadTime = 0
+        firstByteWriteTime = 0
+        lastWrittenTime = 0
         if (printTask != null) {
             printTask!!.cancel(true)
             printTask = null
