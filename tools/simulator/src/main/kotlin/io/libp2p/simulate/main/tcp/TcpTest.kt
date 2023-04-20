@@ -1,19 +1,15 @@
 package io.libp2p.simulate.main.tcp
 
 import io.libp2p.etc.types.toByteBuf
-import io.libp2p.etc.util.netty.LoggingHandlerShort
-import io.libp2p.simulate.util.ReadableSize
 import io.libp2p.tools.log
 import io.netty.bootstrap.Bootstrap
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.buffer.ByteBuf
 import io.netty.channel.*
 import io.netty.channel.nio.NioEventLoopGroup
-import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
-import io.netty.handler.logging.LogLevel
 import java.net.InetSocketAddress
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -22,20 +18,17 @@ fun main() {
     TcpTest().run()
 }
 
-class TcpTest {
-
-    fun createLoggingHandler(name: String) =
-        LoggingHandlerShort(name, LogLevel.ERROR).apply {
-            maxHeadingLines = 1
-            maxTrailingLines = 0
-        }
+class TcpTest(
+    val destHost: String = "localhost", // "45.79.117.81",
+    val destPort: Int = 7777,
+    val srcPort: Int = 8888,
+    val msgSize: Int = 10 * 1024 * 1024,
+) {
 
     fun run() {
-        val port = 7777
-
         Thread {
             log("Starting server...")
-            startServer(port)
+            startServer(destPort)
             log("Server completed")
         }.start()
 
@@ -43,7 +36,7 @@ class TcpTest {
 
         Thread {
             log("Starting client...")
-            startClient(port)
+            startClient(destPort)
             log("Client completed")
         }.start()
     }
@@ -57,8 +50,6 @@ class TcpTest {
             .also { loggers += it }
 
     fun startClient(port: Int) {
-        val host = "45.79.117.81"
-//        val host = "localhost"
         val workerGroup: EventLoopGroup = NioEventLoopGroup()
 
         try {
@@ -72,14 +63,14 @@ class TcpTest {
                     ch.pipeline().addLast(createLogger("client"))
                 }
             })
-            val f: ChannelFuture = b.connect(InetSocketAddress(host, port), InetSocketAddress(8888)).sync()
+            val f: ChannelFuture = b.connect(InetSocketAddress(destHost, port), InetSocketAddress(srcPort)).sync()
 
             Thread.sleep(1000)
 
             while (true) {
                 loggers.forEach { it.reset() }
 
-                val data = ByteArray(1 * 1024 * 1024)
+                val data = ByteArray(msgSize)
                 f.channel().writeAndFlush(data.toByteBuf()).sync()
 
                 Thread.sleep(10000)

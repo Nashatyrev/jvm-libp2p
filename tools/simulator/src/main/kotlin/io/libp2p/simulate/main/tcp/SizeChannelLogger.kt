@@ -1,5 +1,6 @@
 package io.libp2p.simulate.main.tcp
 
+import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.util.ReadableSize
 import io.libp2p.tools.log
 import io.netty.channel.ChannelDuplexHandler
@@ -9,6 +10,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 class SizeChannelLogger(
     val name: String,
@@ -17,19 +19,25 @@ class SizeChannelLogger(
     val printFirstIndividualPackets: Int = 1
 ) : ChannelDuplexHandler() {
 
-    var readBytes: Long = 0
-    var readCount: Int = 0
-    var writeBytes: Long = 0
-    var writeCount: Int = 0
-    var firstByteReadTime: Long = 0
-    var lastReadTime = 0L
-    var firstByteWriteTime: Long = 0
-    var lastWrittenTime = 0L
+    data class Counters(
+        var readBytes: Long = 0,
+        var readCount: Int = 0,
+        var writeBytes: Long = 0,
+        var writeCount: Int = 0,
+        var writtenBytes: Long = 0,
+        var writtenCount: Int = 0,
+        var firstByteReadTime: Long = 0,
+        var lastReadTime: Long = 0L,
+        var firstByteWriteTime: Long = 0,
+        var lastWrittenTime: Long = 0L,
+        var lastPrintedReadCount: Int = 0,
+        var lastPrintedWriteCount: Int = 0,
+    )
+
+    var counts = Counters()
 
     val executor = Executors.newSingleThreadScheduledExecutor()
     var printTask: ScheduledFuture<*>? = null
-    var lastPrintedReadCount = 0
-    var lastPrintedWriteCount = 0
 
     fun maybeStartPeriodicLog() {
         if (printPeriod > Duration.ZERO && printTask == null) {
@@ -43,35 +51,42 @@ class SizeChannelLogger(
     }
 
     fun printPeriodicStat() {
-        if (readCount > lastPrintedReadCount) {
-            lastPrintedReadCount = readCount
-            val totSize = ReadableSize.create(readBytes)
-            val t = lastReadTime - firstByteReadTime
-            log("[$name] Read total count: $readCount, size: $totSize in $t ms)")
+        if (counts.readCount > counts.lastPrintedReadCount) {
+            counts.lastPrintedReadCount = counts.readCount
+            logRead("TOTAL")
         }
 
-        if (writeCount > lastPrintedWriteCount) {
-            lastPrintedWriteCount = writeCount
-            val totSize = ReadableSize.create(writeBytes)
-            val t = lastWrittenTime - firstByteWriteTime
-            log("[$name] Write total count: $writeCount, size: $totSize in $t ms)")
+        if (counts.writtenCount > counts.lastPrintedWriteCount) {
+            counts.lastPrintedWriteCount = counts.writtenCount
+            logWritten("TOTAL")
         }
+    }
+
+    fun logRead(packetString: Any) {
+        val totSize = ReadableSize.create(counts.readBytes)
+        val t = counts.lastReadTime - counts.firstByteReadTime
+        val throughput = Bandwidth.fromSize(counts.readBytes, t.milliseconds)
+        log("[$name] Read $packetString count: ${counts.readCount}, size: $totSize in $t ms @ $throughput)")
+    }
+
+    fun logWritten(packetString: Any) {
+        val totSize = ReadableSize.create(counts.writtenBytes)
+        val t = counts.lastWrittenTime - counts.firstByteWriteTime
+        val throughput = Bandwidth.fromSize(counts.writtenBytes, t.milliseconds)
+        log("[$name] Written $packetString count: ${counts.writtenCount}, size: $totSize in $t ms @ $throughput)")
     }
 
     override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
         val msgSize = sizeExtractor(msg)
         val curTime = System.currentTimeMillis()
-        if (firstByteReadTime == 0L) firstByteReadTime = curTime
-        lastReadTime = curTime
-        val size = ReadableSize.create(msgSize)
-        readBytes += msgSize
-        readCount++
-        val totSize = ReadableSize.create(readBytes)
-        val t = curTime - firstByteReadTime
+        if (counts.firstByteReadTime == 0L) counts.firstByteReadTime = curTime
+        counts.lastReadTime = curTime
+        counts.readBytes += msgSize
+        counts.readCount++
 
-        if (printPeriod == Duration.ZERO || readCount <= printFirstIndividualPackets) {
-            log("[$name] Read $size (count: $readCount, total: $totSize in $t ms)")
-            lastPrintedReadCount = readCount
+        if (printPeriod == Duration.ZERO || counts.readCount <= printFirstIndividualPackets) {
+            logRead(ReadableSize.create(msgSize))
+            counts.lastPrintedReadCount = counts.readCount
         } else {
             maybeStartPeriodicLog()
         }
@@ -83,39 +98,31 @@ class SizeChannelLogger(
         val msgSize = sizeExtractor(msg)
         val size = ReadableSize.create(msgSize)
         val curTime = System.currentTimeMillis()
-        if (firstByteWriteTime == 0L) firstByteWriteTime = curTime
-        writeBytes += msgSize
-        writeCount++
-        val totSize = ReadableSize.create(writeBytes)
+        if (counts.firstByteWriteTime == 0L) counts.firstByteWriteTime = curTime
+        counts.writeBytes += msgSize
+        counts.writeCount++
 
-        val printLog = printPeriod == Duration.ZERO || writeCount <= printFirstIndividualPackets
+        val printLog = printPeriod == Duration.ZERO || counts.writtenCount <= printFirstIndividualPackets
         if (printLog) {
-            log("[$name] Write $size (count: $writeCount, total: $totSize)")
-            lastPrintedWriteCount = writeCount
+            val totSize = ReadableSize.create(counts.writeBytes)
+            log("[$name] Write $size (count: ${counts.writeCount}, total: $totSize)")
+            counts.lastPrintedWriteCount = counts.writtenCount
         } else {
             maybeStartPeriodicLog()
         }
         promise.addListener {
-            lastWrittenTime = System.currentTimeMillis()
+            counts.writtenBytes += msgSize
+            counts.writtenCount++
+            counts.lastWrittenTime = System.currentTimeMillis()
             if (printLog) {
-                val t = lastWrittenTime - firstByteWriteTime
-                log("[$name] Written $size (count: $writeCount, total: $totSize in $t ms)")
+                logWritten(size)
             }
         }
         super.write(ctx, msg, promise)
     }
 
     fun reset() {
-        readBytes = 0
-        readCount = 0
-        lastPrintedReadCount = 0
-        writeBytes = 0
-        writeCount = 0
-        lastPrintedWriteCount = 0
-        firstByteReadTime = 0
-        lastReadTime = 0
-        firstByteWriteTime = 0
-        lastWrittenTime = 0
+        counts = Counters()
         if (printTask != null) {
             printTask!!.cancel(true)
             printTask = null

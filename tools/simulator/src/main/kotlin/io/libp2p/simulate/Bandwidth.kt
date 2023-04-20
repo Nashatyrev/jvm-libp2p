@@ -24,6 +24,7 @@ data class Bandwidth(val bytesPerSecond: Long) : Comparable<Bandwidth> {
         val UNLIM = Bandwidth(Long.MAX_VALUE)
         fun mbitsPerSec(mbsec: Int) = Bandwidth(mbsec.toLong() * (1 shl 20) / 10)
         fun gbitsPerSec(gbsec: Int) = mbitsPerSec(gbsec * (1 shl 10))
+        fun fromSize(sizeBytes: Long, period: Duration) = Bandwidth(sizeBytes * 1000 / period.inWholeMilliseconds)
     }
 }
 
