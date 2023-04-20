@@ -10,6 +10,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.ZERO
 import kotlin.time.Duration.Companion.milliseconds
 
 class SizeChannelLogger(
@@ -65,14 +66,20 @@ class SizeChannelLogger(
     fun logRead(packetString: Any) {
         val totSize = ReadableSize.create(counts.readBytes)
         val t = counts.lastReadTime - counts.firstByteReadTime
-        val throughput = Bandwidth.fromSize(counts.readBytes, t.milliseconds)
+        val throughput = when(t) {
+            0L -> ""
+            else -> Bandwidth.fromSize(counts.readBytes, t.milliseconds)
+        }
         log("[$name] Read $packetString count: ${counts.readCount}, size: $totSize in $t ms @ $throughput)")
     }
 
     fun logWritten(packetString: Any) {
         val totSize = ReadableSize.create(counts.writtenBytes)
         val t = counts.lastWrittenTime - counts.firstByteWriteTime
-        val throughput = Bandwidth.fromSize(counts.writtenBytes, t.milliseconds)
+        val throughput = when(t) {
+            0L -> ""
+            else -> Bandwidth.fromSize(counts.writtenBytes, t.milliseconds)
+        }
         log("[$name] Written $packetString count: ${counts.writtenCount}, size: $totSize in $t ms @ $throughput)")
     }
 
