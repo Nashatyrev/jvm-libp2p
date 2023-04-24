@@ -5,9 +5,7 @@ import io.libp2p.etc.types.toByteBuf
 
 fun main() {
     val test = TcpMultiTest()
-    test.connect()
-//    test.runInbound()
-    test.runOutbound()
+    test.run()
 }
 
 class TcpMultiTest(
@@ -19,20 +17,31 @@ class TcpMultiTest(
 ) {
 
     lateinit var server: ServerTcpNode
-    val  clients = mutableListOf<ClientTcpNode>()
+    val clients = mutableListOf<ClientTcpNode>()
 
-    fun connect() {
+    fun run() {
+        startServer()
+        createClients()
+        connect()
+        runInbound()
+    }
+
+    fun startServer() {
         server = DefaultTcpServerNode(destPort, destHost, logEachConnection = false)
+    }
+
+    fun createClients() {
         clients +=
             (0 until clientCount)
                 .map {
                     DefaultTcpClientNode(it)
                 }
-                .map {
-                    it.connect(server)
-                    it
-                }
+    }
 
+    fun connect() {
+        clients.forEach {
+            it.connect(server)
+        }
         Thread.sleep(1000)
     }
 

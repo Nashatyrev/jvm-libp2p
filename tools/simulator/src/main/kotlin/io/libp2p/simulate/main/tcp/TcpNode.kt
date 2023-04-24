@@ -32,7 +32,7 @@ private val loggers = mutableListOf<SizeChannelLogger>()
 private fun createLogger(name: String, logger: (String) -> Unit = { log(it) }) =
     SizeChannelLogger(name, {
         (it as ByteBuf).readableBytes().toLong()
-    }, 100.milliseconds, 1, logger)
+    }, 100.milliseconds, 1, true, logger)
         .also { loggers += it }
 
 

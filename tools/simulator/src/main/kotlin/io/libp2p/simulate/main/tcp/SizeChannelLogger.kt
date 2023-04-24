@@ -20,6 +20,7 @@ class SizeChannelLogger(
     val sizeExtractor: (Any) -> Long,
     val printPeriod: Duration = Duration.ZERO,
     val printFirstIndividualPackets: Int = 1,
+    val printWritabilityChanged: Boolean = false,
     val logger: (String) -> Unit = { log(it) }
 ) : ChannelDuplexHandler() {
 
@@ -102,6 +103,14 @@ class SizeChannelLogger(
         }
 
         super.channelRead(ctx, msg)
+    }
+
+    override fun channelWritabilityChanged(ctx: ChannelHandlerContext) {
+        if (printWritabilityChanged) {
+            logger("[$name] Writability: ${ctx.channel().isWritable}")
+
+        }
+        super.channelWritabilityChanged(ctx)
     }
 
     override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
