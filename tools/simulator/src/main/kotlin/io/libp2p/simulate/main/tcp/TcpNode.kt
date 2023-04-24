@@ -88,7 +88,7 @@ class DefaultTcpServerNode(
     init {
         var childChannelCount = 0
         val commonLogger: (String) -> Unit = {
-            if (childChannelCount > 1) {
+            if (!logEachConnection || childChannelCount > 1) {
                 log(it)
             }
         }
