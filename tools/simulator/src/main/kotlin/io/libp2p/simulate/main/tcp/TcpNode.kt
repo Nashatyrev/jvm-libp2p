@@ -102,6 +102,7 @@ class DefaultTcpServerNode(
                     }
 
                     childChannelCount++
+                    connections += ch
 //                        ch.pipeline().addLast(EchoHandler())
                 }
             })

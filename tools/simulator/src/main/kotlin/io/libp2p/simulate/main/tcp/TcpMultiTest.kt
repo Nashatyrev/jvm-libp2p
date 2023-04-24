@@ -4,7 +4,10 @@ import io.libp2p.etc.types.toByteBuf
 
 
 fun main() {
-    TcpMultiTest().runInbound()
+    val test = TcpMultiTest()
+    test.connect()
+//    test.runInbound()
+    test.runOutbound()
 }
 
 class TcpMultiTest(
@@ -15,22 +18,44 @@ class TcpMultiTest(
     val clientCount: Int = 8
 ) {
 
-    fun runInbound() {
-        val serverNode = DefaultTcpServerNode(destPort, destHost, logEachConnection = false)
-        val clientNodes =
+    lateinit var server: ServerTcpNode
+    val  clients = mutableListOf<ClientTcpNode>()
+
+    fun connect() {
+        server = DefaultTcpServerNode(destPort, destHost, logEachConnection = false)
+        clients +=
             (0 until clientCount)
                 .map {
                     DefaultTcpClientNode(it)
                 }
                 .map {
-                    it.connect(serverNode)
+                    it.connect(server)
+                    it
                 }
 
         Thread.sleep(1000)
+    }
+
+    fun runInbound() {
         while (true) {
             resetTcpNodeLoggers()
 
-            clientNodes
+            clients
+                .map {
+                    val data = ByteArray(msgSize)
+                    it.connections[0].writeAndFlush(data.toByteBuf())
+                }
+                .forEach { it.sync() }
+
+            Thread.sleep(10000)
+        }
+    }
+
+    fun runOutbound() {
+        while (true) {
+            resetTcpNodeLoggers()
+
+            server.connections
                 .map {
                     val data = ByteArray(msgSize)
                     it.writeAndFlush(data.toByteBuf())
