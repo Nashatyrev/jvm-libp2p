@@ -5,6 +5,8 @@ import java.util.concurrent.CompletableFuture
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
+const val BANDWIDTH_BITS_IN_BYTE_PER_SECOND = 8
+
 data class Bandwidth(val bytesPerSecond: Long) : Comparable<Bandwidth> {
     fun getTransmitTimeMillis(size: Long): Long = (size * 1000 / bytesPerSecond)
     fun getTransmitTime(size: Long): Duration = getTransmitTimeMillis(size).milliseconds
@@ -16,15 +18,20 @@ data class Bandwidth(val bytesPerSecond: Long) : Comparable<Bandwidth> {
 
     override fun compareTo(other: Bandwidth) = bytesPerSecond.compareTo(other.bytesPerSecond)
 
-    override fun toString() = "" + ReadableSize.create(bytesPerSecond * 10) + "its/s"
+    override fun toString() =
+        "${ReadableSize.create(bytesPerSecond * BANDWIDTH_BITS_IN_BYTE_PER_SECOND)}its/s"
 
-    fun toStringShort() = ReadableSize.create(bytesPerSecond * 10).let { "${it.valueString}${it.units.shortPrefix}" }
+    fun toStringShort() =
+        ReadableSize.create(bytesPerSecond * BANDWIDTH_BITS_IN_BYTE_PER_SECOND)
+            .let { "${it.valueString}${it.units.shortPrefix}" }
 
     companion object {
         val UNLIM = Bandwidth(Long.MAX_VALUE)
-        fun mbitsPerSec(mbsec: Int) = Bandwidth(mbsec.toLong() * (1 shl 20) / 10)
+        fun mbitsPerSec(mbsec: Int) =
+            Bandwidth(mbsec.toLong() * (1 shl 20) / BANDWIDTH_BITS_IN_BYTE_PER_SECOND)
         fun gbitsPerSec(gbsec: Int) = mbitsPerSec(gbsec * (1 shl 10))
-        fun fromSize(sizeBytes: Long, period: Duration) = Bandwidth(sizeBytes * 1000 / period.inWholeMilliseconds)
+        fun fromSize(sizeBytes: Long, period: Duration) =
+            Bandwidth(sizeBytes * 1000 / period.inWholeMilliseconds)
     }
 }
 
