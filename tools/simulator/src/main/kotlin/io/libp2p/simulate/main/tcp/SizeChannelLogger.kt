@@ -4,6 +4,7 @@ import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.util.ReadableSize
 import io.libp2p.tools.log
 import io.netty.channel.ChannelDuplexHandler
+import io.netty.channel.ChannelHandler.Sharable
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelPromise
 import java.util.concurrent.Executors
@@ -13,11 +14,13 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.ZERO
 import kotlin.time.Duration.Companion.milliseconds
 
+@Sharable
 class SizeChannelLogger(
     val name: String,
     val sizeExtractor: (Any) -> Long,
     val printPeriod: Duration = Duration.ZERO,
-    val printFirstIndividualPackets: Int = 1
+    val printFirstIndividualPackets: Int = 1,
+    val logger: (String) -> Unit = { log(it) }
 ) : ChannelDuplexHandler() {
 
     data class Counters(
@@ -70,7 +73,7 @@ class SizeChannelLogger(
             0L -> ""
             else -> Bandwidth.fromSize(counts.readBytes, t.milliseconds)
         }
-        log("[$name] Read $packetString count: ${counts.readCount}, size: $totSize in $t ms @ $throughput)")
+        logger("[$name] Read $packetString count: ${counts.readCount}, size: $totSize in $t ms @ $throughput)")
     }
 
     fun logWritten(packetString: Any) {
@@ -80,7 +83,7 @@ class SizeChannelLogger(
             0L -> ""
             else -> Bandwidth.fromSize(counts.writtenBytes, t.milliseconds)
         }
-        log("[$name] Written $packetString count: ${counts.writtenCount}, size: $totSize in $t ms @ $throughput)")
+        logger("[$name] Written $packetString count: ${counts.writtenCount}, size: $totSize in $t ms @ $throughput)")
     }
 
     override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
@@ -112,7 +115,7 @@ class SizeChannelLogger(
         val printLog = printPeriod == Duration.ZERO || counts.writtenCount <= printFirstIndividualPackets
         if (printLog) {
             val totSize = ReadableSize.create(counts.writeBytes)
-            log("[$name] Write $size (count: ${counts.writeCount}, total: $totSize)")
+            logger("[$name] Write $size (count: ${counts.writeCount}, total: $totSize)")
             counts.lastPrintedWriteCount = counts.writtenCount
         } else {
             maybeStartPeriodicLog()
@@ -135,6 +138,6 @@ class SizeChannelLogger(
             printTask = null
         }
 
-        log("[$name] Reset ===========")
+        logger("[$name] Reset ===========")
     }
 }
