@@ -38,6 +38,8 @@ private fun createLogger(name: String, logger: (String) -> Unit = { log(it) }) =
 
 fun resetTcpNodeLoggers() = loggers.forEach { it.reset() }
 
+val commonLogHandler = createLogger("client")
+
 class DefaultTcpClientNode(
     val number: Int,
     val sourcePort: Int? = null
@@ -56,6 +58,7 @@ class DefaultTcpClientNode(
         b.handler(object : ChannelInitializer<SocketChannel>() {
             override fun initChannel(ch: SocketChannel) {
 //                    ch.pipeline().addLast(createLoggingHandler("client"))
+                ch.pipeline().addLast(commonLogHandler)
                 ch.pipeline().addLast(createLogger("client-$number"))
             }
         })
