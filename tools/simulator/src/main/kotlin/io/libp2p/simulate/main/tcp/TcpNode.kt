@@ -32,7 +32,7 @@ private val loggers = mutableListOf<SizeChannelLogger>()
 private fun createLogger(name: String, logger: (String) -> Unit = { log(it) }) =
     SizeChannelLogger(name, {
         (it as ByteBuf).readableBytes().toLong()
-    }, 100.milliseconds, 5, logger)
+    }, 100.milliseconds, 1, logger)
         .also { loggers += it }
 
 
@@ -73,7 +73,8 @@ class DefaultTcpClientNode(
 
 class DefaultTcpServerNode(
     val listenPort: Int,
-    val listenHost: String = "127.0.0.1"
+    val listenHost: String = "127.0.0.1",
+    val logEachConnection: Boolean = true
 ) : ServerTcpNode {
 
     override val connections = mutableListOf<Channel>()
@@ -96,7 +97,9 @@ class DefaultTcpServerNode(
             .childHandler(object : ChannelInitializer<SocketChannel>() {
                 override fun initChannel(ch: SocketChannel) {
                     ch.pipeline().addLast(commonLogHandler)
-                    ch.pipeline().addLast(createLogger("server-$childChannelCount"))
+                    if (logEachConnection) {
+                        ch.pipeline().addLast(createLogger("server-$childChannelCount"))
+                    }
 
                     childChannelCount++
 //                        ch.pipeline().addLast(EchoHandler())

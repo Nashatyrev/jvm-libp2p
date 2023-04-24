@@ -12,11 +12,11 @@ class TcpMultiTest(
     val destPort: Int = 7777,
 //    val srcPort: Int = 8888,
     val msgSize: Int = 512 * 1024,
-    val clientCount: Int = 4
+    val clientCount: Int = 8
 ) {
 
     fun runInbound() {
-        val serverNode = DefaultTcpServerNode(destPort, destHost)
+        val serverNode = DefaultTcpServerNode(destPort, destHost, logEachConnection = false)
         val clientNodes =
             (0 until clientCount)
                 .map {
