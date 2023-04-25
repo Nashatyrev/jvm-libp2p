@@ -21,6 +21,7 @@ class TcpMultiTest(
     val staggeringDelay: Duration = Duration.ZERO,
     val delayAfterMessage: Duration = 5.seconds,
     val messagesCount: Int = 10,
+    val loggersEnabled: Boolean = true,
     val handlers: List<ChannelHandler> = emptyList()
 ) {
 
@@ -41,14 +42,14 @@ class TcpMultiTest(
     }
 
     fun startServer() {
-        server = DefaultTcpServerNode(serverPort, destHost, logEachConnection = false, handlers = handlers)
+        server = DefaultTcpServerNode(serverPort, destHost, logEachConnection = false, loggersEnabled = loggersEnabled, handlers = handlers)
     }
 
     fun createClients() {
         clients +=
             (0 until clientCount)
                 .map {
-                    DefaultTcpClientNode(it, /*clientPortStart + it,*/ handlers = handlers)
+                    DefaultTcpClientNode(it, loggersEnabled = loggersEnabled, /*clientPortStart + it,*/ handlers = handlers)
                 }
     }
 

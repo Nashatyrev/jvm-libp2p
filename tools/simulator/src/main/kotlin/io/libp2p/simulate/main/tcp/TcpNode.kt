@@ -49,7 +49,8 @@ val commonLogHandler = createLogger("client")
 class DefaultTcpClientNode(
     val number: Int,
     val sourcePort: Int? = null,
-    val handlers: List<ChannelHandler> = emptyList()
+    val handlers: List<ChannelHandler> = emptyList(),
+    val loggersEnabled: Boolean = true
 ) : ClientTcpNode {
 
     override val connections = mutableListOf<Channel>()
@@ -65,8 +66,10 @@ class DefaultTcpClientNode(
         b.handler(object : ChannelInitializer<SocketChannel>() {
             override fun initChannel(ch: SocketChannel) {
 //                    ch.pipeline().addLast(createLoggingHandler("client"))
-                ch.pipeline().addLast(commonLogHandler)
-                ch.pipeline().addLast(createLogger("client-$number"))
+                if (loggersEnabled) {
+                    ch.pipeline().addLast(commonLogHandler)
+                    ch.pipeline().addLast(createLogger("client-$number"))
+                }
 
                 handlers.forEach {
                     ch.pipeline().addLast(it)
@@ -89,7 +92,8 @@ class DefaultTcpServerNode(
     val listenPort: Int,
     val listenHost: String = "127.0.0.1",
     val logEachConnection: Boolean = true,
-    val handlers: List<ChannelHandler> = emptyList()
+    val handlers: List<ChannelHandler> = emptyList(),
+    val loggersEnabled: Boolean = true
 ) : ServerTcpNode {
 
     override val connections = mutableListOf<Channel>()
@@ -110,7 +114,12 @@ class DefaultTcpServerNode(
                 log(it)
             }
         }
-        val commonLogHandler = createLogger("server", commonLogger)
+        val commonLogHandler =
+            if (loggersEnabled) {
+                createLogger("server", commonLogger)
+            } else {
+                ChannelInboundHandlerAdapter()
+            }
 
         val b = ServerBootstrap()
         b.group(workerGroup, workerGroup)
@@ -118,9 +127,11 @@ class DefaultTcpServerNode(
             .option(ChannelOption.SO_REUSEADDR, true)
             .childHandler(object : ChannelInitializer<SocketChannel>() {
                 override fun initChannel(ch: SocketChannel) {
-                    ch.pipeline().addLast(commonLogHandler)
-                    if (logEachConnection) {
-                        ch.pipeline().addLast(createLogger("server-$childChannelCount"))
+                    if (loggersEnabled) {
+                        ch.pipeline().addLast(commonLogHandler)
+                        if (logEachConnection) {
+                            ch.pipeline().addLast(createLogger("server-$childChannelCount"))
+                        }
                     }
 
                     childChannelCount++

@@ -96,6 +96,7 @@ class TcpScenarios(
             msgSize = params.msgSize,
             clientCount = params.clientCount,
             staggeringDelay = params.staggeringDelay,
+            loggersEnabled = false,
             handlers = listOf(recordingHandler),
             messagesCount = messagesCount
         )
