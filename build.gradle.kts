@@ -9,6 +9,7 @@ description = "a minimal implementation of libp2p for the jvm"
 
 plugins {
     kotlin("jvm").version("1.6.21")
+    kotlin("plugin.serialization") version "1.6.21"
 
     id("com.github.ben-manes.versions").version("0.44.0")
     id("idea")

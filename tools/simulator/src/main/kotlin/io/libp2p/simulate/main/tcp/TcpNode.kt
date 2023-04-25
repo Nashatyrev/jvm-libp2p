@@ -15,6 +15,12 @@ import kotlin.time.Duration.Companion.milliseconds
 interface TcpNode {
 
     val connections: List<Channel>
+
+    fun close() {
+        connections
+            .map { it.close() }
+            .forEach { it.sync() }
+    }
 }
 
 interface ClientTcpNode : TcpNode {
@@ -32,7 +38,7 @@ private val loggers = mutableListOf<SizeChannelLogger>()
 private fun createLogger(name: String, logger: (String) -> Unit = { log(it) }) =
     SizeChannelLogger(name, {
         (it as ByteBuf).readableBytes().toLong()
-    }, 100.milliseconds, 1, true, logger)
+    }, 100.milliseconds, 1, false, logger)
         .also { loggers += it }
 
 
@@ -42,7 +48,8 @@ val commonLogHandler = createLogger("client")
 
 class DefaultTcpClientNode(
     val number: Int,
-    val sourcePort: Int? = null
+    val sourcePort: Int? = null,
+    val handlers: List<ChannelHandler> = emptyList()
 ) : ClientTcpNode {
 
     override val connections = mutableListOf<Channel>()
@@ -60,6 +67,10 @@ class DefaultTcpClientNode(
 //                    ch.pipeline().addLast(createLoggingHandler("client"))
                 ch.pipeline().addLast(commonLogHandler)
                 ch.pipeline().addLast(createLogger("client-$number"))
+
+                handlers.forEach {
+                    ch.pipeline().addLast(it)
+                }
             }
         })
         val f: ChannelFuture =
@@ -77,13 +88,20 @@ class DefaultTcpClientNode(
 class DefaultTcpServerNode(
     val listenPort: Int,
     val listenHost: String = "127.0.0.1",
-    val logEachConnection: Boolean = true
+    val logEachConnection: Boolean = true,
+    val handlers: List<ChannelHandler> = emptyList()
 ) : ServerTcpNode {
 
     override val connections = mutableListOf<Channel>()
     override val listenAddress = InetSocketAddress(listenHost, listenPort)
 
+    val serverChannel: Channel
     private val workerGroup: EventLoopGroup = NioEventLoopGroup()
+
+    override fun close() {
+        super.close()
+        serverChannel.close().sync()
+    }
 
     init {
         var childChannelCount = 0
@@ -97,6 +115,7 @@ class DefaultTcpServerNode(
         val b = ServerBootstrap()
         b.group(workerGroup, workerGroup)
             .channel(NioServerSocketChannel::class.java)
+            .option(ChannelOption.SO_REUSEADDR, true)
             .childHandler(object : ChannelInitializer<SocketChannel>() {
                 override fun initChannel(ch: SocketChannel) {
                     ch.pipeline().addLast(commonLogHandler)
@@ -106,11 +125,15 @@ class DefaultTcpServerNode(
 
                     childChannelCount++
                     connections += ch
+
+                    handlers.forEach {
+                        ch.pipeline().addLast(it)
+                    }
 //                        ch.pipeline().addLast(EchoHandler())
                 }
             })
             .option(ChannelOption.SO_BACKLOG, 128)
             .childOption(ChannelOption.SO_KEEPALIVE, true)
-        b.bind(listenPort).sync()
+        serverChannel = b.bind(listenPort).sync().channel()
     }
 }

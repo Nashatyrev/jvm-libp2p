@@ -7,6 +7,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 const val BANDWIDTH_BITS_IN_BYTE_PER_SECOND = 8
 
+@kotlinx.serialization.Serializable
 data class Bandwidth(val bytesPerSecond: Long) : Comparable<Bandwidth> {
     fun getTransmitTimeMillis(size: Long): Long = (size * 1000 / bytesPerSecond)
     fun getTransmitTime(size: Long): Duration = getTransmitTimeMillis(size).milliseconds
