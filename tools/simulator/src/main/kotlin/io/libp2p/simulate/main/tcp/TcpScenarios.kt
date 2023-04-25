@@ -1,15 +1,12 @@
 package io.libp2p.simulate.main.tcp
 
 import io.libp2p.simulate.Bandwidth
-import io.libp2p.simulate.main.tcp.EventRecordingHandler.EventType
 import io.libp2p.simulate.mbitsPerSecond
 import io.libp2p.simulate.util.cartesianProduct
 import io.libp2p.tools.log
-import kotlinx.serialization.*
-import kotlinx.serialization.hocon.Hocon
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 fun main() {
