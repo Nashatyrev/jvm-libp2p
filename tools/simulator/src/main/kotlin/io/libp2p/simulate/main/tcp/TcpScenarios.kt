@@ -28,7 +28,8 @@ class TcpScenarios(
     val directionParams: List<Direction> =
         listOf(Direction.Inbound, Direction.Outbound),
     val staggeringParams: List<Double> =
-        listOf(0.0),
+//        listOf(0.0),
+        listOf(0.0, 0.5, 1.0),
 //        listOf(0.0, 0.25, 0.5, 0.75, 1.0),
 
     val params: List<RunParams> = cartesianProduct(
