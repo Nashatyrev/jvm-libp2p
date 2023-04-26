@@ -7,6 +7,8 @@ import io.libp2p.tools.log
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.FileOutputStream
+import java.io.PrintWriter
 import kotlin.time.Duration.Companion.milliseconds
 
 fun main() {
@@ -41,7 +43,8 @@ class TcpScenarios(
         staggeringParams
     ) {
         RunParams(tcpOptionParams[0], it.first, it.second, it.third, it.fourth, it.fifth, it.sixth)
-    }
+    },
+    val outFile: String = "tcp.res.json"
 ) {
 
     val messagesCount = 5
@@ -71,24 +74,36 @@ class TcpScenarios(
     }
 
     fun runAll() {
+        val file = File(outFile)
+        val existingParams = if (file.canRead()) {
+            log("Loading existing file $file...")
+            val params = TcpScenariosStats.load(outFile).keys
+            log("${params.size} existing results were found")
+            params
+        } else {
+            emptySet()
+        }
+
         log("Running ${params.size} param sets...")
-        File("tcp.res.json").printWriter().use { writer ->
+        PrintWriter(FileOutputStream(file, true).bufferedWriter()).use { writer ->
             params.map { params ->
-                log("Running $params")
-                val res = run(params)
+                if (params in existingParams) {
+                    log("Skipping $params")
+                } else {
+                    log("Running $params")
+                    val res = run(params)
 
-                writer.println()
-                writer.println("Params:" + Json.encodeToString(params))
-                val waves = splitByWaves(res)
-                waves.forEach { wave ->
                     writer.println()
-                    wave.forEach {
-                        writer.println("Event:" + Json.encodeToString(it))
+                    writer.println("Params:" + Json.encodeToString(params))
+                    val waves = splitByWaves(res)
+                    waves.forEach { wave ->
+                        writer.println()
+                        wave.forEach {
+                            writer.println("Event:" + Json.encodeToString(it))
+                        }
                     }
+                    writer.flush()
                 }
-                writer.flush()
-
-                params to res
             }
         }
     }
@@ -117,18 +132,20 @@ class TcpScenarios(
         return recordingHandler.events
     }
 
-    private fun splitByWaves(
-        events: List<EventRecordingHandler.Event>,
-        waveThresholdMs: Long = 500
-    ): List<List<EventRecordingHandler.Event>> {
+    companion object {
+        fun splitByWaves(
+            events: List<EventRecordingHandler.Event>,
+            waveThresholdMs: Long = 500
+        ): List<List<EventRecordingHandler.Event>> {
 
-        val durations = listOf(0L) +
-                events.zipWithNext { e1, e2 -> e2.time - e1.time }
-        val waveIndices = durations.withIndex().filter { it.value >= waveThresholdMs }.map { it.index }
-        val waveRanges = (listOf(0) + waveIndices + listOf(events.size))
-            .zipWithNext { i1, i2 -> i1 until i2 }
-        return waveRanges.map {
-            events.subList(it.first, it.last - 1)
+            val durations = listOf(0L) +
+                    events.zipWithNext { e1, e2 -> e2.time - e1.time }
+            val waveIndices = durations.withIndex().filter { it.value >= waveThresholdMs }.map { it.index }
+            val waveRanges = (listOf(0) + waveIndices + listOf(events.size))
+                .zipWithNext { i1, i2 -> i1 until i2 }
+            return waveRanges.map {
+                events.subList(it.first, it.last - 1)
+            }
         }
     }
 }
