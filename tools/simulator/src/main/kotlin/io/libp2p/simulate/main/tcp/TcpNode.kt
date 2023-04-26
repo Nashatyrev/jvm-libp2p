@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package io.libp2p.simulate.main.tcp
 
 import io.libp2p.tools.log
@@ -86,6 +88,11 @@ class DefaultTcpClientNode(
         connections += ch
         return ch
     }
+
+    override fun close() {
+        super.close()
+        workerGroup.shutdownNow()
+    }
 }
 
 class DefaultTcpServerNode(
@@ -105,6 +112,7 @@ class DefaultTcpServerNode(
     override fun close() {
         super.close()
         serverChannel.close().sync()
+        workerGroup.shutdownNow()
     }
 
     init {
