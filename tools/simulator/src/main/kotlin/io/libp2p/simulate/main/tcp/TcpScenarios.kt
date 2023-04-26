@@ -89,22 +89,22 @@ class TcpScenarios(
         PrintWriter(FileOutputStream(file, true).bufferedWriter()).use { writer ->
             params
                 .withIndex()
-                .map { (index, params) ->
-                    if (params in existingParams) {
-                        log("Skipping $params")
+                .map { (index, param) ->
+                    if (param in existingParams) {
+                        log("Skipping $param")
                     } else {
-                        log("Running ${index + 1} of ${params.msgSize}: $params")
-                        val res = run(params)
+                        log("Running ${index + 1} of ${params.size}: $param")
+                        val res = run(param)
 
                         writer.println()
-                        writer.println("Params:" + Json.encodeToString(params))
+                        writer.println("Params:" + Json.encodeToString(param))
                         res.forEach {
                             writer.println("Event:" + Json.encodeToString(it))
                         }
                         writer.flush()
 
-                        if (!TcpScenariosStats.validateWaves(res, params)) {
-                            throw RuntimeException("Invalid waves for $params")
+                        if (!TcpScenariosStats.validateWaves(res, param)) {
+                            throw RuntimeException("Invalid waves for $param")
                         }
                     }
                 }
