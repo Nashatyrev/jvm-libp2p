@@ -3,7 +3,7 @@ package io.libp2p.simulate.main
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.main.IdealPubsub.SendParams
 import io.libp2p.simulate.main.IdealPubsub.SendType.*
-import io.libp2p.simulate.main.scenario.ResultPrinter
+import io.libp2p.simulate.stats.ResultPrinter
 import io.libp2p.simulate.mbitsPerSecond
 import io.libp2p.simulate.util.cartesianProduct
 import io.libp2p.tools.log

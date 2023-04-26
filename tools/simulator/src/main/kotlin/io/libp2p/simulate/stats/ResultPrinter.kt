@@ -1,10 +1,8 @@
-package io.libp2p.simulate.main.scenario
+package io.libp2p.simulate.stats
 
-import io.libp2p.simulate.main.EpisubSimulation
-import io.libp2p.simulate.stats.GroupByRangeAggregator
-import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.util.*
 import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics
+import kotlin.reflect.full.memberProperties
 
 class ResultPrinter<TParams : Any, TResult : Any>(
     val paramsAndResults: List<Pair<TParams, TResult>>
@@ -115,6 +113,12 @@ class ResultPrinter<TParams : Any, TResult : Any>(
 
     fun <R : Any> addMetric(name: String, extractor: (TResult) -> R) {
         metrics += Metric(name, extractor)
+    }
+
+    inline fun <reified R : Any> addPropertiesAsMetrics(prefix: String = "", crossinline structExtractor: (TResult) -> R) {
+        R::class.memberProperties.forEach { property ->
+            addMetric(prefix + property.name) { property.get(structExtractor(it))!! }
+        }
     }
 
     fun <R : Number> addMetricDouble(name: String, decimals: Int = 2, extractor: (TResult) -> R) {

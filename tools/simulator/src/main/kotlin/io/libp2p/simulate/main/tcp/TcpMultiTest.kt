@@ -19,7 +19,7 @@ class TcpMultiTest(
     val msgSize: Int = 512 * 1024,
     val clientCount: Int = 8,
     val staggeringDelay: Duration = Duration.ZERO,
-    val delayAfterMessage: Duration = 5.seconds,
+    val delayAfterMessage: Duration = 2.seconds,
     val messagesCount: Int = 10,
     val loggersEnabled: Boolean = true,
     val handlers: List<ChannelHandler> = emptyList()
@@ -27,7 +27,7 @@ class TcpMultiTest(
 
     lateinit var server: ServerTcpNode
     val clients = mutableListOf<ClientTcpNode>()
-
+    private val readSizeHandler = ReadSizeCounter()
 
     fun setup() {
         startServer()
@@ -42,14 +42,24 @@ class TcpMultiTest(
     }
 
     fun startServer() {
-        server = DefaultTcpServerNode(serverPort, destHost, logEachConnection = false, loggersEnabled = loggersEnabled, handlers = handlers)
+        server = DefaultTcpServerNode(
+            serverPort,
+            destHost,
+            logEachConnection = false,
+            loggersEnabled = loggersEnabled,
+            handlers = handlers + readSizeHandler
+        )
     }
 
     fun createClients() {
         clients +=
             (0 until clientCount)
                 .map {
-                    DefaultTcpClientNode(it, loggersEnabled = loggersEnabled, /*clientPortStart + it,*/ handlers = handlers)
+                    DefaultTcpClientNode(
+                        it,
+                        loggersEnabled = loggersEnabled, /*clientPortStart + it,*/
+                        handlers = handlers + readSizeHandler
+                    )
                 }
     }
 
@@ -63,6 +73,7 @@ class TcpMultiTest(
     fun runInbound() {
         repeat (messagesCount) {
             resetTcpNodeLoggers()
+            readSizeHandler.reset()
 
             clients
                 .map {
@@ -72,6 +83,8 @@ class TcpMultiTest(
                     ret
                 }
                 .forEach { it.sync() }
+
+            readSizeHandler.waitFor(msgSize.toLong() * clients.size)
 
             Thread.sleep(delayAfterMessage.inWholeMilliseconds)
         }
@@ -89,6 +102,8 @@ class TcpMultiTest(
                     ret
                 }
                 .forEach { it.sync() }
+
+            readSizeHandler.waitFor(msgSize.toLong() * clients.size)
 
             Thread.sleep(delayAfterMessage.inWholeMilliseconds)
         }

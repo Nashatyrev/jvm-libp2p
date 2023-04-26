@@ -99,8 +99,11 @@ class TcpScenarios(
                     res.forEach {
                         writer.println("Event:" + Json.encodeToString(it))
                     }
-
                     writer.flush()
+
+                    if (!TcpScenariosStats.validateWaves(res, params)) {
+                        throw RuntimeException("Invalid waves for $params")
+                    }
                 }
             }
         }

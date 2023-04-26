@@ -7,7 +7,7 @@ import io.libp2p.simulate.main.BlobDecouplingSimulation.MessageChoke.*
 import io.libp2p.simulate.main.EpisubSimulation.Companion.awsLatencyDistribution
 import io.libp2p.simulate.main.scenario.BlobDecouplingScenario
 import io.libp2p.simulate.main.scenario.Decoupling
-import io.libp2p.simulate.main.scenario.ResultPrinter
+import io.libp2p.simulate.stats.ResultPrinter
 import io.libp2p.simulate.stats.collect.gossip.*
 import io.libp2p.simulate.util.ReadableSize
 import io.libp2p.simulate.util.byIndexes

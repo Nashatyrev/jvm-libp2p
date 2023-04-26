@@ -19,10 +19,9 @@ import io.libp2p.simulate.main.PeerHonesty.Malicious
 import io.libp2p.simulate.main.scenario.BlobDecouplingScenario
 import io.libp2p.simulate.main.scenario.Decoupling
 import io.libp2p.simulate.main.scenario.MaliciousPeerManager
-import io.libp2p.simulate.main.scenario.ResultPrinter
+import io.libp2p.simulate.stats.ResultPrinter
 import io.libp2p.simulate.stats.collect.gossip.getGossipPubDeliveryResult
 import io.libp2p.simulate.util.*
-import io.libp2p.tools.log
 import java.util.Random
 import kotlin.math.max
 import kotlin.time.Duration
