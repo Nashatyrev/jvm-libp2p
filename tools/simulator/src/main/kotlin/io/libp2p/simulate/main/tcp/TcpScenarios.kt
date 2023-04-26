@@ -69,8 +69,9 @@ class TcpScenarios(
         val direction: Direction,
         val staggering: Double
     ) {
-        val staggeringDelay get() =
-            bandwidth.getTransmitTimeMillis(msgSize.toLong()).milliseconds * staggering
+        val staggeringDelay
+            get() =
+                bandwidth.getTransmitTimeMillis(msgSize.toLong()).milliseconds * staggering
     }
 
     fun runAll() {
@@ -93,14 +94,24 @@ class TcpScenarios(
                     log("Running $params")
                     val res = run(params)
 
-                    writer.println()
-                    writer.println("Params:" + Json.encodeToString(params))
-                    val waves = splitByWaves(res)
-                    waves.forEach { wave ->
+                    try {
+                        val waves = splitByWaves(res)
+
                         writer.println()
-                        wave.forEach {
+                        writer.println("Params:" + Json.encodeToString(params))
+                        waves.forEach { wave ->
+                            writer.println()
+                            wave.forEach {
+                                writer.println("Event:" + Json.encodeToString(it))
+                            }
+                        }
+                    } catch (e: Exception) {
+                        writer.println()
+                        writer.println("Params:" + Json.encodeToString(params))
+                        res.forEach {
                             writer.println("Event:" + Json.encodeToString(it))
                         }
+                        throw e
                     }
                     writer.flush()
                 }
@@ -122,7 +133,7 @@ class TcpScenarios(
         )
         test.setup()
 
-        when(params.direction) {
+        when (params.direction) {
             Direction.Inbound -> test.runInbound()
             Direction.Outbound -> test.runOutbound()
         }
