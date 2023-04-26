@@ -96,6 +96,7 @@ class TcpMultiTest(
     fun runOutbound() {
         repeat (messagesCount) {
             resetTcpNodeLoggers()
+            readSizeHandler.reset()
 
             server.connections
                 .map {
