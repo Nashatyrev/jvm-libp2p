@@ -21,15 +21,15 @@ class TcpScenarios(
     val halfPingParams: List<Long> =
         listOf(50),
     val msgSizeParams: List<Int> =
-        listOf(1024, 2 * 1204, 16 * 1024, 128 * 1024, 512 * 1024),
+        listOf(512 * 1024, 128 * 1024, 16 * 1024, 2 * 1204, 1024),
     val clientCountParams: List<Int> =
 //        listOf(2),
-        listOf(1, 2, 4, 8, 16, 32, 64, 128),
+        listOf(128, 64, 32, 16, 8, 4, 2, 1),
     val directionParams: List<Direction> =
         listOf(Direction.Inbound, Direction.Outbound),
     val staggeringParams: List<Double> =
-//        listOf(1.0),
-        listOf(0.0, 0.25, 0.5, 0.75, 1.0),
+        listOf(0.0),
+//        listOf(0.0, 0.25, 0.5, 0.75, 1.0),
 
     val params: List<RunParams> = cartesianProduct(
         bandwidthParams,
