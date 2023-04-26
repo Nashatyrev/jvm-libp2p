@@ -96,6 +96,19 @@ class TcpScenarios(
                         log("Running ${index + 1} of ${params.size}: $param")
                         val res = run(param)
 
+                        if (!TcpScenariosStats.validateWaves(res, param)) {
+
+                            File("tcp.err.json").printWriter().use { errW ->
+                                errW.println("Params:" + Json.encodeToString(param))
+                                res.forEach {
+                                    errW.println("Event:" + Json.encodeToString(it))
+                                }
+                                errW.flush()
+                            }
+
+                            throw RuntimeException("Invalid waves for $param")
+                        }
+
                         writer.println()
                         writer.println("Params:" + Json.encodeToString(param))
                         res.forEach {
@@ -103,9 +116,6 @@ class TcpScenarios(
                         }
                         writer.flush()
 
-                        if (!TcpScenariosStats.validateWaves(res, param)) {
-                            throw RuntimeException("Invalid waves for $param")
-                        }
                     }
                 }
         }
