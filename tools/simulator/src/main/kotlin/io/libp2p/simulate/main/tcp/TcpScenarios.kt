@@ -94,25 +94,12 @@ class TcpScenarios(
                     log("Running $params")
                     val res = run(params)
 
-                    try {
-                        val waves = splitByWaves(res)
-
-                        writer.println()
-                        writer.println("Params:" + Json.encodeToString(params))
-                        waves.forEach { wave ->
-                            writer.println()
-                            wave.forEach {
-                                writer.println("Event:" + Json.encodeToString(it))
-                            }
-                        }
-                    } catch (e: Exception) {
-                        writer.println()
-                        writer.println("Params:" + Json.encodeToString(params))
-                        res.forEach {
-                            writer.println("Event:" + Json.encodeToString(it))
-                        }
-                        throw e
+                    writer.println()
+                    writer.println("Params:" + Json.encodeToString(params))
+                    res.forEach {
+                        writer.println("Event:" + Json.encodeToString(it))
                     }
+
                     writer.flush()
                 }
             }
@@ -141,22 +128,5 @@ class TcpScenarios(
         test.shutdown()
 
         return recordingHandler.events
-    }
-
-    companion object {
-        fun splitByWaves(
-            events: List<EventRecordingHandler.Event>,
-            waveThresholdMs: Long = 500
-        ): List<List<EventRecordingHandler.Event>> {
-
-            val durations = listOf(0L) +
-                    events.zipWithNext { e1, e2 -> e2.time - e1.time }
-            val waveIndices = durations.withIndex().filter { it.value >= waveThresholdMs }.map { it.index }
-            val waveRanges = (listOf(0) + waveIndices + listOf(events.size))
-                .zipWithNext { i1, i2 -> i1 until i2 }
-            return waveRanges.map {
-                events.subList(it.first, it.last - 1)
-            }
-        }
     }
 }
