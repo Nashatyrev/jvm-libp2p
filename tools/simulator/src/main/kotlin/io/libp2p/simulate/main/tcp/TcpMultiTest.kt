@@ -1,6 +1,7 @@
 package io.libp2p.simulate.main.tcp
 
 import io.libp2p.etc.types.toByteBuf
+import io.libp2p.tools.log
 import io.netty.channel.ChannelHandler
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -84,9 +85,11 @@ class TcpMultiTest(
                 }
                 .forEach { it.sync() }
 
+            log("Waiting for all to complete")
             readSizeHandler.waitFor(msgSize.toLong() * clients.size)
-
+            log("All reads complete: " + System.currentTimeMillis())
             Thread.sleep(delayAfterMessage.inWholeMilliseconds)
+            log("Proceed to the next")
         }
     }
 
