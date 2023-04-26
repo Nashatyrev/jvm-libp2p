@@ -78,8 +78,12 @@ class TcpScenarios(
 
                 writer.println()
                 writer.println("Params:" + Json.encodeToString(params))
-                res.forEach {
-                    writer.println("Event:" + Json.encodeToString(it))
+                val waves = splitByWaves(res)
+                waves.forEach { wave ->
+                    writer.println()
+                    wave.forEach {
+                        writer.println("Event:" + Json.encodeToString(it))
+                    }
                 }
                 writer.flush()
 
