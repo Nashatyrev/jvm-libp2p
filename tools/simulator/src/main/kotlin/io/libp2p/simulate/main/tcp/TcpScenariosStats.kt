@@ -102,11 +102,11 @@ class TcpScenariosStats {
                     it.trim().isNotBlank()
                 }.iterator()
 
-                require(sIt.hasNext()) { "File is empty" }
+                if(!sIt.hasNext()) {
+                    return emptyMap()
+                }
 
                 val ret = LinkedHashMap<RunParams, List<Event>>()
-
-
 
                 var s = sIt.next()
                 while (sIt.hasNext()) {
