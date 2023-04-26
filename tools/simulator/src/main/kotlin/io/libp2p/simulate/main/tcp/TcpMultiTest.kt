@@ -106,9 +106,11 @@ class TcpMultiTest(
                 }
                 .forEach { it.sync() }
 
+            log("Waiting for all to complete")
             readSizeHandler.waitFor(msgSize.toLong() * clients.size)
-
+            log("All reads complete: " + System.currentTimeMillis())
             Thread.sleep(delayAfterMessage.inWholeMilliseconds)
+            log("Proceed to the next")
         }
     }
 }
