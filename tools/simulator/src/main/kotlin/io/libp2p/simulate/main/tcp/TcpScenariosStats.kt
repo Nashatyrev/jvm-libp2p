@@ -13,7 +13,7 @@ import java.io.File
 fun main() {
     TcpScenariosStats()
 //        .printStats("work.dir/tcp.res.json")
-        .validateWaves("work.dir/tcp.res.json")
+        .validateWaves("work.dir/tcp.err.json")
 }
 
 class TcpScenariosStats {
@@ -45,8 +45,8 @@ class TcpScenariosStats {
     }
 
     fun calcAllStats(runEvents: Map<RunParams, List<Event>>): Map<RunParams,MessageStats> =
-        runEvents.mapValues { (_, events) ->
-            splitByWaves(events, 1000)
+        runEvents.mapValues { (params, events) ->
+            splitByWaves(events, params)
                 .map { calcWaveStats(it) }
                 .minByOrNull { it.lastDelivery }!!
         }
@@ -54,7 +54,7 @@ class TcpScenariosStats {
     fun validateWaves(file: String) {
         val events = load(file)
         events.forEach { (params, events) ->
-            val waves = splitByWaves(events)
+            val waves = splitByWaves(events, params)
             val validStr = waves
                 .map { validateWave(it, params) }
                 .map { if (it) "-" else "!" }
@@ -129,7 +129,7 @@ class TcpScenariosStats {
         }
 
         fun validateWaves(allEvents: List<Event>, params: RunParams): Boolean {
-            val waves = splitByWaves(allEvents)
+            val waves = splitByWaves(allEvents, params)
             return waves.all { validateWave(it, params) }
         }
 
@@ -146,17 +146,42 @@ class TcpScenariosStats {
 
         fun splitByWaves(
             events: List<Event>,
-            waveThresholdMs: Long = 500
+            params: RunParams,
         ): List<List<Event>> {
-
-            val durations = listOf(0L) +
-                    events.zipWithNext { e1, e2 -> e2.time - e1.time }
-            val waveIndices = durations.withIndex().filter { it.value >= waveThresholdMs }.map { it.index }
-            val waveRanges = (listOf(0) + waveIndices + listOf(events.size))
-                .zipWithNext { i1, i2 -> i1 until i2 }
-            return waveRanges.map {
-                events.subList(it.first, it.last + 1)
+            val ret = mutableListOf<List<Event>>()
+            var curWave = mutableListOf<Event>()
+            val readSize = (params.msgSize * params.clientCount).toLong()
+            var curReadSize = 0L
+            events.onEach { event ->
+                curWave += event
+                if (event.type == READ) {
+                    curReadSize += event.size
+                    if (curReadSize > readSize) {
+                        throw IllegalArgumentException()
+                    }
+                    if (curReadSize == readSize) {
+                        ret += curWave
+                        curWave = mutableListOf()
+                        curReadSize = 0
+                    }
+                }
             }
+            return ret
         }
+//
+//        fun splitByWaves(
+//            events: List<Event>,
+//            waveThresholdMs: Long = 500
+//        ): List<List<Event>> {
+//
+//            val durations = listOf(0L) +
+//                    events.zipWithNext { e1, e2 -> e2.time - e1.time }
+//            val waveIndices = durations.withIndex().filter { it.value >= waveThresholdMs }.map { it.index }
+//            val waveRanges = (listOf(0) + waveIndices + listOf(events.size))
+//                .zipWithNext { i1, i2 -> i1 until i2 }
+//            return waveRanges.map {
+//                events.subList(it.first, it.last + 1)
+//            }
+//        }
     }
 }
