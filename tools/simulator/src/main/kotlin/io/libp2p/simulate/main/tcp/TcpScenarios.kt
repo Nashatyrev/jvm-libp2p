@@ -17,7 +17,7 @@ fun main() {
 
 class TcpScenarios(
     val tcpOptionParams: List<TcpOption> =
-        listOf(TcpOption.SlowStartIdleOff),
+        listOf(TcpOption.Default),
     val bandwidthParams: List<Bandwidth> =
         listOf(25.mbitsPerSecond),
     val halfPingParams: List<Long> =
