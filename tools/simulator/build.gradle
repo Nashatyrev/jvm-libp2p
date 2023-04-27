@@ -29,7 +29,7 @@ if (project.hasProperty("mainClass")) {
 
 application {
   mainClassName = javaMainClass
-  applicationDefaultJvmArgs = ['-Xmx12G', '-XX:+HeapDumpOnOutOfMemoryError']
+  applicationDefaultJvmArgs = [/*'-Xmx12G', */'-XX:+HeapDumpOnOutOfMemoryError']
 
   if ( project.hasProperty('jvmArgs') ) {
     applicationDefaultJvmArgs = applicationDefaultJvmArgs + project.jvmArgs.split('\\s+').toList()

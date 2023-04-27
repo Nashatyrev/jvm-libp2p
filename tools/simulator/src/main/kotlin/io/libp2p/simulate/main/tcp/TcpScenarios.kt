@@ -78,7 +78,7 @@ class TcpScenarios(
         val file = File(outFile)
         val existingParams = if (file.canRead()) {
             log("Loading existing file $file...")
-            val params = TcpScenariosStats.load(outFile).keys
+            val params = TcpScenariosStats.load(outFile).keys.toSet()
             log("${params.size} existing results were found")
             params
         } else {
