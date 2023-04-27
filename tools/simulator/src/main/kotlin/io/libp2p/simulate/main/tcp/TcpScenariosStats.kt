@@ -12,8 +12,8 @@ import java.io.File
 
 fun main() {
     TcpScenariosStats()
-//        .printStats("work.dir/tcp.res.json")
-        .validateWaves("work.dir/tcp.err.json")
+        .printStats("work.dir/tcp.res.json")
+//        .validateWaves("work.dir/tcp.err.json")
 }
 
 class TcpScenariosStats {
@@ -81,7 +81,7 @@ class TcpScenariosStats {
             .flatMap { reads ->
                 reads.zipWithNext { e1, e2 -> e2.time - e1.time }
             }
-            .max()
+            .maxOrNull() ?: 0
 
         return MessageStats(
             messageWave.find { it.type == READ }!!.delayFromStart(),
