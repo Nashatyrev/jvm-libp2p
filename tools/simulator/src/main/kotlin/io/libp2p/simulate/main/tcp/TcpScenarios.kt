@@ -21,7 +21,7 @@ class TcpScenarios(
     val bandwidthParams: List<Bandwidth> =
         listOf(25.mbitsPerSecond),
     val halfPingParams: List<Long> =
-        listOf(10),
+        listOf(1, 10, 50, 100),
     val msgSizeParams: List<Int> =
         listOf(512 * 1024, 128 * 1024, 16 * 1024, 2 * 1204, 1024),
     val clientCountParams: List<Int> =
@@ -44,10 +44,12 @@ class TcpScenarios(
     ) {
         RunParams(tcpOptionParams[0], it.first, it.second, it.third, it.fourth, it.fifth, it.sixth)
     },
-    val outFile: String = "tcp.res.json"
+    val outFile: String = "tcp.res.json",
+    val tcConfig: TcConfig = TcConfig("lo")
 ) {
 
     val messagesCount = 5
+    val serverPort = 7777
 
     enum class TcpOption {
         Default,
@@ -74,6 +76,18 @@ class TcpScenarios(
                 bandwidth.getTransmitTimeMillis(msgSize.toLong()).milliseconds * staggering
     }
 
+    var prevSystemOptions: RunParams? = null
+    fun setSystemOptionsIfRequired(params: RunParams) {
+        if (prevSystemOptions == null || prevSystemOptions!!.tcpOption != params.tcpOption) {
+            tcConfig.setTcpSlowStartAferIdle(params.tcpOption == TcpOption.SlowStartIdleOff)
+        }
+        if (prevSystemOptions == null
+            || prevSystemOptions!!.bandwidth != params.bandwidth || prevSystemOptions!!.halfPing != params.halfPing) {
+            tcConfig.setLimits(serverPort, params.bandwidth, params.halfPing.milliseconds)
+        }
+        prevSystemOptions = params
+    }
+
     fun runAll() {
         val file = File(outFile)
         val existingParams = if (file.canRead()) {
@@ -94,6 +108,9 @@ class TcpScenarios(
                         log("Skipping $param")
                     } else {
                         log("Running ${index + 1} of ${params.size}: $param")
+
+                        setSystemOptionsIfRequired(param)
+
                         val res = run(param)
 
                         val valid = try {
