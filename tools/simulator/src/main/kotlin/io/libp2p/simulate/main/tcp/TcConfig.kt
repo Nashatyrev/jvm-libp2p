@@ -37,7 +37,7 @@ class TcConfig(
                 else -> throw IllegalStateException()
             }
 
-            val rc = exec(
+            exec(
                 listOf(
                     tcset,
                     ifc,
