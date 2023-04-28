@@ -96,7 +96,14 @@ class TcpScenarios(
                         log("Running ${index + 1} of ${params.size}: $param")
                         val res = run(param)
 
-                        if (!TcpScenariosStats.validateWaves(res, param)) {
+                        val valid = try {
+                            TcpScenariosStats.validateWaves(res, param)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            false
+                        }
+
+                        if (!valid) {
 
                             File("tcp.err.json").printWriter().use { errW ->
                                 errW.println("Params:" + Json.encodeToString(param))
