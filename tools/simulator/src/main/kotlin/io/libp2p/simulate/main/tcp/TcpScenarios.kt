@@ -21,7 +21,7 @@ class TcpScenarios(
     val bandwidthParams: List<Bandwidth> =
         listOf(25.mbitsPerSecond),
     val halfPingParams: List<Long> =
-        listOf(1),
+        listOf(10),
     val msgSizeParams: List<Int> =
         listOf(512 * 1024, 128 * 1024, 16 * 1024, 2 * 1204, 1024),
     val clientCountParams: List<Int> =
