@@ -26,7 +26,7 @@ class TcConfig(
 
     fun setLimits(port: Int, bandwidth: Bandwidth, delay: Duration) {
         logger("Clearing config for $ifc")
-        exec("$tcdel $ifc--all")
+        exec("$tcdel $ifc --all")
         logger("Setting limits for $ifc: bandwidth: $bandwidth, delay: $delay")
 
         listOf("outgoing", "incoming").forEach { direction ->
