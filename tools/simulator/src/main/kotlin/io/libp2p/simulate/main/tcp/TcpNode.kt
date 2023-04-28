@@ -153,6 +153,6 @@ class DefaultTcpServerNode(
             })
             .option(ChannelOption.SO_BACKLOG, 128)
             .childOption(ChannelOption.SO_KEEPALIVE, true)
-        serverChannel = b.bind(listenPort).sync().channel()
+        serverChannel = b.bind(listenAddress).sync().channel()
     }
 }
