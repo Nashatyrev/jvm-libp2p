@@ -17,21 +17,24 @@ fun main() {
 
 class TcpScenarios(
     val tcpOptionParams: List<TcpOption> =
-        listOf(TcpOption.Default),
+        listOf(TcpOption.SlowStartIdleOff),
     val bandwidthParams: List<Bandwidth> =
-        listOf(25.mbitsPerSecond),
+        listOf(25.mbitsPerSecond, 50.mbitsPerSecond, 100.mbitsPerSecond),
+//        listOf(25.mbitsPerSecond),
     val halfPingParams: List<Long> =
-        listOf(1, 10, 50, 100),
+        listOf(100, 150, 200),
+//        listOf(1, 10, 50, 100),
     val msgSizeParams: List<Int> =
-        listOf(512 * 1024, 128 * 1024, 16 * 1024, 2 * 1204, 1024),
+        listOf(512 * 1024, 1024 * 1024),
+//        listOf(512 * 1024, 128 * 1024, 16 * 1024, 2 * 1204, 1024),
     val clientCountParams: List<Int> =
-//        listOf(2),
-        listOf(128, 64, 32, 16, 8, 4, 2, 1),
+        listOf(1),
+//        listOf(128, 64, 32, 16, 8, 4, 2, 1),
     val directionParams: List<Direction> =
         listOf(Direction.Inbound, Direction.Outbound),
     val staggeringParams: List<Double> =
-//        listOf(0.0),
-        listOf(0.0, 0.5, 1.0),
+        listOf(0.0),
+//        listOf(0.0, 0.5, 1.0),
 //        listOf(0.0, 0.25, 0.5, 0.75, 1.0),
 
     val params: List<RunParams> = cartesianProduct(
