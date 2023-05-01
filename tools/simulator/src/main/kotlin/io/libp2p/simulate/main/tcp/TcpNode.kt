@@ -64,6 +64,7 @@ class DefaultTcpClientNode(
         b.group(workerGroup)
         b.channel(NioSocketChannel::class.java)
         b.option(ChannelOption.SO_KEEPALIVE, true)
+        b.option(ChannelOption.TCP_NODELAY, true)
         b.option(ChannelOption.SO_REUSEADDR, true)
         b.handler(object : ChannelInitializer<SocketChannel>() {
             override fun initChannel(ch: SocketChannel) {
@@ -153,6 +154,7 @@ class DefaultTcpServerNode(
             })
             .option(ChannelOption.SO_BACKLOG, 128)
             .childOption(ChannelOption.SO_KEEPALIVE, true)
+            .childOption(ChannelOption.TCP_NODELAY, true)
         serverChannel = b.bind(listenAddress).sync().channel()
     }
 }
