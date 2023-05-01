@@ -30,7 +30,7 @@ class TcpScenarios(
 //        listOf(512 * 1024, 1024 * 1024),
 //        listOf(512 * 1024, 128 * 1024, 16 * 1024, 2 * 1204, 1024),
     val clientCountParams: List<Int> =
-        listOf(1),
+        listOf(1, 16),
 //        listOf(128, 64, 32, 16, 8, 4, 2, 1),
     val directionParams: List<Direction> =
         listOf(Direction.Outbound),
