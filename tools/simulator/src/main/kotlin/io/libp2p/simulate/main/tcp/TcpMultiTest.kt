@@ -3,12 +3,17 @@ package io.libp2p.simulate.main.tcp
 import io.libp2p.etc.types.toByteBuf
 import io.libp2p.tools.log
 import io.netty.channel.ChannelHandler
+import java.net.InetSocketAddress
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 
 fun main() {
-    val test = TcpMultiTest()
+    val test = TcpMultiTest(
+        clientCount = 2,
+        delayAfterMessage = 10.seconds,
+        messagesCount = 1000
+    )
     test.setup()
     test.runInbound()
 }
@@ -55,10 +60,11 @@ class TcpMultiTest(
     fun createClients() {
         clients +=
             (0 until clientCount)
-                .map {
+                .map { index ->
                     DefaultTcpClientNode(
-                        it,
-                        loggersEnabled = loggersEnabled, /*clientPortStart + it,*/
+                        index,
+                        sourceAddress = InetSocketAddress("127.0.0.${1 + index}", 8888),
+                        loggersEnabled = loggersEnabled, /*clientPortStart + index,*/
                         handlers = handlers + readSizeHandler
                     )
                 }

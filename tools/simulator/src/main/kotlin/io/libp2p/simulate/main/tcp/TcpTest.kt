@@ -1,6 +1,7 @@
 package io.libp2p.simulate.main.tcp
 
 import io.libp2p.etc.types.toByteBuf
+import java.net.InetSocketAddress
 
 
 fun main() {
@@ -16,7 +17,7 @@ class TcpTest(
 
     fun runOneOnOne() {
         val serverNode = DefaultTcpServerNode(destPort, destHost)
-        val clientNode = DefaultTcpClientNode(0, srcPort)
+        val clientNode = DefaultTcpClientNode(0, InetSocketAddress(srcPort))
 
         val clientChannel = clientNode.connect(serverNode)
 

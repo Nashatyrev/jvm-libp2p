@@ -52,7 +52,7 @@ val commonLogHandler = createLogger("client")
 
 class DefaultTcpClientNode(
     val number: Int,
-    val sourcePort: Int? = null,
+    val sourceAddress: InetSocketAddress? = null,
     val handlers: List<ChannelHandler> = emptyList(),
     val loggersEnabled: Boolean = true
 ) : ClientTcpNode {
@@ -83,8 +83,8 @@ class DefaultTcpClientNode(
             }
         })
         val f: ChannelFuture =
-            if (sourcePort != null) {
-                b.connect(server.listenAddress, InetSocketAddress(sourcePort))
+            if (sourceAddress != null) {
+                b.connect(server.listenAddress, sourceAddress)
             } else {
                 b.connect(server.listenAddress)
             }
