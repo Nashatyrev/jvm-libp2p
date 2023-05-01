@@ -79,7 +79,7 @@ class TcpScenarios(
     var prevSystemOptions: RunParams? = null
     fun setSystemOptionsIfRequired(params: RunParams) {
         if (prevSystemOptions == null || prevSystemOptions!!.tcpOption != params.tcpOption) {
-            tcConfig.setTcpSlowStartAferIdle(params.tcpOption == TcpOption.SlowStartIdleOff)
+            tcConfig.setTcpSlowStartAferIdle(params.tcpOption == TcpOption.Default)
         }
         if (prevSystemOptions == null
             || prevSystemOptions!!.bandwidth != params.bandwidth || prevSystemOptions!!.halfPing != params.halfPing) {
