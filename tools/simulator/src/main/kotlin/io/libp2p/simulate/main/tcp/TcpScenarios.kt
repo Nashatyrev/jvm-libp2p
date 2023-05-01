@@ -76,10 +76,24 @@ class TcpScenarios(
         val clientCount: Int,
         val direction: Direction,
         val staggering: Double
-    ) {
+    ) : Comparable<RunParams> {
         val staggeringDelay
             get() =
                 bandwidth.getTransmitTimeMillis(msgSize.toLong()).milliseconds * staggering
+
+        override fun compareTo(other: RunParams): Int = comparator.compare(this, other)
+
+        companion object {
+            val comparator =
+                compareBy<RunParams> { it.tcpOption }
+                    .thenBy { it.bandwidth }
+                    .thenBy { it.halfPing }
+                    .thenBy { it.msgSize }
+                    .thenBy { it.clientCount }
+                    .thenBy { it.direction }
+                    .thenBy { it.staggering }
+        }
+
     }
 
     var prevSystemOptions: RunParams? = null

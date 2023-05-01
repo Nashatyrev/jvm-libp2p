@@ -16,8 +16,9 @@ fun main() {
     TcpScenariosStats()
         .printStats(
             listOf(
+//                "work.dir/tcp.res.json",
                 "work.dir/tcp.res.idle_off.json",
-                    "work.dir/tcp.res.default.json"
+//                    "work.dir/tcp.res.default.json"
             )
         )
 //        .validateWaves("work.dir/tcp.err.json")
@@ -44,7 +45,17 @@ class TcpScenariosStats {
         @InlineProperties
         val params: RunParams,
         val wave: Int
-    )
+    ) : Comparable<RunParamsWave> {
+
+
+        override fun compareTo(other: RunParamsWave): Int = comparator.compare(this, other)
+
+        companion object {
+            val comparator =
+                compareBy<RunParamsWave> { it.params }
+                    .thenBy { it.wave }
+        }
+    }
 
     private val Event.link get() = Link(localPort, remotePort)
 
@@ -52,6 +63,7 @@ class TcpScenariosStats {
         val events = files
             .flatMap { load(it).entries }
             .toMap()
+            .toSortedMap()
 
         val resStats = calcAllStats(events)
         val filteredResStats = resStats
