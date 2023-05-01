@@ -31,7 +31,8 @@ class TcpScenarios(
         listOf(1),
 //        listOf(128, 64, 32, 16, 8, 4, 2, 1),
     val directionParams: List<Direction> =
-        listOf(Direction.Inbound, Direction.Outbound),
+        listOf(Direction.Outbound),
+//        listOf(Direction.Inbound, Direction.Outbound),
     val staggeringParams: List<Double> =
         listOf(0.0),
 //        listOf(0.0, 0.5, 1.0),
@@ -91,6 +92,9 @@ class TcpScenarios(
         prevSystemOptions = params
     }
 
+    private fun File.appendPrintWriter() =
+        PrintWriter(FileOutputStream(this, true).bufferedWriter())
+
     fun runAll() {
         val file = File(outFile)
         val existingParams = if (file.canRead()) {
@@ -103,7 +107,7 @@ class TcpScenarios(
         }
 
         log("Running ${params.size} param sets...")
-        PrintWriter(FileOutputStream(file, true).bufferedWriter()).use { writer ->
+        file.appendPrintWriter().use { writer ->
             params
                 .withIndex()
                 .map { (index, param) ->
@@ -146,6 +150,10 @@ class TcpScenarios(
                     }
                 }
         }
+
+        log("Printing results...")
+        TcpScenariosStats().printStats(listOf(outFile))
+
     }
 
     fun run(params: RunParams): List<EventRecordingHandler.Event> {
