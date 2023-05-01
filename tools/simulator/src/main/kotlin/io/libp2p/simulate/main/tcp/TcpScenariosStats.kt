@@ -64,6 +64,8 @@ class TcpScenariosStats {
             addPropertiesAsMetrics { it }
         }
         println(resultPrinter.printPretty())
+        println()
+        println(resultPrinter.printTabSeparated())
     }
 
     fun calcAllStats(runEvents: Map<RunParams, List<Event>>): Map<RunParamsWave,MessageStats> =
