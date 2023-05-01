@@ -172,6 +172,8 @@ class TcpScenarios(
 
     }
 
+    var startClientPort = 8000
+
     fun run(params: RunParams): List<EventRecordingHandler.Event> {
 
         val recordingHandler = EventRecordingHandler()
@@ -182,14 +184,18 @@ class TcpScenarios(
             staggeringDelay = params.staggeringDelay,
             loggersEnabled = false,
             handlers = listOf(recordingHandler),
-            messagesCount = messagesCount
+            messagesCount = messagesCount,
+            clientPortStart = startClientPort
         )
+        startClientPort += params.clientCount
+
         test.setup()
 
         when (params.direction) {
             Direction.Inbound -> test.runInbound()
             Direction.Outbound -> test.runOutbound()
         }
+
 
         test.shutdown()
 
