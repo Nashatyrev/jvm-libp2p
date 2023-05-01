@@ -7,10 +7,12 @@ import io.netty.bootstrap.Bootstrap
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.buffer.ByteBuf
 import io.netty.channel.*
+import io.netty.channel.epoll.EpollChannelOption
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
+import jdk.net.ExtendedSocketOptions
 import java.net.InetSocketAddress
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -65,6 +67,7 @@ class DefaultTcpClientNode(
         b.channel(NioSocketChannel::class.java)
         b.option(ChannelOption.SO_KEEPALIVE, true)
         b.option(ChannelOption.TCP_NODELAY, true)
+        b.option(EpollChannelOption.TCP_QUICKACK, true)
         b.option(ChannelOption.SO_REUSEADDR, true)
         b.handler(object : ChannelInitializer<SocketChannel>() {
             override fun initChannel(ch: SocketChannel) {
@@ -155,6 +158,7 @@ class DefaultTcpServerNode(
             .option(ChannelOption.SO_BACKLOG, 128)
             .childOption(ChannelOption.SO_KEEPALIVE, true)
             .childOption(ChannelOption.TCP_NODELAY, true)
+            .childOption(EpollChannelOption.TCP_QUICKACK, true)
         serverChannel = b.bind(listenAddress).sync().channel()
     }
 }
