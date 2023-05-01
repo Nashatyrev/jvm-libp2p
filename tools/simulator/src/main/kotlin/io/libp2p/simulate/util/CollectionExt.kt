@@ -28,8 +28,6 @@ fun <K, V> Map<K, List<V>>.transpose(): List<Map<K, V>> {
     return ret
 }
 
-fun Any.propertiesAsMap() = javaClass.kotlin.memberProperties.map { it.name to it.get(this)!! }.toMap()
-
 fun <T : Comparable<T>> Collection<T>.isOrdered() =
     this
         .windowed(2) { l -> l[1] >= l[0] }
