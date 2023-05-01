@@ -51,7 +51,7 @@ class TcpScenarios(
     val tcConfig: TcConfig = TcConfig("lo")
 ) {
 
-    val messagesCount = 5
+    val messagesCount = 10
     val serverPort = 7777
 
     enum class TcpOption {
