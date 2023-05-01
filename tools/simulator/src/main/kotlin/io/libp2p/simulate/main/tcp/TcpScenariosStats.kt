@@ -4,15 +4,22 @@ import io.libp2p.simulate.main.tcp.EventRecordingHandler.Event
 import io.libp2p.simulate.main.tcp.EventRecordingHandler.EventType.*
 import io.libp2p.simulate.main.tcp.TcpScenarios.RunParams
 import io.libp2p.simulate.stats.ResultPrinter
+import io.libp2p.simulate.util.InlineProperties
 import io.libp2p.simulate.util.max
 import io.libp2p.simulate.util.min
+import io.libp2p.simulate.util.toMap
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.File
 
 fun main() {
     TcpScenariosStats()
-        .printStats("work.dir/tcp.res.json")
+        .printStats(
+            listOf(
+                "work.dir/tcp.res.idle_off.json",
+                    "work.dir/tcp.res.default.json"
+            )
+        )
 //        .validateWaves("work.dir/tcp.err.json")
 }
 
@@ -33,23 +40,39 @@ class TcpScenariosStats {
         val remotePort: Int
     )
 
+    data class RunParamsWave(
+        @InlineProperties
+        val params: RunParams,
+        val wave: Int
+    )
+
     private val Event.link get() = Link(localPort, remotePort)
 
-    fun printStats(file: String) {
-        val events = load(file)
+    fun printStats(files: List<String>) {
+        val events = files
+            .flatMap { load(it).entries }
+            .toMap()
+
         val resStats = calcAllStats(events)
-        val resultPrinter = ResultPrinter(resStats).apply {
+        val filteredResStats = resStats
+//            .filterKeys {
+//                it.params.clientCount == 1
+//                        && it.params.direction == TcpScenarios.Direction.Outbound
+//                        && it.params.staggering == 0.0
+//            }
+        val resultPrinter = ResultPrinter(filteredResStats).apply {
             addPropertiesAsMetrics { it }
         }
         println(resultPrinter.printPretty())
     }
 
-    fun calcAllStats(runEvents: Map<RunParams, List<Event>>): Map<RunParams,MessageStats> =
-        runEvents.mapValues { (params, events) ->
+    fun calcAllStats(runEvents: Map<RunParams, List<Event>>): Map<RunParamsWave,MessageStats> =
+        runEvents.flatMap { (params, events) ->
             splitByWaves(events, params)
                 .map { calcWaveStats(it) }
-                .minByOrNull { it.lastDelivery }!!
-        }
+                .withIndex()
+                .map { RunParamsWave(params, it.index) to it.value }
+        }.toMap()
 
     fun validateWaves(file: String) {
         val events = load(file)
