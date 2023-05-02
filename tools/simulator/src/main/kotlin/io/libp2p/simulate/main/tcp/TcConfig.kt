@@ -63,6 +63,10 @@ class TcConfig(
         exec("sudo sysctl -w net.ipv4.tcp_slow_start_after_idle=$value")
     }
 
+    fun setMTU(mtuSize: Int) {
+        exec("/usr/sbin/ifconfig $ifc mtu $mtuSize")
+    }
+
     fun exec(args: String) = exec(args.split(" "))
 
     fun exec(args: List<String>, checkExsitValue: Boolean = true) {
