@@ -63,7 +63,7 @@ class TcpMultiTest(
                 .map { index ->
                     DefaultTcpClientNode(
                         index,
-                        sourceAddress = InetSocketAddress("127.0.0.${1 + index}", clientPortStart + index),
+                        sourceAddress = InetSocketAddress("127.0.0.${2 + index}", clientPortStart + index),
                         loggersEnabled = loggersEnabled, /*clientPortStart + index,*/
                         handlers = handlers + readSizeHandler
                     )
