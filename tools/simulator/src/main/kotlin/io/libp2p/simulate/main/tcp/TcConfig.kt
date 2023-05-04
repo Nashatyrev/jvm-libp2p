@@ -24,18 +24,27 @@ class TcConfig(
     val tcdel = "$tcconfigExeDir/tcdel"
     val tcshow = "$tcconfigExeDir/tcshow"
 
-    fun setLimits(port: Int, bandwidth: Bandwidth, delay: Duration) {
+    fun setLimits(port: Int, bandwidth: Bandwidth, delay: Duration, inverseDirection: Boolean = false) {
         logger("Clearing config for $ifc")
         exec("$tcdel $ifc --all")
         logger("Setting limits for $ifc: bandwidth: $bandwidth, delay: $delay")
 
         listOf("outgoing", "incoming").forEach { direction ->
 
-            val portOption = when(direction) {
-                "outgoing" -> "--src-port"
-                "incoming" -> "--dst-port"
-                else -> throw IllegalStateException()
-            }
+            val portOption =
+                if (!inverseDirection) {
+                    when (direction) {
+                        "outgoing" -> "--src-port"
+                        "incoming" -> "--dst-port"
+                        else -> throw IllegalStateException()
+                    }
+                } else {
+                    when (direction) {
+                        "outgoing" -> "--dst-port"
+                        "incoming" -> "--src-port"
+                        else -> throw IllegalStateException()
+                    }
+                }
 
             exec(
                 listOf(

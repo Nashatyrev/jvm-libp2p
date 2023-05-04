@@ -13,15 +13,17 @@ import kotlinx.serialization.json.Json
 import java.io.File
 
 fun main() {
+    TcpScenariosStats().validateWaves("work.dir/tcp.err.json")
+
     TcpScenariosStats()
         .printStats(
             listOf(
 //                "work.dir/tcp.res.json",
-                "work.dir/tcp.res.idle_off.json",
+//                "work.dir/tcp.res.idle_off.json",
 //                    "work.dir/tcp.res.default.json"
+                "work.dir/tcp.err.json"
             )
         )
-//        .validateWaves("work.dir/tcp.err.json")
 }
 
 class TcpScenariosStats {

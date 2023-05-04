@@ -1,6 +1,7 @@
 package io.libp2p.simulate.main.tcp
 
 import io.libp2p.simulate.Bandwidth
+import io.libp2p.simulate.main.tcp.TcpScenarios.NetworkLimitOption.*
 import io.libp2p.simulate.mbitsPerSecond
 import io.libp2p.simulate.util.cartesianProduct
 import io.libp2p.tools.log
@@ -56,6 +57,13 @@ class TcpScenarios(
 
     val messagesCount = 10
     val serverPort = 7777
+    val clientPortStart = 8000
+    val networkLimitOption = ClientPortSide
+
+    enum class NetworkLimitOption {
+        ServerPortSide,
+        ClientPortSide
+    }
 
     enum class TcpOption {
         Default,
@@ -103,7 +111,13 @@ class TcpScenarios(
         }
         if (prevSystemOptions == null
             || prevSystemOptions!!.bandwidth != params.bandwidth || prevSystemOptions!!.halfPing != params.halfPing) {
-            tcConfig.setLimits(serverPort, params.bandwidth, params.halfPing.milliseconds)
+
+            val inverse = when(networkLimitOption) {
+                ServerPortSide -> false
+                ClientPortSide -> true
+            }
+            tcConfig.setLimits(serverPort, params.bandwidth, params.halfPing.milliseconds, inverse)
+
         }
         prevSystemOptions = params
     }
@@ -172,7 +186,7 @@ class TcpScenarios(
 
     }
 
-    var startClientPort = 8000
+    var startClientPort = clientPortStart
 
     fun run(params: RunParams): List<EventRecordingHandler.Event> {
 
@@ -185,7 +199,8 @@ class TcpScenarios(
             loggersEnabled = false,
             handlers = listOf(recordingHandler),
             messagesCount = messagesCount,
-            clientPortStart = startClientPort
+            clientAddresses = TcpMultiTest.loopbackAddresses(startClientPort, params.clientCount),
+            serverPort = serverPort,
         )
         startClientPort += params.clientCount
 

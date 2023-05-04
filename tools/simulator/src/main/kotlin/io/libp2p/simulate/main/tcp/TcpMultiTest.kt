@@ -21,9 +21,9 @@ fun main() {
 class TcpMultiTest(
     val destHost: String = "localhost", // "45.79.117.81",
     val serverPort: Int = 7777,
-    val clientPortStart: Int = 8000,
     val msgSize: Int = 512 * 1024,
     val clientCount: Int = 8,
+    val clientAddresses: List<InetSocketAddress> = loopbackAddresses(8000, clientCount),
     val staggeringDelay: Duration = Duration.ZERO,
     val delayAfterMessage: Duration = 2.seconds,
     val messagesCount: Int = 10,
@@ -63,7 +63,7 @@ class TcpMultiTest(
                 .map { index ->
                     DefaultTcpClientNode(
                         index,
-                        sourceAddress = InetSocketAddress("127.0.0.${2 + index}", clientPortStart + index),
+                        sourceAddress = clientAddresses[index],
                         loggersEnabled = loggersEnabled, /*clientPortStart + index,*/
                         handlers = handlers + readSizeHandler
                     )
@@ -118,6 +118,21 @@ class TcpMultiTest(
             log("All reads complete: " + System.currentTimeMillis())
             Thread.sleep(delayAfterMessage.inWholeMilliseconds)
             log("Proceed to the next")
+        }
+    }
+
+    companion object {
+        fun loopbackAddresses(startPort: Int, count: Int) =
+            loopbackAddressGenerator(startPort).take(count).toList()
+        fun loopbackAddressGenerator(startPort: Int) = sequence {
+            var ipLastByte = 2
+            var port = startPort
+            while (true) {
+                yield(InetSocketAddress("127.0.0.$ipLastByte", port))
+                ipLastByte++
+                port++
+                if (ipLastByte > 127) throw IllegalArgumentException("Can't generate more than 125 loopback ips")
+            }
         }
     }
 }
