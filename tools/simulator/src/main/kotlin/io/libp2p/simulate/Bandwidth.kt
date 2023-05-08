@@ -26,12 +26,13 @@ data class Bandwidth(val bytesPerSecond: Long) : Comparable<Bandwidth> {
             .let { "${it.valueString}${it.units.shortPrefix}" }
 
     companion object {
+        private fun Long.min1() = if (this < 1) 1 else this
         val UNLIM = Bandwidth(Long.MAX_VALUE)
         fun mbitsPerSec(mbsec: Int) =
             Bandwidth(mbsec.toLong() * (1 shl 20) / BANDWIDTH_BITS_IN_BYTE_PER_SECOND)
         fun gbitsPerSec(gbsec: Int) = mbitsPerSec(gbsec * (1 shl 10))
         fun fromSize(sizeBytes: Long, period: Duration) =
-            Bandwidth(sizeBytes * 1000 / period.inWholeMilliseconds)
+            Bandwidth(sizeBytes * 1000 / period.inWholeMilliseconds.min1())
     }
 }
 
