@@ -22,25 +22,24 @@ fun main() {
 
 @Suppress("UNUSED_VARIABLE")
 class BlobDecouplingSimulation(
-    val nodeCount: Int = 1000,
     val nodePeerCount: Int = 30,
-    val randomSeed: Long = 0L,
-    val testMessageCount: Int = 5,
+    val testMessageCount: Int = 1,
     val floodPublish: Boolean = false,
 
-    val sendingPeerBandwidth: Bandwidth = 100.mbitsPerSecond,
+    val sendingPeerBandwidth: Bandwidth = 50.mbitsPerSecond,
     val bandwidthsParams: List<RandomDistribution<Bandwidth>> =
-//        listOf(RandomDistribution.const(sendingPeerBandwidth)),
-        bandwidthDistributions.byIndexes(0, 1, 2),
+        listOf(RandomDistribution.const(sendingPeerBandwidth)),
+//        bandwidthDistributions.byIndexes(0, 1, 2),
     val decouplingParams: List<Decoupling> = listOf(
         Decoupling.Coupled,
-        Decoupling.DecoupledManyTopics,
 //        Decoupling.DecoupledSingleTopic,
+        Decoupling.DecoupledManyTopics,
     ),
     val latencyParams: List<LatencyDistribution> =
         listOf(
-//            LatencyDistribution.createUniformConst(1.milliseconds, 50.milliseconds)
-            LatencyDistribution.createConst(10.milliseconds),
+            LatencyDistribution.createUniformConst(40.milliseconds, 60.milliseconds),
+//            LatencyDistribution.createUniformConst(90.milliseconds, 120.milliseconds),
+//            LatencyDistribution.createConst(10.milliseconds),
 //            LatencyDistribution.createConst(50.milliseconds),
 //            LatencyDistribution.createConst(100.milliseconds),
 //            LatencyDistribution.createConst(150.milliseconds),
@@ -48,15 +47,15 @@ class BlobDecouplingSimulation(
 //            LatencyDistribution.createUniformConst(10.milliseconds, 20.milliseconds),
 //            LatencyDistribution.createUniformConst(10.milliseconds, 50.milliseconds),
 //            LatencyDistribution.createUniformConst(10.milliseconds, 100.milliseconds),
-            LatencyDistribution.createUniformConst(10.milliseconds, 200.milliseconds),
-            awsLatencyDistribution
+//            LatencyDistribution.createUniformConst(10.milliseconds, 200.milliseconds),
+//            awsLatencyDistribution
         ),
 //        listOf(awsLatencyDistribution),
 
     val validationDelayParams: List<RandomDistribution<Duration>> =
 //        listOf(RandomDistribution.const(10.milliseconds)),
         listOf(
-            RandomDistribution.const(10.milliseconds),
+            RandomDistribution.const(1.milliseconds),
 //            RandomDistribution.discreteEven(
 //                70.milliseconds to 33,
 //                50.milliseconds to 33,
@@ -74,25 +73,29 @@ class BlobDecouplingSimulation(
         ),
 
     val blockConfigs: List<BlockConfig> = listOf(
-        BlockConfig.ofKilobytes(128, 128, 4)
+//        BlockConfig.ofKilobytes(128, 128, 4)
+        BlockConfig.ofKilobytes(128, 128, 3)
     ),
 
     val chokeMessageParams: List<MessageChoke> = listOf(
         None,
-        OnReceive,
-        OnNotify
+//        OnReceive,
+//        OnNotify
     ),
+
+    val nodeCountParams: List<Int> = listOf(200/*, 100, 500, 1000*/),
+    val randomSeedParams: List<Long> = (1L..8L).toList(),
 
     val paramsSet: List<SimParams> =
         cartesianProduct(
+            latencyParams,
             decouplingParams,
             bandwidthsParams,
-            latencyParams,
-            validationDelayParams,
-            blockConfigs,
-            chokeMessageParams
+            randomSeedParams,
+            chokeMessageParams,
+            nodeCountParams
         ) {
-            SimParams(it.first, it.second, it.third, it.fourth, it.fifth, it.sixth)
+            SimParams(it.second, it.third, it.first, validationDelayParams[0], blockConfigs[0], it.fifth, it.sixth, it.fourth)
         },
 
     ) {
@@ -119,7 +122,9 @@ class BlobDecouplingSimulation(
         val latency: LatencyDistribution,
         val validationDelays: RandomDistribution<Duration>,
         val blockConfig: BlockConfig,
-        val chokeMessage: MessageChoke
+        val chokeMessage: MessageChoke,
+        val nodeCount: Int,
+        val randomSeed: Long
     )
 
     data class RunResult(
@@ -138,7 +143,7 @@ class BlobDecouplingSimulation(
 
             sendingPeerBand = sendingPeerBandwidth,
             messageCount = testMessageCount,
-            nodeCount = nodeCount,
+            nodeCount = simParams.nodeCount,
             nodePeerCount = nodePeerCount,
             peerBands = simParams.bandwidth,
             latency = simParams.latency,
@@ -149,6 +154,7 @@ class BlobDecouplingSimulation(
 //                heartbeatInterval = 5.seconds
             ),
             peerMessageValidationDelays = simParams.validationDelays,
+            randomSeed = simParams.randomSeed,
         )
 
     fun runAndPrint() {
@@ -191,6 +197,7 @@ class BlobDecouplingSimulation(
                     addLong("min") { it.min }
                     addLong("5%") { it.getPercentile(5.0) }
                     addLong("50%") { it.getPercentile(50.0) }
+                    addLong("mean") { it.mean }
                     addLong("95%") { it.getPercentile(95.0) }
                     addLong("max") { it.max }
                 }
