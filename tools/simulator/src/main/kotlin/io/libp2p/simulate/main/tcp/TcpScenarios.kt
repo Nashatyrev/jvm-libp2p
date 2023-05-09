@@ -23,7 +23,7 @@ class TcpScenarios(
 //        listOf(25.mbitsPerSecond, 50.mbitsPerSecond, 100.mbitsPerSecond),
         listOf(25.mbitsPerSecond),
     val halfPingParams: List<Long> =
-        listOf(150, 200, 250),
+        listOf(100),
 //        listOf(100, 150, 200),
 //        listOf(1, 10, 50, 100),
     val msgSizeParams: List<Int> =
@@ -31,10 +31,10 @@ class TcpScenarios(
 //        listOf(512 * 1024, 1024 * 1024),
 //        listOf(512 * 1024, 128 * 1024, 16 * 1024, 2 * 1204, 1024),
     val clientCountParams: List<Int> =
-        listOf(1),
+        listOf(1, 8),
 //        listOf(128, 64, 32, 16, 8, 4, 2, 1),
-    val directionParams: List<Direction> =
-        listOf(Direction.Outbound),
+    val scenarioParams: List<Scenario> =
+        listOf(Scenario.WarmupOutbound),
 //        listOf(Direction.Inbound, Direction.Outbound),
     val staggeringParams: List<Double> =
         listOf(0.0),
@@ -46,7 +46,7 @@ class TcpScenarios(
         halfPingParams,
         msgSizeParams,
         clientCountParams,
-        directionParams,
+        scenarioParams,
         staggeringParams
     ) {
         RunParams(tcpOptionParams[0], it.first, it.second, it.third, it.fourth, it.fifth, it.sixth)
@@ -55,7 +55,7 @@ class TcpScenarios(
     val tcConfig: TcConfig = TcConfig("lo")
 ) {
 
-    val messagesCount = 10
+    val messagesCount = 5
     val serverPort = 7777
     val clientPortStart = 8000
     val networkLimitOption = ClientPortSide
@@ -70,9 +70,10 @@ class TcpScenarios(
         SlowStartIdleOff
     }
 
-    enum class Direction {
-        Inbound,
-        Outbound,
+    enum class Scenario {
+        SimpleInbound,
+        SimpleOutbound,
+        WarmupOutbound
     }
 
     @kotlinx.serialization.Serializable
@@ -82,7 +83,7 @@ class TcpScenarios(
         val halfPing: Long,
         val msgSize: Int,
         val clientCount: Int,
-        val direction: Direction,
+        val scenario: Scenario,
         val staggering: Double
     ) : Comparable<RunParams> {
         val staggeringDelay
@@ -98,7 +99,7 @@ class TcpScenarios(
                     .thenBy { it.halfPing }
                     .thenBy { it.msgSize }
                     .thenBy { it.clientCount }
-                    .thenBy { it.direction }
+                    .thenBy { it.scenario }
                     .thenBy { it.staggering }
         }
 
@@ -188,6 +189,18 @@ class TcpScenarios(
 
     var startClientPort = clientPortStart
 
+    private fun TcpMultiTest.runWarmupOutbound(eventRecordingHandler: EventRecordingHandler) {
+        repeat(clientCount) { connectionNum ->
+            log("Warming up #$connectionNum")
+            repeat(messagesCount) {
+                runOutboundSingle(connectionNum)
+            }
+        }
+//        eventRecordingHandler.events.clear()
+        log("Running")
+        runOutbound()
+    }
+
     fun run(params: RunParams): List<EventRecordingHandler.Event> {
 
         val recordingHandler = EventRecordingHandler()
@@ -206,11 +219,11 @@ class TcpScenarios(
 
         test.setup()
 
-        when (params.direction) {
-            Direction.Inbound -> test.runInbound()
-            Direction.Outbound -> test.runOutbound()
+        when (params.scenario) {
+            Scenario.SimpleInbound -> test.runInbound()
+            Scenario.SimpleOutbound -> test.runOutbound()
+            Scenario.WarmupOutbound -> test.runWarmupOutbound(recordingHandler)
         }
-
 
         test.shutdown()
 
