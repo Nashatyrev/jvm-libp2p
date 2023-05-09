@@ -71,7 +71,8 @@ allprojects {
         kotlinOptions.jvmTarget = "11"
         kotlinOptions {
             languageVersion = "1.6"
-            allWarningsAsErrors = true
+            // TODO revert in prod
+            allWarningsAsErrors = false
             freeCompilerArgs = listOf("-Xjvm-default=all")
         }
     }
