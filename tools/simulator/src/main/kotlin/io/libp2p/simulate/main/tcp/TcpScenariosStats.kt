@@ -26,6 +26,7 @@ fun main() {
         )
 }
 
+@Suppress("UNUSED_PARAMETER")
 class TcpScenariosStats {
 
     data class MessageStats(
