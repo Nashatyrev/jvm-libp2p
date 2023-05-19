@@ -109,7 +109,7 @@ class EpisubSimulation(
     ),
 
     val paramsSet: List<SimParams> =
-        cartesianProduct(
+        cartesianProductT(
             decouplingParams,
             bandwidthsParams,
             validationDelayParams,
@@ -118,7 +118,7 @@ class EpisubSimulation(
 //            maliciousPeersParams,
             blockSizes
         ) {
-            SimParams(it.second, it.third, it.fourth, it.first, it.fifth.gossipVersion, it.fifth.D, maliciousPeersParams[0], it.sixth)
+            SimParams(it.v2, it.v3, it.v4, it.v1, it.v5.gossipVersion, it.v5.D, maliciousPeersParams[0], it.v6)
         },
     val chokeWarmupMessageCount: Int = 0,
     val testMessageCount: Int = 10

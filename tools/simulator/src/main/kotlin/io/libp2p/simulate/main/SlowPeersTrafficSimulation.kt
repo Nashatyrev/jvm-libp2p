@@ -21,7 +21,7 @@ class SlowPeersTrafficSimulation(
         Decoupling.DecoupledManyTopics
     ),
     val paramsSet: List<SimParams> =
-        cartesianProduct(bandwidthsParams, decouplingParams) { SimParams(it.first, it.second) }
+        cartesianProduct(bandwidthsParams, decouplingParams, ::SimParams)
 ) {
 
     data class SimParams(

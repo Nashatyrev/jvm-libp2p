@@ -22,10 +22,8 @@ fun main() {
 
 @Suppress("UNUSED_VARIABLE")
 class BlobDecouplingSimulation(
-    val nodeCount: Int = 1000,
     val nodePeerCount: Int = 30,
-    val randomSeed: Long = 0L,
-    val testMessageCount: Int = 5,
+    val testMessageCount: Int = 1,
     val floodPublish: Boolean = false,
 
     val sendingPeerBandwidth: Bandwidth = 100.mbitsPerSecond,
@@ -83,6 +81,9 @@ class BlobDecouplingSimulation(
         OnNotify
     ),
 
+    val nodeCountParams: List<Int> = listOf(200/*, 100, 500, 1000*/),
+    val randomSeedParams: List<Long> = (1L..8L).toList(),
+
     val paramsSet: List<SimParams> =
         cartesianProduct(
             decouplingParams,
@@ -90,11 +91,11 @@ class BlobDecouplingSimulation(
             latencyParams,
             validationDelayParams,
             blockConfigs,
-            chokeMessageParams
-        ) {
-            SimParams(it.first, it.second, it.third, it.fourth, it.fifth, it.sixth)
-        },
-
+            chokeMessageParams,
+            nodeCountParams,
+            randomSeedParams,
+            ::SimParams
+        ),
     ) {
 
     enum class MessageChoke { None, OnReceive, OnNotify }
@@ -119,7 +120,9 @@ class BlobDecouplingSimulation(
         val latency: LatencyDistribution,
         val validationDelays: RandomDistribution<Duration>,
         val blockConfig: BlockConfig,
-        val chokeMessage: MessageChoke
+        val chokeMessage: MessageChoke,
+        val nodeCount: Int,
+        val randomSeed: Long
     )
 
     data class RunResult(
@@ -138,7 +141,7 @@ class BlobDecouplingSimulation(
 
             sendingPeerBand = sendingPeerBandwidth,
             messageCount = testMessageCount,
-            nodeCount = nodeCount,
+            nodeCount = simParams.nodeCount,
             nodePeerCount = nodePeerCount,
             peerBands = simParams.bandwidth,
             latency = simParams.latency,
@@ -149,6 +152,7 @@ class BlobDecouplingSimulation(
 //                heartbeatInterval = 5.seconds
             ),
             peerMessageValidationDelays = simParams.validationDelays,
+            randomSeed = simParams.randomSeed,
         )
 
     fun runAndPrint() {
@@ -191,6 +195,7 @@ class BlobDecouplingSimulation(
                     addLong("min") { it.min }
                     addLong("5%") { it.getPercentile(5.0) }
                     addLong("50%") { it.getPercentile(50.0) }
+                    addLong("mean") { it.mean }
                     addLong("95%") { it.getPercentile(95.0) }
                     addLong("max") { it.max }
                 }

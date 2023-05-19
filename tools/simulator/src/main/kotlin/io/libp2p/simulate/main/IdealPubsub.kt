@@ -6,6 +6,7 @@ import io.libp2p.simulate.main.IdealPubsub.SendType.*
 import io.libp2p.simulate.stats.ResultPrinter
 import io.libp2p.simulate.mbitsPerSecond
 import io.libp2p.simulate.util.cartesianProduct
+import io.libp2p.simulate.util.cartesianProductT
 import io.libp2p.tools.log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.TestScope
@@ -67,11 +68,11 @@ class IdealPubsubSimulation(
             bandwidthParams,
             latencyParams,
             sendTypeParams,
+            messageSizeParams,
             nodeCountParams,
-            maxSentParams
-        ) {
-            IdealPubsub.SimParams(it.first, it.second, it.third, messageSizeParams[0], it.fourth, it.fifth)
-        },
+            maxSentParams,
+            IdealPubsub::SimParams
+        ),
 ) {
 
     data class RunResult(
