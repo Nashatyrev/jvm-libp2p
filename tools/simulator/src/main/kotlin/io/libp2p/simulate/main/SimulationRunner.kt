@@ -26,7 +26,11 @@ class SimulationRunner<TParams : Any, TResult : Any>(
                 .withIndex()
                 .map { (index, params) ->
                     val idx1 = index + 1
-                    val localLogger = BufferedLogger()
+                    val localLogger = when {
+                        !printLocalLogging -> NoopLogger()
+                        threadCount == 1 -> ImmediateLogger(globalLogger)
+                        else -> BufferedLogger(idx1)
+                    }
                     val future = executor.submit(Callable {
                         globalLogger("Started $idx1 of ${paramsSet.size}: $params")
                         try {
@@ -35,18 +39,18 @@ class SimulationRunner<TParams : Any, TResult : Any>(
                             val t2 = System.currentTimeMillis()
                             globalLogger("Completed $idx1 of ${paramsSet.size} in " + (t2 - t1).milliseconds)
                             if (printLocalLogging) {
-                                localLogger.printToGlobal(idx1)
+                                localLogger.flush(globalLogger)
                             }
                             res
                         } catch (e: Throwable) {
                             globalLogger("Error running task $idx1: ")
                             e.printStackTrace()
                             globalLogger("Logs from the task: ")
-                            localLogger.printToGlobal(idx1)
+                            localLogger.flush(globalLogger)
                             throw e
                         }
                     })
-                    RunTask(index, future, localLogger)
+                    RunTask(index, future)
                 }
                 .map {
                     it.resultPromise.get()
@@ -58,19 +62,37 @@ class SimulationRunner<TParams : Any, TResult : Any>(
 
     inner class RunTask(
         val index: Int,
-        val resultPromise: Future<TResult>,
-        val logger: BufferedLogger
+        val resultPromise: Future<TResult>
     )
 
-    inner class BufferedLogger {
+    interface LocalLogger {
+        fun log(s: String)
+        fun flush(dest: SimulationLogger)
+    }
+
+    class NoopLogger : LocalLogger {
+        override fun log(s: String) {}
+        override fun flush(dest: SimulationLogger) {}
+    }
+
+    class ImmediateLogger(val dest: SimulationLogger) : LocalLogger {
+        override fun log(s: String) {
+            dest("  [${LOG_TIME_FORMAT.format(Date())}] $s")
+        }
+
+        override fun flush(dest: SimulationLogger) {
+        }
+    }
+
+    class BufferedLogger(val idx: Int) : LocalLogger {
         val entries = mutableListOf<Pair<Long, String>>()
-        fun log(s: String) {
+        override fun log(s: String) {
             entries += System.currentTimeMillis() to s
         }
 
-        fun printToGlobal(index: Int) {
+        override fun flush(dest: SimulationLogger) {
             entries.forEach {
-                globalLogger(" {$index} [${LOG_TIME_FORMAT.format(Date(it.first))}] ${it.second}")
+                dest(" {$idx} [${LOG_TIME_FORMAT.format(Date(it.first))}] ${it.second}")
             }
         }
     }
