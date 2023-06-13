@@ -10,7 +10,6 @@ import io.libp2p.simulate.main.scenario.Decoupling
 import io.libp2p.simulate.stats.ResultPrinter
 import io.libp2p.simulate.stats.collect.gossip.*
 import io.libp2p.simulate.util.ReadableSize
-import io.libp2p.simulate.util.byIndexes
 import io.libp2p.simulate.util.cartesianProduct
 import io.libp2p.tools.log
 import kotlin.time.Duration
@@ -22,23 +21,31 @@ fun main() {
 
 @Suppress("UNUSED_VARIABLE")
 class BlobDecouplingSimulation(
-    val nodePeerCount: Int = 30,
-    val testMessageCount: Int = 1,
-    val floodPublish: Boolean = false,
+    val testMessageCount: Int = 10,
+    val floodPublish: Boolean = true,
+
+    val peerCountParams: List<Int> =
+        listOf(70),
 
     val sendingPeerBandwidth: Bandwidth = 100.mbitsPerSecond,
     val bandwidthsParams: List<RandomDistribution<Bandwidth>> =
+        listOf(
+            RandomDistribution.const(100.mbitsPerSecond),
+            RandomDistribution.const(500.mbitsPerSecond),
+            RandomDistribution.const(1000.mbitsPerSecond),
+//            RandomDistribution.const(5000.mbitsPerSecond),
+        ),
 //        listOf(RandomDistribution.const(sendingPeerBandwidth)),
-        bandwidthDistributions.byIndexes(0, 1, 2),
+//        bandwidthDistributions.byIndexes(0, 1, 2),
     val decouplingParams: List<Decoupling> = listOf(
         Decoupling.Coupled,
-        Decoupling.DecoupledManyTopics,
+//        Decoupling.DecoupledManyTopics,
 //        Decoupling.DecoupledSingleTopic,
     ),
     val latencyParams: List<LatencyDistribution> =
         listOf(
 //            LatencyDistribution.createUniformConst(1.milliseconds, 50.milliseconds)
-            LatencyDistribution.createConst(10.milliseconds),
+//            LatencyDistribution.createConst(10.milliseconds),
 //            LatencyDistribution.createConst(50.milliseconds),
 //            LatencyDistribution.createConst(100.milliseconds),
 //            LatencyDistribution.createConst(150.milliseconds),
@@ -46,7 +53,7 @@ class BlobDecouplingSimulation(
 //            LatencyDistribution.createUniformConst(10.milliseconds, 20.milliseconds),
 //            LatencyDistribution.createUniformConst(10.milliseconds, 50.milliseconds),
 //            LatencyDistribution.createUniformConst(10.milliseconds, 100.milliseconds),
-            LatencyDistribution.createUniformConst(10.milliseconds, 200.milliseconds),
+//            LatencyDistribution.createUniformConst(10.milliseconds, 200.milliseconds),
             awsLatencyDistribution
         ),
 //        listOf(awsLatencyDistribution),
@@ -72,20 +79,25 @@ class BlobDecouplingSimulation(
         ),
 
     val blockConfigs: List<BlockConfig> = listOf(
-        BlockConfig.ofKilobytes(128, 128, 4)
+        BlockConfig.ofKilobytes(128, 128, 7)
     ),
 
     val chokeMessageParams: List<MessageChoke> = listOf(
         None,
-        OnReceive,
-        OnNotify
+//        OnReceive,
+//        OnNotify
     ),
 
-    val nodeCountParams: List<Int> = listOf(200/*, 100, 500, 1000*/),
-    val randomSeedParams: List<Long> = (1L..8L).toList(),
+    val nodeCountParams: List<Int> =
+//        listOf(200/*, 100, 500, 1000*/),
+        listOf(5000),
+    val randomSeedParams: List<Long> =
+//        (1L..8L).toList(),
+        listOf(1L),
 
     val paramsSet: List<SimParams> =
         cartesianProduct(
+            peerCountParams,
             decouplingParams,
             bandwidthsParams,
             latencyParams,
@@ -96,7 +108,7 @@ class BlobDecouplingSimulation(
             randomSeedParams,
             ::SimParams
         ),
-    ) {
+) {
 
     enum class MessageChoke { None, OnReceive, OnNotify }
 
@@ -115,6 +127,7 @@ class BlobDecouplingSimulation(
     }
 
     data class SimParams(
+        val peerCount: Int,
         val decoupling: Decoupling,
         val bandwidth: RandomDistribution<Bandwidth>,
         val latency: LatencyDistribution,
@@ -139,10 +152,11 @@ class BlobDecouplingSimulation(
             blobSize = simParams.blockConfig.blobSize,
             blobCount = simParams.blockConfig.blobCount,
 
-            sendingPeerBand = sendingPeerBandwidth,
+//            sendingPeerBand = sendingPeerBandwidth,
+            sendingPeerFilter = { true },
             messageCount = testMessageCount,
             nodeCount = simParams.nodeCount,
-            nodePeerCount = nodePeerCount,
+            nodePeerCount = simParams.peerCount,
             peerBands = simParams.bandwidth,
             latency = simParams.latency,
             gossipParams = Eth2DefaultGossipParams.copy(
@@ -156,13 +170,18 @@ class BlobDecouplingSimulation(
         )
 
     fun runAndPrint() {
-        val results = SimulationRunner<SimParams, RunResult1> { params, logger ->
-            run(params, logger)
-        }.runAll(paramsSet)
+        val results = SimulationRunner<SimParams, RunResult1>(
+            threadCount = 1,
+            printLocalLogging = true,
+            runner = { params, logger ->
+                run(params, logger)
+            })
+            .runAll(paramsSet)
+
         printResults(paramsSet.zip(results).toMap())
     }
 
-    interface NumberSeries<TNum: Number> {
+    interface NumberSeries<TNum : Number> {
         val numbers: List<TNum>
     }
 
