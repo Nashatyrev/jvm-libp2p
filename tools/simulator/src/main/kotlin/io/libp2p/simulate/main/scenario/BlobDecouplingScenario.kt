@@ -80,7 +80,7 @@ class BlobDecouplingScenario(
         simNetwork.createAllPeers()
         logger("Connecting peers...")
         simNetwork.connectAllPeers()
-        logger("Peers connected. Graph diameter is " + simNetwork.network.topologyGraph.calcDiameter())
+//        logger("Peers connected. Graph diameter is " + simNetwork.network.topologyGraph.calcDiameter())
     }
 
     val sendingPeerIndexes = simNetwork.peers
