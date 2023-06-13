@@ -18,23 +18,25 @@ fun main() {
 
 class TcpScenarios(
     val tcpOptionParams: List<TcpOption> =
-        listOf(TcpOption.SlowStartIdleOff),
+//        listOf(TcpOption.SlowStartIdleOff),
+        listOf(TcpOption.Default),
     val bandwidthParams: List<Bandwidth> =
 //        listOf(25.mbitsPerSecond, 50.mbitsPerSecond, 100.mbitsPerSecond),
-        listOf(25.mbitsPerSecond),
+        listOf(1000.mbitsPerSecond, 500.mbitsPerSecond, 100.mbitsPerSecond),
     val halfPingParams: List<Long> =
-        listOf(100),
+        listOf(50),
 //        listOf(100, 150, 200),
 //        listOf(1, 10, 50, 100),
     val msgSizeParams: List<Int> =
-        listOf(512 * 1024),
+        listOf(1024 * 1024),
 //        listOf(512 * 1024, 1024 * 1024),
 //        listOf(512 * 1024, 128 * 1024, 16 * 1024, 2 * 1204, 1024),
     val clientCountParams: List<Int> =
-        listOf(1, 8),
+        listOf(8),
 //        listOf(128, 64, 32, 16, 8, 4, 2, 1),
     val scenarioParams: List<Scenario> =
-        listOf(Scenario.WarmupOutbound),
+        listOf(Scenario.SimpleInbound),
+//        listOf(Scenario.WarmupOutbound),
 //        listOf(Direction.Inbound, Direction.Outbound),
     val staggeringParams: List<Double> =
         listOf(0.0),
@@ -42,15 +44,15 @@ class TcpScenarios(
 //        listOf(0.0, 0.25, 0.5, 0.75, 1.0),
 
     val params: List<RunParams> = cartesianProduct(
+        tcpOptionParams,
         bandwidthParams,
         halfPingParams,
         msgSizeParams,
         clientCountParams,
         scenarioParams,
-        staggeringParams
-    ) {
-        RunParams(tcpOptionParams[0], it.first, it.second, it.third, it.fourth, it.fifth, it.sixth)
-    },
+        staggeringParams,
+        ::RunParams
+    ),
     val outFile: String = "tcp.res.json",
     val tcConfig: TcConfig = TcConfig("lo")
 ) {
