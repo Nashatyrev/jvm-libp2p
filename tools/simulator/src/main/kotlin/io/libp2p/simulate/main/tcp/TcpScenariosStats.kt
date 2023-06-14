@@ -127,10 +127,10 @@ class TcpScenariosStats {
             }
             .maxOrNull() ?: 0
 
-//        val totalTransferSize = params.msgSize.toLong()* params.clientCount
+        val totalTransferSize = params.msgSize.toLong()* params.clientCount
         val averageDelivery = deliveries.average().toLong()
         val lastDelivery = deliveries.max()
-        val effectiveBandwidth = Bandwidth.fromSize(params.msgSize.toLong(), averageDelivery.milliseconds)
+        val effectiveBandwidth = Bandwidth.fromSize(totalTransferSize, lastDelivery.milliseconds)
 
         return MessageStats(
             messageWave.find { it.type == READ }!!.delayFromStart(),
