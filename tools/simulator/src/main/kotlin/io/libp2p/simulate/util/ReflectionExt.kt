@@ -28,7 +28,7 @@ data class ExtPropertyDescriptor(
 }
 
 @Suppress("UNCHECKED_CAST")
-fun KClass<Any>.propertiesRecursively(onlyConstructorParams: Boolean = false): List<ExtPropertyDescriptor> {
+fun <T: Any> KClass<T>.propertiesRecursively(onlyConstructorParams: Boolean = false): List<ExtPropertyDescriptor> {
     val properties = this.properties(onlyConstructorParams)
     return properties.flatMap { prop ->
         if (prop.findAnnotation<InlineProperties>() != null) {
@@ -36,17 +36,17 @@ fun KClass<Any>.propertiesRecursively(onlyConstructorParams: Boolean = false): L
             childKlass.propertiesRecursively(onlyConstructorParams)
                 .map { propDescr->
                     ExtPropertyDescriptor(propDescr.property) { obj ->
-                        val chilPObj = prop.get(obj)!!
+                        val chilPObj = prop.get(obj as T)!!
                         propDescr.targetObjExtractor(chilPObj)
                     }
                 }
         } else {
-            listOf(ExtPropertyDescriptor(prop))
+            listOf(ExtPropertyDescriptor(prop as KProperty1<Any, *>))
         }
     }
 }
 
-fun KClass<Any>.properties(onlyConstructorParams: Boolean = false): List<KProperty1<Any, *>> {
+fun <T: Any> KClass<T>.properties(onlyConstructorParams: Boolean = false): List<KProperty1<T, *>> {
     val params = this.primaryConstructor?.parameters ?: emptyList()
     val paramByNames = params.withIndex().associateBy { it.value.name ?: "" }
 

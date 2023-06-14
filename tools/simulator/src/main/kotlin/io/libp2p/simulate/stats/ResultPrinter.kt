@@ -116,8 +116,8 @@ class ResultPrinter<TParams : Any, TResult : Any>(
     }
 
     inline fun <reified R : Any> addPropertiesAsMetrics(prefix: String = "", crossinline structExtractor: (TResult) -> R) {
-        R::class.memberProperties.forEach { property ->
-            addMetric(prefix + property.name) { property.get(structExtractor(it))!! }
+        R::class.propertiesRecursively().forEach { property ->
+            addMetric(prefix + property.name) { property.get(structExtractor(it)) }
         }
     }
 
