@@ -1,5 +1,6 @@
 package io.libp2p.simulate.main.tcp
 
+import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.main.tcp.EventRecordingHandler.Event
 import io.libp2p.simulate.main.tcp.EventRecordingHandler.EventType.*
 import io.libp2p.simulate.main.tcp.TcpScenarios.RunParams
@@ -11,6 +12,7 @@ import io.libp2p.simulate.util.toMap
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.File
+import kotlin.time.Duration.Companion.milliseconds
 
 fun main() {
     TcpScenariosStats().validateWaves("work.dir/tcp.err.json")
@@ -36,7 +38,8 @@ class TcpScenariosStats {
         val lastDelivery: Long,
         val lastWrite: Long,
         val lastWritten: Long,
-        val maxReadDelay: Long
+        val maxReadDelay: Long,
+        val effectiveBandwidth: Bandwidth
     )
 
     private data class Link(
@@ -75,18 +78,19 @@ class TcpScenariosStats {
 //                        && it.params.direction == TcpScenarios.Direction.Outbound
 //                        && it.params.staggering == 0.0
 //            }
-        val resultPrinter = ResultPrinter(filteredResStats).apply {
-            addPropertiesAsMetrics { it }
-        }
+        val resultPrinter = ResultPrinter(filteredResStats)
+            .apply {
+                addPropertiesAsMetrics { it }
+            }
         println(resultPrinter.printPretty())
         println()
         println(resultPrinter.printTabSeparated())
     }
 
-    fun calcAllStats(runEvents: Map<RunParams, List<Event>>): Map<RunParamsWave,MessageStats> =
+    fun calcAllStats(runEvents: Map<RunParams, List<Event>>): Map<RunParamsWave, MessageStats> =
         runEvents.flatMap { (params, events) ->
             splitByWaves(events, params)
-                .map { calcWaveStats(it) }
+                .map { calcWaveStats(it, params) }
                 .withIndex()
                 .map { RunParamsWave(params, it.index) to it.value }
         }.toMap()
@@ -103,7 +107,7 @@ class TcpScenariosStats {
         }
     }
 
-    fun calcWaveStats(messageWave: List<Event>): MessageStats {
+    fun calcWaveStats(messageWave: List<Event>, params: RunParams): MessageStats {
         require(messageWave.isNotEmpty())
         require(messageWave[0].type == WRITE)
 
@@ -123,14 +127,19 @@ class TcpScenariosStats {
             }
             .maxOrNull() ?: 0
 
+        val totalTransferSize = params.msgSize.toLong()* params.clientCount
+        val lastDelivery = deliveries.max()
+        val effectiveBandwidth = Bandwidth.fromSize(totalTransferSize, lastDelivery.milliseconds)
+
         return MessageStats(
             messageWave.find { it.type == READ }!!.delayFromStart(),
             deliveries.min(),
             deliveries.average().toLong(),
-            deliveries.max(),
+            lastDelivery,
             messageWave.findLast { it.type == WRITE }!!.delayFromStart(),
             messageWave.findLast { it.type == WRITTEN }!!.delayFromStart(),
-            maxDelayBetweenReads
+            maxDelayBetweenReads,
+            effectiveBandwidth
         )
     }
 
@@ -142,7 +151,7 @@ class TcpScenariosStats {
                     it.trim().isNotBlank()
                 }.iterator()
 
-                if(!sIt.hasNext()) {
+                if (!sIt.hasNext()) {
                     return emptyMap()
                 }
 

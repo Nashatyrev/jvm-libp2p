@@ -18,11 +18,19 @@ fun main() {
 
 class TcpScenarios(
     val tcpOptionParams: List<TcpOption> =
-//        listOf(TcpOption.SlowStartIdleOff),
-        listOf(TcpOption.Default),
+        listOf(
+            TcpOption.Default,
+            TcpOption.SlowStartIdleOff
+        ),
     val bandwidthParams: List<Bandwidth> =
 //        listOf(25.mbitsPerSecond, 50.mbitsPerSecond, 100.mbitsPerSecond),
-        listOf(1000.mbitsPerSecond, 500.mbitsPerSecond, 100.mbitsPerSecond),
+        listOf(
+            1000.mbitsPerSecond,
+            500.mbitsPerSecond,
+            100.mbitsPerSecond,
+            50.mbitsPerSecond,
+            20.mbitsPerSecond,
+        ),
     val halfPingParams: List<Long> =
         listOf(50),
 //        listOf(100, 150, 200),
