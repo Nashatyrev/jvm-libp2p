@@ -20,7 +20,11 @@ data class Bandwidth(val bytesPerSecond: Long) : Comparable<Bandwidth> {
     override fun compareTo(other: Bandwidth) = bytesPerSecond.compareTo(other.bytesPerSecond)
 
     override fun toString() =
-        "${ReadableSize.create(bytesPerSecond * BANDWIDTH_BITS_IN_BYTE_PER_SECOND)}its/s"
+        when(this) {
+            UNLIM -> "Unlim"
+            else ->
+                "${ReadableSize.create(bytesPerSecond * BANDWIDTH_BITS_IN_BYTE_PER_SECOND)}its/s"
+        }
 
     fun toStringShort() =
         ReadableSize.create(bytesPerSecond * BANDWIDTH_BITS_IN_BYTE_PER_SECOND)
