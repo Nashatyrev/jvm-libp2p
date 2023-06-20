@@ -26,21 +26,28 @@ class TcpScenarios(
 //        listOf(25.mbitsPerSecond, 50.mbitsPerSecond, 100.mbitsPerSecond),
         listOf(
             1000.mbitsPerSecond,
-            500.mbitsPerSecond,
-            100.mbitsPerSecond,
-            50.mbitsPerSecond,
+//            500.mbitsPerSecond,
+//            100.mbitsPerSecond,
+//            50.mbitsPerSecond,
 //            20.mbitsPerSecond,
         ),
     val halfPingParams: List<Long> =
-        listOf(10, 20, 30, 40, 50, 75, 100),
+        listOf(100),
+//        listOf(10, 20, 30, 40, 50, 75, 100),
 //        listOf(100, 150, 200),
 //        listOf(1, 10, 50, 100),
     val msgSizeParams: List<Int> =
-        listOf(1 * 1024 * 1024),
+        listOf(
+            1 * 1024 * 1024,
+            10 * 1024 * 1024,
+        ),
 //        listOf(512 * 1024, 1024 * 1024),
 //        listOf(512 * 1024, 128 * 1024, 16 * 1024, 2 * 1204, 1024),
     val clientCountParams: List<Int> =
-        listOf(8),
+        listOf(
+            1,
+            8
+        ),
 //        listOf(128, 64, 32, 16, 8, 4, 2, 1),
     val scenarioParams: List<Scenario> =
         listOf(Scenario.SimpleInbound),
