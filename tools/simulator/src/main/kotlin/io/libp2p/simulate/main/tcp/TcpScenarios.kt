@@ -25,9 +25,10 @@ class TcpScenarios(
     val bandwidthParams: List<Bandwidth> =
 //        listOf(25.mbitsPerSecond, 50.mbitsPerSecond, 100.mbitsPerSecond),
         listOf(
-            1000.mbitsPerSecond,
-            500.mbitsPerSecond,
-            100.mbitsPerSecond,
+            Bandwidth.UNLIM,
+//            1000.mbitsPerSecond,
+//            500.mbitsPerSecond,
+//            100.mbitsPerSecond,
 //            50.mbitsPerSecond,
 //            20.mbitsPerSecond,
         ),

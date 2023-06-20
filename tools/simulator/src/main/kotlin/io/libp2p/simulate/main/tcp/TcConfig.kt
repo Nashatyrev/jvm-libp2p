@@ -46,19 +46,25 @@ class TcConfig(
                     }
                 }
 
+            val rateOption = when(bandwidth) {
+                Bandwidth.UNLIM -> emptyList<String>()
+                else -> listOf(
+                    "--rate",
+                    "${bandwidth.bytesPerSecond * 8}bps"
+                )
+            }
+
             exec(
                 listOf(
                     tcset,
                     ifc,
-                    "--rate",
-                    "${bandwidth.bytesPerSecond * 8}bps",
                     "--delay",
                     delay.inWholeMilliseconds.toString(),
                     portOption,
                     "$port",
                     "--direction",
                     direction
-                )
+                ) + rateOption
             )
         }
 
