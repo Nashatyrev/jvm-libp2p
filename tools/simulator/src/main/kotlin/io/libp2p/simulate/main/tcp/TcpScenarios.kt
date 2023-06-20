@@ -26,13 +26,13 @@ class TcpScenarios(
 //        listOf(25.mbitsPerSecond, 50.mbitsPerSecond, 100.mbitsPerSecond),
         listOf(
             1000.mbitsPerSecond,
-//            500.mbitsPerSecond,
+            500.mbitsPerSecond,
             100.mbitsPerSecond,
-//            50.mbitsPerSecond,
+            50.mbitsPerSecond,
 //            20.mbitsPerSecond,
         ),
     val halfPingParams: List<Long> =
-        listOf(10),
+        listOf(10, 20, 30, 40, 50, 75, 100),
 //        listOf(100, 150, 200),
 //        listOf(1, 10, 50, 100),
     val msgSizeParams: List<Int> =
@@ -47,8 +47,8 @@ class TcpScenarios(
 //        listOf(Scenario.WarmupOutbound),
 //        listOf(Direction.Inbound, Direction.Outbound),
     val staggeringParams: List<Double> =
-//        listOf(0.0),
-        listOf(0.0, 0.5, 1.0, 1.5),
+        listOf(0.0),
+//        listOf(0.0, 0.5, 1.0, 1.5),
 //        listOf(0.0, 0.25, 0.5, 0.75, 1.0),
 
     val params: List<RunParams> = cartesianProduct(
