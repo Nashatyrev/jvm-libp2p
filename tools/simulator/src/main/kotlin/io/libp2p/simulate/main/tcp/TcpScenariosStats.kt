@@ -39,7 +39,7 @@ class TcpScenariosStats {
         val lastWrite: Long,
         val lastWritten: Long,
         val maxReadDelay: Long,
-        val effectiveBandwidth: Bandwidth
+        val goodput: Bandwidth
     )
 
     private data class Link(
