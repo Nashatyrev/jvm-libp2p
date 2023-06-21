@@ -50,7 +50,10 @@ class TcpScenarios(
             1,
             2,
             4,
-            8
+            8,
+            16,
+            24,
+            32
         ),
 //        listOf(128, 64, 32, 16, 8, 4, 2, 1),
     val scenarioParams: List<Scenario> =
@@ -80,6 +83,7 @@ class TcpScenarios(
     val serverPort = 7777
     val clientPortStart = 8000
     val networkLimitOption = ClientPortSide
+    val printOnlyLastWave: Boolean = true
 
     enum class NetworkLimitOption {
         ServerPortSide,
@@ -204,7 +208,7 @@ class TcpScenarios(
         }
 
         log("Printing results...")
-        TcpScenariosStats().printStats(listOf(outFile))
+        TcpScenariosStats().printStats(listOf(outFile), printOnlyLastWave)
 
     }
 

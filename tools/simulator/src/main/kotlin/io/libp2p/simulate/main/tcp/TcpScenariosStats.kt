@@ -65,23 +65,26 @@ class TcpScenariosStats {
 
     private val Event.link get() = Link(localPort, remotePort)
 
-    fun printStats(files: List<String>) {
+    fun printStats(files: List<String>, onlyLastWave: Boolean = false) {
         val events = files
             .flatMap { load(it).entries }
             .toMap()
             .toSortedMap()
 
         val resStats = calcAllStats(events)
-        val filteredResStats = resStats
-//            .filterKeys {
-//                it.params.clientCount == 1
-//                        && it.params.direction == TcpScenarios.Direction.Outbound
-//                        && it.params.staggering == 0.0
-//            }
-        val resultPrinter = ResultPrinter(filteredResStats)
-            .apply {
-                addPropertiesAsMetrics { it }
+        val filteredResStats =
+            when(onlyLastWave) {
+                false -> resStats
+                true -> {
+                    val maxWave = resStats.keys.maxOf { it.wave }
+                    resStats
+                        .filter { it.key.wave == maxWave }
+                }
             }
+
+        val resultPrinter = ResultPrinter(filteredResStats)
+        resultPrinter.addPropertiesAsMetrics { it }
+
         println(resultPrinter.printPretty())
         println()
         println(resultPrinter.printTabSeparated())
