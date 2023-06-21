@@ -19,7 +19,7 @@ fun main() {
 class TcpScenarios(
     val tcpOptionParams: List<TcpOption> =
         listOf(
-            TcpOption.Default,
+//            TcpOption.Default,
             TcpOption.SlowStartIdleOff
         ),
     val bandwidthParams: List<Bandwidth> =
@@ -33,14 +33,14 @@ class TcpScenarios(
 //            20.mbitsPerSecond,
         ),
     val halfPingParams: List<Long> =
-        listOf(100),
-//        listOf(10, 20, 30, 40, 50, 75, 100),
+//        listOf(100),
+        listOf(10, 20, 30, 40, 50, 75, 100, 125, 150),
 //        listOf(100, 150, 200),
 //        listOf(1, 10, 50, 100),
     val msgSizeParams: List<Int> =
         listOf(
-            1 * 1024 * 1024,
-            10 * 1024 * 1024,
+//            1 * 1024 * 1024,
+//            10 * 1024 * 1024,
             100 * 1024 * 1024,
         ),
 //        listOf(512 * 1024, 1024 * 1024),
