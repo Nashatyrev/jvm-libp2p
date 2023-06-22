@@ -39,7 +39,8 @@ class TcpScenarios(
 //        listOf(1, 10, 50, 100),
     val msgSizeParams: List<Int> =
         listOf(
-            1 * 1024 * 1024,
+//            1 * 1024 * 1024,
+            2 * 1024 * 1024,
 //            10 * 1024 * 1024,
 //            100 * 1024 * 1024,
         ),
