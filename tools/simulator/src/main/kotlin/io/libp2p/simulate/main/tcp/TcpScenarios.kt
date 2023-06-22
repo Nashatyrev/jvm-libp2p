@@ -85,7 +85,7 @@ class TcpScenarios(
     val serverPort = 7777
     val clientPortStart = 8000
     val networkLimitOption = ClientPortSide
-    val printOnlyLastWave: Boolean = false
+    val printOnlyLastWave: Boolean = true
 
     enum class NetworkLimitOption {
         ServerPortSide,
