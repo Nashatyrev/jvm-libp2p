@@ -48,12 +48,12 @@ class TcpScenarios(
     val clientCountParams: List<Int> =
         listOf(
             1,
-//            2,
-//            4,
-//            8,
-//            16,
-//            24,
-//            32
+            2,
+            4,
+            8,
+            16,
+            24,
+            32
         ),
 //        listOf(128, 64, 32, 16, 8, 4, 2, 1),
     val scenarioParams: List<Scenario> =
