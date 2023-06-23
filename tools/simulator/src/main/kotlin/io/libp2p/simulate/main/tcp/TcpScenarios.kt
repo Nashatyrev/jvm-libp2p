@@ -33,14 +33,14 @@ class TcpScenarios(
 //            20.mbitsPerSecond,
         ),
     val halfPingParams: List<Long> =
-        listOf(100),
-//        listOf(10, 20, 30, 40, 50, 75, 100, 125, 150),
+//        listOf(100),
+        listOf(10, 20, 30, 40, 50, 75, 100, 125, 150),
 //        listOf(100, 150, 200),
 //        listOf(1, 10, 50, 100),
     val msgSizeParams: List<Int> =
         listOf(
-            128 * 1024,
-//            1 * 1024 * 1024,
+//            128 * 1024,
+            1 * 1024 * 1024,
 //            5 * 1024 * 1024,
 //            10 * 1024 * 1024,
 //            100 * 1024 * 1024,
@@ -50,12 +50,12 @@ class TcpScenarios(
     val clientCountParams: List<Int> =
         listOf(
             1,
-//            2,
-//            4,
-//            8,
-//            16,
-//            24,
-//            32
+            2,
+            4,
+            8,
+            16,
+            24,
+            32
         ),
 //        listOf(128, 64, 32, 16, 8, 4, 2, 1),
     val scenarioParams: List<Scenario> =
@@ -85,7 +85,7 @@ class TcpScenarios(
     val serverPort = 7777
     val clientPortStart = 8000
     val networkLimitOption = ClientPortSide
-    val printOnlyLastWave: Boolean = false
+    val printOnlyLastWave: Boolean = true
 
     enum class NetworkLimitOption {
         ServerPortSide,
