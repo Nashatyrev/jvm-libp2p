@@ -139,6 +139,7 @@ class TcpScenarios(
         companion object {
             val comparator =
                 compareBy<RunParams> { it.tcpOption }
+                    .thenBy { it.tcpCongestion }
                     .thenBy { it.bandwidth }
                     .thenBy { it.halfPing }
                     .thenBy { it.msgSize }
