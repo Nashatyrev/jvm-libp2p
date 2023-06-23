@@ -22,6 +22,11 @@ class TcpScenarios(
 //            TcpOption.Default,
             TcpOption.SlowStartIdleOff
         ),
+    val tcpCongestionParams: List<TcpCongestion> =
+        listOf(
+            TcpCongestion.Cubic,
+            TcpCongestion.BBR,
+        ),
     val bandwidthParams: List<Bandwidth> =
 //        listOf(25.mbitsPerSecond, 50.mbitsPerSecond, 100.mbitsPerSecond),
         listOf(
@@ -33,8 +38,8 @@ class TcpScenarios(
 //            20.mbitsPerSecond,
         ),
     val halfPingParams: List<Long> =
-//        listOf(100),
-        listOf(10, 20, 30, 40, 50, 75, 100, 125, 150),
+        listOf(100),
+//        listOf(10, 20, 30, 40, 50, 75, 100, 125, 150),
 //        listOf(100, 150, 200),
 //        listOf(1, 10, 50, 100),
     val msgSizeParams: List<Int> =
@@ -50,12 +55,12 @@ class TcpScenarios(
     val clientCountParams: List<Int> =
         listOf(
             1,
-            2,
-            4,
-            8,
-            16,
-            24,
-            32
+//            2,
+//            4,
+//            8,
+//            16,
+//            24,
+//            32
         ),
 //        listOf(128, 64, 32, 16, 8, 4, 2, 1),
     val scenarioParams: List<Scenario> =
@@ -69,6 +74,7 @@ class TcpScenarios(
 
     val params: List<RunParams> = cartesianProduct(
         tcpOptionParams,
+        tcpCongestionParams,
         bandwidthParams,
         halfPingParams,
         msgSizeParams,
@@ -85,7 +91,7 @@ class TcpScenarios(
     val serverPort = 7777
     val clientPortStart = 8000
     val networkLimitOption = ClientPortSide
-    val printOnlyLastWave: Boolean = true
+    val printOnlyLastWave: Boolean = false
 
     enum class NetworkLimitOption {
         ServerPortSide,
@@ -97,6 +103,16 @@ class TcpScenarios(
         SlowStartIdleOff
     }
 
+    enum class TcpCongestion(
+        val tcpCongestionControl: String,
+        val defaultQDisc: String
+    ) {
+        Cubic("cubic", "fq_codel"),
+        BBR("bbr", "fq");
+
+        override fun toString() = "$tcpCongestionControl/$defaultQDisc"
+    }
+
     enum class Scenario {
         SimpleInbound,
         SimpleOutbound,
@@ -106,6 +122,7 @@ class TcpScenarios(
     @kotlinx.serialization.Serializable
     data class RunParams(
         val tcpOption: TcpOption,
+        val tcpCongestion: TcpCongestion,
         val bandwidth: Bandwidth,
         val halfPing: Long,
         val msgSize: Int,
@@ -146,6 +163,9 @@ class TcpScenarios(
             }
             tcConfig.setLimits(serverPort, params.bandwidth, params.halfPing.milliseconds, inverse)
 
+        }
+        if (prevSystemOptions == null || prevSystemOptions!!.tcpCongestion != params.tcpCongestion) {
+            tcConfig.setTcpCongestion(params.tcpCongestion.tcpCongestionControl, params.tcpCongestion.defaultQDisc)
         }
         prevSystemOptions = params
     }

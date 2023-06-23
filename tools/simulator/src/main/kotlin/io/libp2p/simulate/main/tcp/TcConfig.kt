@@ -82,6 +82,11 @@ class TcConfig(
         exec("/usr/sbin/ifconfig $ifc mtu $mtuSize")
     }
 
+    fun setTcpCongestion(tcpCongestionControl: String, defaultQDisc: String) {
+        exec("sudo sysctl -w net.core.default_qdisc=$defaultQDisc")
+        exec("sudo sysctl -w net.ipv4.tcp_congestion_control=$tcpCongestionControl")
+    }
+
     fun exec(args: String) = exec(args.split(" "))
 
     fun exec(args: List<String>, checkExsitValue: Boolean = true) {
