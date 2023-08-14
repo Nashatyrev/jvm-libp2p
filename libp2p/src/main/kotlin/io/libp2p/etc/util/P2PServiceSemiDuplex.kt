@@ -5,6 +5,7 @@ import io.libp2p.core.SemiDuplexNoOutboundStreamException
 import io.libp2p.etc.types.completedExceptionally
 import io.libp2p.etc.types.toVoidCompletableFuture
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.ScheduledExecutorService
 
 /**
@@ -12,7 +13,7 @@ import java.util.concurrent.ScheduledExecutorService
  * They are initiated asynchronously by each peer. Initiated stream is used solely for writing data
  * and accepted steam is used solely for reading
  */
-abstract class P2PServiceSemiDuplex(executor: ScheduledExecutorService) : P2PService(executor) {
+abstract class P2PServiceSemiDuplex(executor: ExecutorService) : P2PService(executor) {
 
     inner class SDPeerHandler(streamHandler: StreamHandler) : PeerHandler(streamHandler) {
 

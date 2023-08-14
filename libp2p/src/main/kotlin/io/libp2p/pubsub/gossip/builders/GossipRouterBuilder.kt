@@ -63,7 +63,7 @@ open class GossipRouterBuilder(
             chokeStrategy = chokeStrategy,
             subscriptionTopicSubscriptionFilter = subscriptionTopicSubscriptionFilter,
             protocol = protocol,
-            executor = scheduledAsyncExecutor,
+            scheduledExecutor = scheduledAsyncExecutor,
             messageFactory = messageFactory,
             seenMessages = seenCache,
             messageValidator = messageValidator

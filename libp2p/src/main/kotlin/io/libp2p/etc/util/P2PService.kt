@@ -10,6 +10,7 @@ import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.util.ReferenceCountUtil
 import org.apache.logging.log4j.LogManager
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.ScheduledExecutorService
 
 private val logger = LogManager.getLogger(P2PService::class.java)
@@ -30,7 +31,7 @@ private val logger = LogManager.getLogger(P2PService::class.java)
  * It is only safe to perform any service logic via this executor
  */
 abstract class P2PService(
-    protected val executor: ScheduledExecutorService
+    protected val executor: ExecutorService
 ) {
 
     private val peersMutable = mutableListOf<PeerHandler>()

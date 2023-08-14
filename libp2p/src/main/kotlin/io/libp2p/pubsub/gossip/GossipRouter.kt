@@ -91,12 +91,12 @@ open class GossipRouter(
 
     subscriptionTopicSubscriptionFilter: TopicSubscriptionFilter,
     protocol: PubsubProtocol,
-    executor: ScheduledExecutorService,
+    val scheduledExecutor: ScheduledExecutorService,
     messageFactory: PubsubMessageFactory,
     seenMessages: SeenCache<Optional<ValidationResult>>,
     messageValidator: PubsubRouterMessageValidator,
 ) : AbstractRouter(
-    executor,
+    scheduledExecutor,
     protocol,
     subscriptionTopicSubscriptionFilter,
     params.maxGossipMessageSize,
@@ -134,7 +134,7 @@ open class GossipRouter(
     private val peerIHave = createLRUMap<PeerHandler, AtomicInteger>(MaxPeerIHaveEntries)
     private val iWantRequests = createLRUMap<Pair<PeerHandler, MessageId>, Long>(MaxIWantRequestsEntries)
     private val heartbeatTask by lazy {
-        executor.scheduleWithFixedDelay(
+        scheduledExecutor.scheduleWithFixedDelay(
             ::catchingHeartbeat,
             heartbeatInitialDelay.toMillis(),
             params.heartbeatInterval.toMillis(),

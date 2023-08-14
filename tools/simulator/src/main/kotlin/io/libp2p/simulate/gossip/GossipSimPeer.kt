@@ -5,6 +5,7 @@ import io.libp2p.core.Stream
 import io.libp2p.core.pubsub.createPubsubApi
 import io.libp2p.etc.types.lazyVar
 import io.libp2p.pubsub.PubsubProtocol
+import io.libp2p.pubsub.PubsubRouterDebug
 import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
 import io.libp2p.simulate.stream.StreamSimPeer
 import io.netty.handler.logging.LogLevel
@@ -19,7 +20,7 @@ class GossipSimPeer(
 ) : StreamSimPeer<Unit>(true, protocol.announceStr) {
 
     var routerBuilder = SimGossipRouterBuilder()
-    var router by lazyVar {
+    var router: PubsubRouterDebug by lazyVar {
         routerBuilder.also {
             it.name = name
             it.scheduledAsyncExecutor = simExecutor

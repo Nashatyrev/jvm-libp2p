@@ -16,6 +16,7 @@ import pubsub.pb.Rpc
 import java.util.Collections.singletonList
 import java.util.Optional
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.ScheduledExecutorService
 import java.util.function.BiConsumer
 import java.util.function.Consumer
@@ -35,7 +36,7 @@ private val logger = LogManager.getLogger(AbstractRouter::class.java)
  * Implements common logic for pubsub routers
  */
 abstract class AbstractRouter(
-    executor: ScheduledExecutorService,
+    executor: ExecutorService,
     override val protocol: PubsubProtocol,
     protected val subscriptionFilter: TopicSubscriptionFilter,
     protected val maxMsgSize: Int,
