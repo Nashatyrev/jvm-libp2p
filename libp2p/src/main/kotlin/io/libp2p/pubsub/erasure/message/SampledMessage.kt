@@ -1,6 +1,6 @@
-package io.libp2p.pubsub.erasure
+package io.libp2p.pubsub.erasure.message
 
-import kotlinx.coroutines.Deferred
+import io.libp2p.pubsub.erasure.SampleIndex
 import kotlinx.coroutines.flow.StateFlow
 import java.util.BitSet
 
@@ -13,9 +13,3 @@ interface SampledMessage {
     fun getSample(idx: SampleIndex): ErasureSample
 }
 
-interface SampledMessageCollector {
-
-    val recoveredMessage: Deferred<Message>
-
-    fun addSample(sample: ErasureSample)
-}

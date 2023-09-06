@@ -1,6 +1,7 @@
-package io.libp2p.pubsub.erasure
+package io.libp2p.pubsub.erasure.message
 
 import io.libp2p.pubsub.MessageId
+import io.libp2p.pubsub.erasure.SampleIndex
 import kotlin.time.Duration
 
 interface MessageACK {

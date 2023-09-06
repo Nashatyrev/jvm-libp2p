@@ -1,6 +1,8 @@
 package io.libp2p.pubsub.erasure
 
 import io.libp2p.core.PeerId
+import io.libp2p.pubsub.erasure.message.MessageACK
+import io.libp2p.pubsub.erasure.message.SampledMessage
 import java.util.BitSet
 
 abstract class PeerMessageHandler(
