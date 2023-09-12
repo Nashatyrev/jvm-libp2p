@@ -5,6 +5,7 @@ import io.libp2p.core.InternalErrorException
 import io.libp2p.core.Libp2pException
 import io.libp2p.etc.types.completedExceptionally
 import io.libp2p.etc.types.hasCauseOfType
+import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInboundHandlerAdapter
 import org.slf4j.LoggerFactory
@@ -83,7 +84,7 @@ abstract class AbstractMuxHandler<TData>() :
      */
     abstract fun releaseMessage(msg: TData)
 
-    abstract fun onChildWrite(child: MuxChannel<TData>, data: TData)
+    abstract fun onChildWrite(child: MuxChannel<TData>, data: TData): ChannelFuture
 
     protected fun onRemoteOpen(id: MuxId) {
         val initializer = inboundInitializer

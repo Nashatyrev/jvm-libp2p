@@ -8,6 +8,7 @@ import io.libp2p.etc.util.netty.mux.MuxChannel
 import io.libp2p.etc.util.netty.mux.MuxId
 import io.libp2p.mux.MuxHandler
 import io.netty.buffer.ByteBuf
+import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelHandlerContext
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicLong
@@ -34,15 +35,19 @@ open class MplexHandler(
         }
     }
 
-    override fun onChildWrite(child: MuxChannel<ByteBuf>, data: ByteBuf) {
+    override fun onChildWrite(child: MuxChannel<ByteBuf>, data: ByteBuf): ChannelFuture {
         val ctx = getChannelHandlerContext()
-        data.sliceMaxSize(maxFrameDataLength)
+        if (!data.isReadable) {
+            return ctx.channel().newSucceededFuture()
+        }
+        val writePromises = data.sliceMaxSize(maxFrameDataLength)
             .map { frameSliceBuf ->
                 MplexFrame.createDataFrame(child.id, frameSliceBuf)
-            }.forEach { muxFrame ->
+            }.map { muxFrame ->
                 ctx.write(muxFrame)
             }
         ctx.flush()
+        return writePromises.last()
     }
 
     override fun onLocalOpen(child: MuxChannel<ByteBuf>) {

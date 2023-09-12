@@ -9,6 +9,7 @@ import io.libp2p.etc.util.netty.mux.MuxChannel
 import io.libp2p.etc.util.netty.mux.MuxId
 import io.libp2p.mux.MuxHandler
 import io.netty.buffer.ByteBuf
+import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelHandlerContext
 import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
@@ -144,7 +145,7 @@ open class YamuxHandler(
         onRemoteClose(msg.id)
     }
 
-    override fun onChildWrite(child: MuxChannel<ByteBuf>, data: ByteBuf) {
+    override fun onChildWrite(child: MuxChannel<ByteBuf>, data: ByteBuf): ChannelFuture {
         val ctx = getChannelHandlerContext()
 
         val sendWindow = sendWindows[child.id] ?: throw Libp2pException("No send window for " + child.id)
@@ -156,9 +157,10 @@ open class YamuxHandler(
             if (totalBufferedWrites.addAndGet(data.readableBytes()) > MAX_BUFFERED_CONNECTION_WRITES) {
                 throw Libp2pException("Overflowed send buffer for connection")
             }
-            return
+            return ctx.newSucceededFuture()
         }
         sendBlocks(ctx, data, sendWindow, child.id)
+        return ctx.newSucceededFuture()
     }
 
     fun sendBlocks(ctx: ChannelHandlerContext, data: ByteBuf, sendWindow: AtomicInteger, id: MuxId) {

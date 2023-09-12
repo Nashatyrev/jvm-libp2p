@@ -17,6 +17,8 @@ import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInboundHandlerAdapter
+import io.netty.channel.ChannelOutboundHandlerAdapter
+import io.netty.channel.ChannelPromise
 import io.netty.handler.logging.LogLevel
 import io.netty.handler.logging.LoggingHandler
 import org.assertj.core.api.Assertions.assertThat
@@ -38,6 +40,7 @@ abstract class MuxHandlerAbstractTest {
 
     val allocatedBufs = mutableListOf<ByteBuf>()
     val activeEventHandlers = mutableListOf<TestEventHandler>()
+    val writeDelayer = WriteDelayHandler()
 
     abstract val maxFrameDataLength: Int
     abstract fun createMuxHandler(streamHandler: StreamHandler<*>): MuxHandler
@@ -70,7 +73,7 @@ abstract class MuxHandlerAbstractTest {
             }
         multistreamHandler = createMuxHandler(streamHandler)
 
-        ech = TestChannel("test", true, LoggingHandler(LogLevel.ERROR), multistreamHandler)
+        ech = TestChannel("test", true, writeDelayer, LoggingHandler(LogLevel.ERROR), multistreamHandler)
     }
 
     @AfterEach
@@ -411,6 +414,27 @@ abstract class MuxHandlerAbstractTest {
     }
 
     @Test
+    fun `test write promise is completed when all frames are sent`() {
+        val handler = openStreamByLocal()
+        readFrameOrThrow()
+
+        writeDelayer.delay = true
+
+        val largeMessage = "42".repeat(maxFrameDataLength + 1)
+        val writePromise = handler.ctx.writeAndFlush(allocateMessage(largeMessage))
+
+        assertThat(writePromise.isDone).isFalse()
+        writeDelayer.flushNext()
+        readFrameOrThrow()
+        assertThat(writePromise.isDone).isFalse()
+        writeDelayer.flushNext()
+        readFrameOrThrow()
+        assertThat(writePromise.isDone).isTrue()
+
+        assertThat(readFrame()).isNull()
+    }
+
+    @Test
     fun `should throw when writing to locally closed stream`() {
         val handler = openStreamByLocal()
         handler.ctx.disconnect()
@@ -455,6 +479,38 @@ abstract class MuxHandlerAbstractTest {
 
     fun interface TestEventHandler {
         fun handle(testHandler: TestHandler)
+    }
+
+    class WriteDelayHandler : ChannelOutboundHandlerAdapter() {
+
+        data class BufferEntry(
+            val ctx: ChannelHandlerContext,
+            val msg: Any,
+            val promise: ChannelPromise
+        )
+
+        var delay = false
+        val buffer = mutableListOf<BufferEntry>()
+
+        override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
+            if (delay) {
+                buffer += BufferEntry(ctx, msg, promise)
+            } else {
+                super.write(ctx, msg, promise)
+            }
+        }
+
+        fun flushNext(): BufferEntry? {
+            return buffer.removeFirstOrNull()?.also { entry ->
+                entry.ctx.writeAndFlush(entry.msg, entry.promise)
+            }
+        }
+
+        fun flushAll() {
+            while (flushNext() != null) {
+                // nothing
+            }
+        }
     }
 
     inner class TestHandler : ChannelInboundHandlerAdapter() {
