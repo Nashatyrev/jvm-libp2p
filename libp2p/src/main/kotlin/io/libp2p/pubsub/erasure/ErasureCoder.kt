@@ -8,6 +8,7 @@ interface ErasureCoder {
     val erasureSerializer: ErasureSerializer
 
     fun extend(msg: SourceMessage, extensionFactor: Double): SampledMessage
+    fun extend(msg: SourceMessage, targetSamplesCount: Int): SampledMessage
 
     fun restore(samples: SampledMessage): SourceMessage
 
