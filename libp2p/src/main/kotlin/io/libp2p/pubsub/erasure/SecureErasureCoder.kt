@@ -7,7 +7,7 @@ import io.libp2p.pubsub.erasure.message.SourceMessage
 
 interface SecureErasureCoder : ErasureCoder {
 
-    override fun extend(msg: SourceMessage, extensionFactor: Double): SecureSampledMessage
+    override fun extend(msg: SourceMessage): SecureSampledMessage
 
     fun validateSample(header: SecureErasureHeader, sample: SecureErasureSample): Boolean
 

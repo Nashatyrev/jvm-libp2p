@@ -1,16 +1,14 @@
 package io.libp2p.pubsub.erasure
 
+import io.libp2p.pubsub.erasure.message.MutableSampledMessage
 import io.libp2p.pubsub.erasure.message.SampledMessage
 import io.libp2p.pubsub.erasure.message.SourceMessage
 
 interface ErasureCoder {
 
-    val erasureSerializer: ErasureSerializer
+    fun extend(msg: SourceMessage): SampledMessage
 
-    fun extend(msg: SourceMessage, extensionFactor: Double): SampledMessage
-    fun extend(msg: SourceMessage, targetSamplesCount: Int): SampledMessage
-
-    fun restore(samples: SampledMessage): SourceMessage
+    fun restore(samples: MutableSampledMessage): SourceMessage
 
 }
 
