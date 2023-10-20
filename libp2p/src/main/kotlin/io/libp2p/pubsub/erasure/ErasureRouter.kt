@@ -1,4 +1,4 @@
-package io.libp2p.pubsub.erasure.router
+package io.libp2p.pubsub.erasure
 
 import io.libp2p.core.PeerId
 import io.libp2p.etc.types.toWBytes
@@ -11,11 +11,13 @@ import io.libp2p.pubsub.PubsubRouterMessageValidator
 import io.libp2p.pubsub.SeenCache
 import io.libp2p.pubsub.Topic
 import io.libp2p.pubsub.TopicSubscriptionFilter
-import io.libp2p.pubsub.erasure.ErasureCoder
 import io.libp2p.pubsub.erasure.message.ErasureHeader
 import io.libp2p.pubsub.erasure.message.ErasureMessage
+import io.libp2p.pubsub.erasure.message.MutableSampledMessage
 import io.libp2p.pubsub.erasure.message.SampledMessage
 import io.libp2p.pubsub.erasure.message.SourceMessage
+import io.libp2p.pubsub.erasure.router.MessageRouter
+import io.libp2p.pubsub.erasure.router.MessageRouterFactory
 import pubsub.pb.Rpc
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
@@ -54,8 +56,8 @@ class ErasureRouter(
     fun publishSampledMessage(msg: SampledMessage): CompletableFuture<Unit> {
         require(msg.header.messageId !in messageRouters)
         val messageRouter =
-            messageRouterFactory.create(msg, getTopicPeerIds(msg.header.topic))
-        messageRouter.publish()
+            messageRouterFactory.create(msg as MutableSampledMessage, getTopicPeerIds(msg.header.topic))
+        messageRouter.start()
         return CompletableFuture.completedFuture(null)
     }
 

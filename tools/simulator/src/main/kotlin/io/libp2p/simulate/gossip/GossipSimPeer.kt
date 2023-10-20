@@ -20,7 +20,7 @@ class GossipSimPeer(
 ) : StreamSimPeer<Unit>(true, protocol.announceStr) {
 
     var routerBuilder = SimGossipRouterBuilder()
-    var router: PubsubRouterDebug by lazyVar {
+    var router by lazyVar {
         routerBuilder.also {
             it.name = name
             it.scheduledAsyncExecutor = simExecutor

@@ -4,16 +4,12 @@ import io.libp2p.core.PeerId
 import io.libp2p.pubsub.erasure.ErasureSender
 import io.libp2p.pubsub.erasure.message.MutableSampledMessage
 import io.libp2p.pubsub.erasure.message.SampledMessage
-import io.libp2p.pubsub.erasure.message.isComplete
 import java.util.Random
 
-abstract class MessageRouterFactory {
+abstract class MessagePeerHandlerFactory {
 
     lateinit var sender: ErasureSender
+    lateinit var random: Random
 
-    abstract fun create(
-        message: MutableSampledMessage,
-        peers: List<PeerId>
-    ): MessageRouter
+    abstract fun create(message: MutableSampledMessage, peer: PeerId): AbstractMessagePeerHandler
 }
-

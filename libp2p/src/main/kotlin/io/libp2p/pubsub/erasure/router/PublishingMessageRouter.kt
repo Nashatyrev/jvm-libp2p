@@ -17,26 +17,24 @@ class PublishingMessageRouter(
     init {
         // all samples should be available
         require(message.sampleBox.samples.size == message.header.totalSampleCount)
-//        message.sampleBox.observers += SampleBoxObserver { _, newSamples -> onNewSamples(newSamples)}
     }
 
     override var isComplete: Boolean = false
 
     override fun onMessage(msg: ErasureMessage, from: PeerId) {
         when(msg) {
-            is MessageACK -> {}
+            is MessageACK -> {
+                TODO()
+            }
             else -> { /*ignore*/ }
         }
     }
 
-    fun onNewSamples(newSamples: Set<ErasureSample>) {
-
-    }
-
-    override fun publish() {
+    override fun start() {
         peers.forEach { peer ->
             sender(peer, message.header)
-            sender(peer, MessageACK(message.header.messageId, message.header.totalSampleCount, null, null))
+            sender(peer, MessageACK(message.header.messageId, message.header.totalSampleCount, 0))
         }
+        // TODO()
     }
 }

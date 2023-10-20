@@ -7,5 +7,5 @@ interface SecureSampledMessage : SampledMessage {
 
     override val header: SecureErasureHeader
 
-    override fun getSample(idx: SampleIndex): SecureErasureSample
+//    override fun getSample(idx: SampleIndex): SecureErasureSample
 }

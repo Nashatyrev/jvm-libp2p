@@ -7,7 +7,7 @@ interface MessageRouter {
 
     val isComplete: Boolean
 
-    fun onMessage(msg: ErasureMessage, from: PeerId)
+    fun start()
 
-    fun publish()
+    fun onMessage(msg: ErasureMessage, from: PeerId)
 }

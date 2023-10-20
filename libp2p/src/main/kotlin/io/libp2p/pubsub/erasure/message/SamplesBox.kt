@@ -17,7 +17,7 @@ interface ObservableSampleBox : SamplesBox {
 
 interface MutableSampleBox : ObservableSampleBox {
 
-    fun addSamples(samples: Set<ErasureSample>)
+    fun addSamples(samples: Collection<ErasureSample>)
 }
 
 
@@ -27,8 +27,8 @@ class SamplesBoxImpl : MutableSampleBox {
 
     override val samples: MutableSet<ErasureSample> = mutableSetOf()
 
-    override fun addSamples(addedSamples: Set<ErasureSample>) {
-        val newSamples = addedSamples - samples
+    override fun addSamples(addedSamples: Collection<ErasureSample>) {
+        val newSamples = addedSamples.toSet() - samples
         if (samples.isNotEmpty()) {
             samples += newSamples
             observers.forEach {
@@ -37,3 +37,5 @@ class SamplesBoxImpl : MutableSampleBox {
         }
     }
 }
+
+operator fun MutableSampleBox.plusAssign(sample: ErasureSample) = this.addSamples(setOf(sample))

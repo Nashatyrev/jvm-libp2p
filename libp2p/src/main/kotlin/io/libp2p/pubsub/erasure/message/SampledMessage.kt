@@ -7,7 +7,7 @@ interface SampledMessage {
     val sampleBox: ObservableSampleBox
 
     companion object {
-        fun fromHeader(header: ErasureHeader): SampledMessage = TODO()
+        fun fromHeader(header: ErasureHeader): MutableSampledMessage = TODO()
     }
 }
 
@@ -16,3 +16,4 @@ interface MutableSampledMessage : SampledMessage {
 
 }
 
+fun SampledMessage.isComplete() = this.sampleBox.samples.size >= this.header.recoverSampleCount
