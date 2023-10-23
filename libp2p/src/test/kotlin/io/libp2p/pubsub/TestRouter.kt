@@ -37,9 +37,7 @@ class SemiduplexConnection(val conn1: TestConnection, val conn2: TestConnection)
     }
 }
 
-class UncaughtExceptionHandler(
-    val logger: Logger = LoggerFactory.getLogger(UncaughtExceptionHandler::class.java)
-) : ChannelInboundHandlerAdapter() {
+class UncaughtExceptionHandler : ChannelInboundHandlerAdapter() {
     override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
         System.err.println("${ctx.channel()}: Uncaught error")
         cause.printStackTrace()

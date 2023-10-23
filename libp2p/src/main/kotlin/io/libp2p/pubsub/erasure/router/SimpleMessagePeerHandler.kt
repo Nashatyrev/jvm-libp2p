@@ -27,9 +27,11 @@ class SimpleMessagePeerHandler(
 
     var lastACK = MessageACK(message.header.messageId, 0, 0)
 
-    val needMoreSending get() =
-        !(lastACK.hasSamplesCount >= message.header.recoverSampleCount
-                || sentSampleIndices.size >= message.header.recoverSampleCount)
+    val needMoreSending
+        get() =
+            !(lastACK.hasSamplesCount >= message.header.recoverSampleCount
+                    || (sentSampleIndices + receivedSampleIndices).size >= message.header.recoverSampleCount
+                    )
     val needMoreReceiving get() = !message.isComplete()
 
     val sentSampleIndices = mutableSetOf<SampleIndex>()
@@ -37,8 +39,9 @@ class SimpleMessagePeerHandler(
 
     var headerSent = false
     var headerReceived = false
-    val remoteKnowsMessage get() =
-        headerSent || headerReceived || receivedSampleIndices.isNotEmpty() || lastACK.hasSamplesCount > 0
+    val remoteKnowsMessage
+        get() =
+            headerSent || headerReceived || receivedSampleIndices.isNotEmpty() || lastACK.hasSamplesCount > 0
 
     private fun takeNextRandomSampleToSend(): ErasureSample? {
         val candidates = message.sampleBox.samples
@@ -96,8 +99,8 @@ class SimpleMessagePeerHandler(
     }
 
     override fun onInboundSample(msg: ErasureSample) {
-        message.sampleBox += msg
         receivedSampleIndices += msg.sampleIndex
+        message.sampleBox += msg
         if (ackSendStrategy.onInboundSample(msg)) {
             sendAck()
         }
@@ -111,7 +114,7 @@ class SimpleMessagePeerHandler(
 
     override fun onInboundHeader(msg: ErasureHeader) {
         require(msg == message.header)
-        headerReceived
+        headerReceived = true
     }
 
     override fun onOutboundMessageSent(msg: ErasureMessage) {

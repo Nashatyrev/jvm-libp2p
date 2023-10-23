@@ -20,7 +20,11 @@ import java.util.concurrent.TimeUnit
 
 typealias RouterCtor = () -> PubsubRouterDebug
 
-abstract class PubsubRouterTest(val routerFactory: DeterministicFuzzRouterFactory) {
+abstract class PubsubRouterTest(
+    val routerFactory: DeterministicFuzzRouterFactory,
+    val mplexFrameLogLevel: LogLevel? = null
+) {
+
     init {
         ResourceLeakDetector.setLevel(ResourceLeakDetector.Level.PARANOID)
     }
@@ -40,9 +44,10 @@ abstract class PubsubRouterTest(val routerFactory: DeterministicFuzzRouterFactor
 
         val router1 = fuzz.createTestRouter(routerFactory)
         val router2 = fuzz.createTestRouter(routerFactory)
+        router1.router.subscribe("topic1")
         router2.router.subscribe("topic1")
 
-        router1.connectSemiDuplex(router2, LogLevel.ERROR, LogLevel.ERROR)
+        router1.connectSemiDuplex(router2, mplexFrameLogLevel, LogLevel.ERROR)
 
         val msg = newMessage("topic1", 0L, "Hello".toByteArray())
         router1.router.publish(msg) // .get()

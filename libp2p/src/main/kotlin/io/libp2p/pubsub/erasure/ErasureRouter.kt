@@ -46,6 +46,7 @@ class ErasureRouter(
 
     val messageRouters: MutableMap<MessageId, MessageRouter> = mutableMapOf()
     val recentlySeenMessages: MutableSet<MessageId> = mutableSetOf()
+    var name = ""
 
     override val pendingRpcParts = PendingRpcPartsMap { ErasureRpcPartsQueue() }
 
@@ -67,6 +68,7 @@ class ErasureRouter(
         require(msg.header.messageId !in messageRouters)
         val messageRouter =
             messageRouterFactory.create(msg as MutableSampledMessage, getTopicPeerIds(msg.header.topic))
+        messageRouters[msg.header.messageId] = messageRouter
         messageRouter.start()
         return CompletableFuture.completedFuture(null)
     }
