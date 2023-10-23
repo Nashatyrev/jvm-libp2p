@@ -74,6 +74,8 @@ abstract class P2PService(
             runOnEventThread(peerHandler, msg) {
                 try {
                     streamInbound(this, msg)
+                } catch (e: Throwable) {
+                    ctx.fireExceptionCaught(e)
                 } finally {
                     ReferenceCountUtil.release(msg)
                 }
@@ -83,7 +85,11 @@ abstract class P2PService(
         override fun channelActive(ctx: ChannelHandlerContext) {
             this.ctx = ctx
             runOnEventThread(peerHandler) {
-                streamActive(this)
+                try {
+                    streamActive(this)
+                } catch (e: Throwable) {
+                    ctx.fireExceptionCaught(e)
+                }
             }
         }
         override fun channelUnregistered(ctx: ChannelHandlerContext?) {
