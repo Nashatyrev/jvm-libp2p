@@ -7,6 +7,7 @@ import io.libp2p.pubsub.erasure.message.ErasureSample
 import io.libp2p.pubsub.erasure.message.MutableSampledMessage
 import io.libp2p.pubsub.erasure.message.SampleBoxObserver
 import io.libp2p.pubsub.erasure.message.SampledMessage
+import io.libp2p.pubsub.erasure.message.SourceMessage
 import java.util.Random
 
 class RelayingMessageRouter(
@@ -14,7 +15,7 @@ class RelayingMessageRouter(
     val peers: List<PeerId>,
     val message: MutableSampledMessage,
     val random: Random,
-    val messagePeerHandlerFactory: MessagePeerHandlerFactory
+    messagePeerHandlerFactory: MessagePeerHandlerFactory
 ) : MessageRouter {
 
     val peerHandlers: Map<PeerId, AbstractMessagePeerHandler>
@@ -22,7 +23,9 @@ class RelayingMessageRouter(
     init {
         messagePeerHandlerFactory.random = random
         messagePeerHandlerFactory.sender = sender
-        message.sampleBox.observers += SampleBoxObserver { _, newSamples -> onNewSamples(newSamples)}
+        message.sampleBox.observers += SampleBoxObserver { _, newSamples ->
+            onNewSamples(newSamples)
+        }
         peerHandlers = peers.associateWith { messagePeerHandlerFactory.create(message, it) }
     }
 
@@ -38,6 +41,7 @@ class RelayingMessageRouter(
     override fun onMessage(msg: ErasureMessage, from: PeerId) {
         peerHandlers[from]?.onInboundMessage(msg)
     }
+
 
     fun onNewSamples(newSamples: Set<ErasureSample>) {
         peerHandlers.values.forEach { it.onNewSamples(newSamples) }

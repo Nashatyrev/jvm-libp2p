@@ -12,6 +12,7 @@ message RPC {
 	}
 
 	optional ControlMessage control = 3;
+	repeated ErasureSample erasureSample = 4;
 }
 
 message Message {
@@ -23,6 +24,12 @@ message Message {
 	optional bytes key = 6;
 }
 
+message ErasureSample {
+	required bytes messageID = 1;
+	required int32 sampleIndex = 2;
+	required bytes data = 3;
+}
+
 message ControlMessage {
 	repeated ControlIHave ihave = 1;
 	repeated ControlIWant iwant = 2;
@@ -32,6 +39,8 @@ message ControlMessage {
 	repeated ControlUnChoke unchoke = 6;
 	repeated ControlChokeMessage chokeMessage = 7;
 	repeated ControlSending sending = 8;
+	repeated ErasureHeader erasureHeader = 9;
+	repeated ErasureAck erasureAck = 10;
 }
 
 message ControlIHave {
@@ -68,6 +77,19 @@ message ControlChokeMessage {
 message ControlSending {
 	required string topicID = 1;
 	repeated bytes messageIDs = 2;
+}
+
+message ErasureHeader {
+	required string topicID = 1;
+	required bytes messageID = 2;
+	required int32 totalSampleCount = 3;
+	required int32 recoverSampleCount = 4;
+}
+
+message ErasureAck {
+	required bytes messageID = 1;
+	required int32 hasSamplesCount = 2;
+	required int32 peerReceivedSamplesCount = 3;
 }
 
 message PeerInfo {

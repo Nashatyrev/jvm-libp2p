@@ -21,7 +21,7 @@ class TestErasureCoder(
 ) : ErasureCoder {
 
     private fun generateTestSamples(count: Int, messageId: MessageId): List<ErasureSample> =
-        (0..count)
+        (0 until count)
             .map { sampleIndex ->
                 val sampleData = ByteArray(sampleSize) { sampleIndex.toByte() }.toWBytes()
                 ErasureSample(messageId, sampleIndex, sampleData)

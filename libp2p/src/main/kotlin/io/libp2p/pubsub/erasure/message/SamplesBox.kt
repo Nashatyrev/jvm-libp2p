@@ -1,5 +1,7 @@
 package io.libp2p.pubsub.erasure.message
 
+import java.util.concurrent.CopyOnWriteArrayList
+
 interface SamplesBox {
 
     val samples: Set<ErasureSample>
@@ -23,13 +25,13 @@ interface MutableSampleBox : ObservableSampleBox {
 
 class SamplesBoxImpl : MutableSampleBox {
 
-    override val observers: MutableList<SampleBoxObserver> = mutableListOf()
+    override val observers: MutableList<SampleBoxObserver> = CopyOnWriteArrayList()
 
     override val samples: MutableSet<ErasureSample> = mutableSetOf()
 
     override fun addSamples(addedSamples: Collection<ErasureSample>) {
         val newSamples = addedSamples.toSet() - samples
-        if (samples.isNotEmpty()) {
+        if (newSamples.isNotEmpty()) {
             samples += newSamples
             observers.forEach {
                 it.updated(this, newSamples)

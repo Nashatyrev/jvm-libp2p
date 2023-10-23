@@ -9,4 +9,4 @@ typealias SampleIndex = Int
 interface ErasureCommitment
 interface ErasureSampleProof
 
-typealias ErasureSender = (PeerId, ErasureMessage) -> CompletableFuture<Unit>
+typealias ErasureSender = (PeerId, List<ErasureMessage>) -> CompletableFuture<Unit>

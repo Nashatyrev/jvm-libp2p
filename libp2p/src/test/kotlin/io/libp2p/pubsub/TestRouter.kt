@@ -14,8 +14,12 @@ import io.libp2p.tools.TestChannel
 import io.libp2p.tools.TestChannel.TestConnection
 import io.libp2p.transport.implementation.ConnectionOverNetty
 import io.libp2p.transport.implementation.StreamOverNetty
+import io.netty.channel.ChannelHandlerContext
+import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.handler.logging.LogLevel
 import io.netty.handler.logging.LoggingHandler
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
@@ -30,6 +34,15 @@ class SemiduplexConnection(val conn1: TestConnection, val conn2: TestConnection)
     fun disconnect() {
         conn1.disconnect()
         // conn2 should be dropped by the router
+    }
+}
+
+class UncaughtExceptionHandler(
+    val logger: Logger = LoggerFactory.getLogger(UncaughtExceptionHandler::class.java)
+) : ChannelInboundHandlerAdapter() {
+    override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
+        System.err.println("${ctx.channel()}: Uncaught error")
+        cause.printStackTrace()
     }
 }
 
@@ -79,6 +92,7 @@ class TestRouter(
                 wireLogs?.also { ch.channel.pipeline().addFirst(LoggingHandler(channelName, it)) }
                 val stream1 = StreamOverNetty(ch.channel, connection, initiator)
                 router.addPeerWithDebugHandler(stream1, pubsubLogs?.let { LoggingHandler(channelName, it) })
+                ch.channel.pipeline().addLast(UncaughtExceptionHandler())
             }
         ).also {
             it.executor = testExecutor

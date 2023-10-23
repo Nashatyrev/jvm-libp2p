@@ -1,8 +1,12 @@
 package io.libp2p.pubsub.erasure
 
 import io.libp2p.core.PeerId
+import io.libp2p.etc.types.WBytes
+import io.libp2p.etc.types.toProtobuf
 import io.libp2p.etc.types.toWBytes
+import io.libp2p.pubsub.AbstractPubsubMessage
 import io.libp2p.pubsub.AbstractRouter
+import io.libp2p.pubsub.DefaultRpcPartsQueue
 import io.libp2p.pubsub.MessageId
 import io.libp2p.pubsub.PubsubMessage
 import io.libp2p.pubsub.PubsubMessageFactory
@@ -13,12 +17,16 @@ import io.libp2p.pubsub.Topic
 import io.libp2p.pubsub.TopicSubscriptionFilter
 import io.libp2p.pubsub.erasure.message.ErasureHeader
 import io.libp2p.pubsub.erasure.message.ErasureMessage
+import io.libp2p.pubsub.erasure.message.ErasureSample
+import io.libp2p.pubsub.erasure.message.MessageACK
 import io.libp2p.pubsub.erasure.message.MutableSampledMessage
 import io.libp2p.pubsub.erasure.message.SampledMessage
 import io.libp2p.pubsub.erasure.message.SourceMessage
+import io.libp2p.pubsub.erasure.message.impl.ErasureHeaderImpl
 import io.libp2p.pubsub.erasure.router.MessageRouter
 import io.libp2p.pubsub.erasure.router.MessageRouterFactory
 import pubsub.pb.Rpc
+import pubsub.pb.Rpc.RPC
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
 
@@ -38,6 +46,8 @@ class ErasureRouter(
 
     val messageRouters: MutableMap<MessageId, MessageRouter> = mutableMapOf()
     val recentlySeenMessages: MutableSet<MessageId> = mutableSetOf()
+
+    override val pendingRpcParts = PendingRpcPartsMap { ErasureRpcPartsQueue() }
 
     init {
         messageRouterFactory.sender = this::sendErasureMessageLenient
@@ -61,11 +71,19 @@ class ErasureRouter(
         return CompletableFuture.completedFuture(null)
     }
 
+    private fun onMessageRestored(msg: SourceMessage) {
+        val pubsubMessage = ErasurePubsubMessage(msg.messageId, msg.topic, msg.messageId)
+        msgHandler(pubsubMessage)
+    }
+
     fun processErasureMessage(msg: ErasureMessage, from: PeerHandler) {
         val msgRouter = messageRouters[msg.messageId]
             ?: when (msg) {
                 is ErasureHeader -> {
-                    val sampledMessage = SampledMessage.fromHeader(msg)
+                    val sampledMessage = SampledMessage.fromHeader(msg, erasureCoder)
+                    sampledMessage.restoredMessage.thenAccept {
+                        onMessageRestored(it)
+                    }
                     messageRouterFactory.create(sampledMessage, getTopicPeerIds(msg.topic))
                         .also {
                             messageRouters[msg.messageId] = it
@@ -87,20 +105,89 @@ class ErasureRouter(
         }
     }
 
-    fun sendErasureMessageLenient(to: PeerId, msg: ErasureMessage): CompletableFuture<Unit> =
+    fun sendErasureMessageLenient(to: PeerId, msg: List<ErasureMessage>): CompletableFuture<Unit> =
         peerIdToPeerHandlerMap[to]
-            ?.let {
-                sendErasureMessage(msg, it)
+            ?.let { peerHandler ->
+                msg.forEach {
+                    enqueueErasureMessage(it, peerHandler)
+                }
+                val sendPromise = CompletableFuture<Unit>()
+                pendingMessagePromises[peerHandler] += sendPromise
+                flushPending(peerHandler)
+                sendPromise
             }
             ?: CompletableFuture.completedFuture(null)
 
 
-    fun sendErasureMessage(msg: ErasureMessage, to: PeerHandler): CompletableFuture<Unit> {
-        TODO()
+    fun enqueueErasureMessage(msg: ErasureMessage, to: PeerHandler) {
+        val peerParts = pendingRpcParts.getQueue(to)
+        when(msg) {
+            is ErasureHeader -> peerParts.addPart {
+                it.controlBuilder.addErasureHeaderBuilder()
+                    .setTopicID(msg.topic)
+                    .setMessageID(msg.messageId.toProtobuf())
+                    .setTotalSampleCount(msg.totalSampleCount)
+                    .setRecoverSampleCount(msg.recoverSampleCount)
+            }
+            is ErasureSample -> peerParts.addPart {
+                it.addErasureSampleBuilder()
+                    .setMessageID(msg.messageId.toProtobuf())
+                    .setSampleIndex(msg.sampleIndex)
+                    .setData(msg.data.toProtobuf())
+            }
+            is MessageACK -> peerParts.addPart {
+                it.controlBuilder.addErasureAckBuilder()
+                    .setMessageID(msg.messageId.toProtobuf())
+                    .setHasSamplesCount(msg.hasSamplesCount)
+                    .setPeerReceivedSamplesCount(msg.peerReceivedSamplesCount)
+            }
+        }
+    }
+
+    fun processRpcHeader(header: Rpc.ErasureHeader, from: PeerHandler) {
+        processErasureMessage(
+            ErasureHeaderImpl(
+                header.topicID,
+                header.messageID.toWBytes(),
+                header.totalSampleCount,
+                header.recoverSampleCount
+            ),
+            from
+        )
+    }
+
+    fun processRpcSample(sample: Rpc.ErasureSample, from: PeerHandler) {
+        processErasureMessage(
+            ErasureSample(
+                sample.messageID.toWBytes(),
+                sample.sampleIndex,
+                sample.data.toWBytes()
+            ),
+            from
+        )
+    }
+
+    fun processRpcAck(ack: Rpc.ErasureAck, from: PeerHandler) {
+        processErasureMessage(
+            MessageACK(
+                ack.messageID.toWBytes(),
+                ack.hasSamplesCount,
+                ack.peerReceivedSamplesCount
+            ),
+            from
+        )
     }
 
     override fun processControl(ctrl: Rpc.ControlMessage, receivedFrom: PeerHandler) {
-        TODO("Deserialize ErasureMessage and call processErasureMessage")
+        ctrl.erasureHeaderList.forEach { processRpcHeader(it, receivedFrom) }
+        ctrl.erasureAckList.forEach { processRpcAck(it, receivedFrom) }
+    }
+
+    override fun onInbound(peer: PeerHandler, msg: Any) {
+        msg as RPC
+        super.onInbound(peer, msg)
+
+        msg.erasureSampleList.forEach { processRpcSample(it, peer) }
     }
 
     private fun getTopicPeerIds(topic: Topic) = getTopicPeers(topic).map { it.peerId }
@@ -110,7 +197,7 @@ class ErasureRouter(
     }
 
     override fun broadcastInbound(msgs: List<PubsubMessage>, receivedFrom: PeerHandler) {
-        throw IllegalStateException("Shouldn't get here")
+        require(msgs.isEmpty()) { "No messages are expected" }
     }
 
     class NoopSeenCache<T> : SeenCache<T> {
@@ -154,5 +241,27 @@ class ErasureRouter(
         override fun validate(msg: PubsubMessage) {
             throw IllegalStateException("Shouldn't get here")
         }
+    }
+
+    class ErasureRpcPartsQueue : DefaultRpcPartsQueue() {
+        fun addPart(appender: (builder: RPC.Builder) -> Unit) =
+            addPart(object: AbstractPart {
+                override fun appendToBuilder(builder: RPC.Builder) {
+                    appender(builder)
+                }
+            })
+    }
+
+    class ErasurePubsubMessage(
+        override val messageId: MessageId,
+        topic: Topic,
+        payload: WBytes
+    ) : AbstractPubsubMessage() {
+
+        override val protobufMessage: Rpc.Message =
+            Rpc.Message.newBuilder()
+                .addTopicIDs(topic)
+                .setData(payload.toProtobuf())
+                .build()
     }
 }

@@ -32,8 +32,13 @@ class PublishingMessageRouter(
 
     override fun start() {
         peers.forEach { peer ->
-            sender(peer, message.header)
-            sender(peer, MessageACK(message.header.messageId, message.header.totalSampleCount, 0))
+            sender(
+                peer,
+                listOf(
+                    message.header,
+                    MessageACK(message.header.messageId, message.header.totalSampleCount, 0)
+                )
+            )
         }
         // TODO()
     }
