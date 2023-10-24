@@ -8,6 +8,7 @@ import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.core.security.SecureChannel
 import io.libp2p.etc.PROTOCOL
 import io.libp2p.etc.types.lazyVar
+import io.libp2p.etc.util.netty.LoggingHandlerShort
 import io.libp2p.etc.util.netty.nettyInitializer
 import io.libp2p.tools.NullTransport
 import io.libp2p.tools.TestChannel
@@ -61,6 +62,7 @@ class TestRouter(
     var keyPair = generateKeyPair(KEY_TYPE.ECDSA)
     val peerId by lazy { PeerId.fromPubKey(keyPair.second) }
     val protocol = router.protocol.announceStr
+    var pubsubLogWritesOnly = false
 
     init {
         router.initHandler(routerHandler)
@@ -89,7 +91,15 @@ class TestRouter(
             nettyInitializer { ch ->
                 wireLogs?.also { ch.channel.pipeline().addFirst(LoggingHandler(channelName, it)) }
                 val stream1 = StreamOverNetty(ch.channel, connection, initiator)
-                router.addPeerWithDebugHandler(stream1, pubsubLogs?.let { LoggingHandler(channelName, it) })
+                val pubsubLogHandler = pubsubLogs?.let { logLevel ->
+                    val ret = LoggingHandlerShort(channelName, logLevel)
+                    if (pubsubLogWritesOnly) {
+                        ret.skipRead = true
+                        ret.skipFlush = true
+                    }
+                    ret
+                }
+                router.addPeerWithDebugHandler(stream1, pubsubLogHandler)
                 ch.channel.pipeline().addLast(UncaughtExceptionHandler())
             }
         ).also {

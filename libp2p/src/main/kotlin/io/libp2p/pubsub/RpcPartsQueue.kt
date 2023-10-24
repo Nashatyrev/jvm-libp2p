@@ -19,6 +19,8 @@ interface RpcPartsQueue {
     fun addSubscription(topic: Topic, status: SubscriptionStatus)
 
     fun takeMerged(): List<Rpc.RPC>
+
+    fun isEmpty(): Boolean
 }
 
 /**
@@ -69,4 +71,6 @@ open class DefaultRpcPartsQueue : RpcPartsQueue {
         parts.clear()
         return listOf(builder.build())
     }
+
+    override fun isEmpty() = parts.isEmpty()
 }

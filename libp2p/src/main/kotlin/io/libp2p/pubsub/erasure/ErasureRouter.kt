@@ -48,6 +48,8 @@ class ErasureRouter(
     val recentlySeenMessages: MutableSet<MessageId> = mutableSetOf()
     var name = ""
 
+    private var autoFlush = true
+
     override val pendingRpcParts = PendingRpcPartsMap { ErasureRpcPartsQueue() }
 
     init {
@@ -69,16 +71,26 @@ class ErasureRouter(
         val messageRouter =
             messageRouterFactory.create(msg as MutableSampledMessage, getTopicPeerIds(msg.header.topic))
         messageRouters[msg.header.messageId] = messageRouter
-        messageRouter.start()
-        return CompletableFuture.completedFuture(null)
+        autoFlush = false
+        try {
+            messageRouter.start()
+            flushAllPending()
+            return CompletableFuture.completedFuture(null)
+        } finally {
+            autoFlush = true
+        }
     }
 
     private fun onMessageRestored(msg: SourceMessage) {
-        val pubsubMessage = ErasurePubsubMessage(msg.messageId, msg.topic, msg.messageId)
+        val pubsubMessage = ErasurePubsubMessage(msg.messageId, msg.topic, msg.blob)
         msgHandler(pubsubMessage)
     }
 
     fun processErasureMessage(msg: ErasureMessage, from: PeerHandler) {
+        if (msg.messageId in recentlySeenMessages) {
+            // just ignore
+            return
+        }
         val msgRouter = messageRouters[msg.messageId]
             ?: when (msg) {
                 is ErasureHeader -> {
@@ -91,12 +103,7 @@ class ErasureRouter(
                             messageRouters[msg.messageId] = it
                         }
                 }
-                else -> if (msg.messageId in recentlySeenMessages) {
-                    // just ignore
-                    return
-                } else {
-                    throw IllegalStateException("ErasureHeader expected for unknown message: $msg")
-                }
+                else ->  throw IllegalStateException("ErasureHeader expected for unknown message: $msg")
             }
 
         msgRouter.onMessage(msg, from.peerId)
@@ -115,7 +122,9 @@ class ErasureRouter(
                 }
                 val sendPromise = CompletableFuture<Unit>()
                 pendingMessagePromises[peerHandler] += sendPromise
-                flushPending(peerHandler)
+                if (autoFlush) {
+                    flushPending(peerHandler)
+                }
                 sendPromise
             }
             ?: CompletableFuture.completedFuture(null)
@@ -131,18 +140,8 @@ class ErasureRouter(
                     .setTotalSampleCount(msg.totalSampleCount)
                     .setRecoverSampleCount(msg.recoverSampleCount)
             }
-            is ErasureSample -> peerParts.addPart {
-                it.addErasureSampleBuilder()
-                    .setMessageID(msg.messageId.toProtobuf())
-                    .setSampleIndex(msg.sampleIndex)
-                    .setData(msg.data.toProtobuf())
-            }
-            is MessageACK -> peerParts.addPart {
-                it.controlBuilder.addErasureAckBuilder()
-                    .setMessageID(msg.messageId.toProtobuf())
-                    .setHasSamplesCount(msg.hasSamplesCount)
-                    .setPeerReceivedSamplesCount(msg.peerReceivedSamplesCount)
-            }
+            is ErasureSample -> peerParts.addSample(msg)
+            is MessageACK -> peerParts.addAck(msg)
         }
     }
 
@@ -186,10 +185,18 @@ class ErasureRouter(
     }
 
     override fun onInbound(peer: PeerHandler, msg: Any) {
-        msg as RPC
-        super.onInbound(peer, msg)
+        autoFlush = false
 
-        msg.erasureSampleList.forEach { processRpcSample(it, peer) }
+        try {
+            msg as RPC
+            super.onInbound(peer, msg)
+
+            msg.erasureSampleList.forEach { processRpcSample(it, peer) }
+
+            flushAllPending()
+        } finally {
+            autoFlush = true
+        }
     }
 
     private fun getTopicPeerIds(topic: Topic) = getTopicPeers(topic).map { it.peerId }
@@ -246,12 +253,59 @@ class ErasureRouter(
     }
 
     class ErasureRpcPartsQueue : DefaultRpcPartsQueue() {
+        val sampleQueue = mutableListOf<SamplePart>()
+        var lastAck: AckPart? = null
+
+        class AckPart(val ack: MessageACK) : AbstractPart {
+            override fun appendToBuilder(builder: RPC.Builder) {
+                builder.controlBuilder.addErasureAckBuilder()
+                    .setMessageID(ack.messageId.toProtobuf())
+                    .setHasSamplesCount(ack.hasSamplesCount)
+                    .setPeerReceivedSamplesCount(ack.peerReceivedSamplesCount)
+            }
+        }
+
+        class SamplePart(val sample: ErasureSample) : AbstractPart {
+            override fun appendToBuilder(builder: RPC.Builder) {
+                builder.addErasureSampleBuilder()
+                    .setMessageID(sample.messageId.toProtobuf())
+                    .setSampleIndex(sample.sampleIndex)
+                    .setData(sample.data.toProtobuf())
+            }
+        }
+
+        fun addSample(sample: ErasureSample) { sampleQueue += SamplePart(sample) }
+        fun addAck(ack: MessageACK) {
+            lastAck = AckPart(ack)
+        }
+
         fun addPart(appender: (builder: RPC.Builder) -> Unit) =
             addPart(object: AbstractPart {
                 override fun appendToBuilder(builder: RPC.Builder) {
                     appender(builder)
                 }
             })
+
+        override fun takeMerged(): List<RPC> {
+            lastAck?.also {
+                addPart(it)
+            }
+            lastAck = null
+            if (sampleQueue.isNotEmpty()) {
+                addPart(sampleQueue.removeFirst())
+            }
+            val ret = super.takeMerged() + sampleQueue.map {
+                val bld = RPC.newBuilder()
+                it.appendToBuilder(bld)
+                bld.build()
+            }
+            sampleQueue.clear()
+            return ret
+        }
+
+        override fun isEmpty(): Boolean {
+            return super.isEmpty() && sampleQueue.isEmpty() && lastAck == null
+        }
     }
 
     class ErasurePubsubMessage(

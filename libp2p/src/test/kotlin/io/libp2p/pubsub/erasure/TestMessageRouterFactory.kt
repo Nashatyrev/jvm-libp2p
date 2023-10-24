@@ -23,12 +23,6 @@ class TestMessageRouterFactory(
 
     override fun create(message: MutableSampledMessage, peers: List<PeerId>): MessageRouter =
         RelayingMessageRouter(sender, peers, message, random, TestMessagePeerHandlerFactory())
-//        when {
-//            message.isComplete() -> PublishingMessageRouter(sender, peers, message)
-//            else -> {
-//
-//            }
-//        }
 
     inner class TestMessagePeerHandlerFactory : MessagePeerHandlerFactory() {
         override fun create(message: MutableSampledMessage, peer: PeerId): AbstractMessagePeerHandler {

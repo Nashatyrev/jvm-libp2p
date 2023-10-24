@@ -27,6 +27,8 @@ class LoggingHandlerShort : LoggingHandler {
     var maxLineHeadingChars: Int = 1024
     var maxLineTrailingChars: Int = 128
     var charsCutThreshold = 256
+    var skipRead = false
+    var skipFlush = false
 
     override fun format(ctx: ChannelHandlerContext?, eventName: String?, arg: Any?): String {
         val orig = super.format(ctx, eventName, arg)
@@ -54,5 +56,29 @@ class LoggingHandlerShort : LoggingHandler {
             }
         }
         return shortLines.joinToString("\n")
+    }
+
+    override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
+        if (skipRead) {
+            ctx.fireChannelRead(msg)
+        } else {
+            super.channelRead(ctx, msg)
+        }
+    }
+
+    override fun channelReadComplete(ctx: ChannelHandlerContext) {
+        if (skipRead) {
+            ctx.fireChannelReadComplete()
+        } else {
+            super.channelReadComplete(ctx)
+        }
+    }
+
+    override fun flush(ctx: ChannelHandlerContext) {
+        if (skipFlush) {
+            ctx.flush()
+        } else {
+            super.flush(ctx)
+        }
     }
 }

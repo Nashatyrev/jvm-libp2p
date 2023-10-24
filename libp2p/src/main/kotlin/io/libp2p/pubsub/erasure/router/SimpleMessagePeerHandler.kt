@@ -68,6 +68,12 @@ class SimpleMessagePeerHandler(
         }
     }
 
+    private fun maybeSendHeaderAndAck() {
+        if (!remoteKnowsMessage) {
+            sendAck()
+        }
+    }
+
     private fun maybeSendHeader() {
         if (!remoteKnowsMessage) {
             headerSent = true
@@ -82,7 +88,7 @@ class SimpleMessagePeerHandler(
 
     private fun maybeSendSamples() {
         while (sampleSendStrategy.hasToSend()) {
-            maybeSendHeader()
+            maybeSendHeaderAndAck()
             if (sendNextSample()) {
                 sampleSendStrategy.onSent()
             } else {

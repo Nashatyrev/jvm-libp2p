@@ -11,16 +11,17 @@ import java.util.concurrent.CompletableFuture
 
 class SampledMessageImpl(
     override val header: ErasureHeader,
-    private val erasureCoder: ErasureCoder
+    private val erasureCoder: ErasureCoder,
+    override val sampleBox: MutableSampleBox = SamplesBoxImpl()
 ) : MutableSampledMessage {
 
     override val restoredMessage: CompletableFuture<SourceMessage> = CompletableFuture()
 
     private val observer = SampleBoxObserver { _, _ -> sampleAdded() }
-    override val sampleBox: MutableSampleBox = SamplesBoxImpl()
-        .also {
-            it.observers += observer
-        }
+
+    init {
+        sampleBox.observers += observer
+    }
 
     fun sampleAdded() {
         if (sampleBox.samples.size >= header.recoverSampleCount) {

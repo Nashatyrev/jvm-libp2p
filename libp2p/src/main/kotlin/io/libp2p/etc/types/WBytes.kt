@@ -13,12 +13,8 @@ class WBytes(val array: ByteArray) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
-
         other as WBytes
-
-        if (!array.contentEquals(other.array)) return false
-
-        return true
+        return array.contentEquals(other.array)
     }
 
     override fun hashCode(): Int {
@@ -32,3 +28,10 @@ fun ByteArray.toWBytes() = WBytes(this)
 fun String.toWBytes() = this.fromHex().toWBytes()
 fun WBytes.toProtobuf() = this.array.toProtobuf()
 fun ByteString.toWBytes() = this.toByteArray().toWBytes()
+
+fun WBytes.slice(start: Int, len: Int) = WBytes(this.array.sliceArray(start until start + len))
+fun WBytes.chunked(maxSize: Int) =
+    this.array.indices.chunked(maxSize).map { this.slice(it.first(), it.size) }
+
+val WBytes.size get() = this.array.size
+fun WBytes.repeat(count: Int): WBytes = WBytes(ByteArray(this.size * count) { this.array[it % this.size] })
