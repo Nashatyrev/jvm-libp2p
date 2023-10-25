@@ -9,6 +9,4 @@ abstract class AbstractSampleSendStrategy(
         require(hasToSend())
         samplesToSend--
     }
-
-    protected fun addSamples(count: Int) { samplesToSend += count }
 }

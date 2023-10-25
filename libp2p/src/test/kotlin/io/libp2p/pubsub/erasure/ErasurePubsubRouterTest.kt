@@ -14,6 +14,7 @@ import io.libp2p.pubsub.erasure.router.strategy.AckSendStrategy
 import io.libp2p.pubsub.erasure.router.strategy.AckSendStrategy.Companion.ALWAYS_RESPOND_TO_INBOUND_SAMPLES
 import io.libp2p.pubsub.erasure.router.strategy.SampleSendStrategy
 import io.libp2p.pubsub.gossip.CurrentTimeSupplier
+import io.libp2p.tools.schedulers.TimeController
 import io.netty.handler.logging.LogLevel
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -21,12 +22,16 @@ import pubsub.pb.Rpc
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.toJavaDuration
 
 val random = Random(1)
 val sampleSize = 4
 val ackSendStrategy: () -> AckSendStrategy = { ALWAYS_RESPOND_TO_INBOUND_SAMPLES }
-val sampleSendStrategy: () -> SampleSendStrategy = { SampleSendStrategy.sendAll() }
-//val sampleSendStrategy: () -> SampleSendStrategy = { SampleSendStrategy.cWndStrategy(2) }
+//val sampleSendStrategy: () -> SampleSendStrategy = { SampleSendStrategy.sendAll() }
+val sampleSendStrategy: () -> SampleSendStrategy = { SampleSendStrategy.cWndStrategy(2) }
 
 fun createErasureFuzzRouterFactory(): DeterministicFuzzRouterFactory =
     object : DeterministicFuzzRouterFactory {
@@ -53,11 +58,12 @@ class ErasurePubsubRouterTest(
     val routerFactory: DeterministicFuzzRouterFactory = createErasureFuzzRouterFactory()
     val topic = "topic1"
     val fuzz = DeterministicFuzz()
+    val latency: Duration = 10.milliseconds
 
     private fun createRouterAndSubscribe() =
         fuzz.createTestRouter(routerFactory).also {
             it.router.subscribe(topic)
-            it.pubsubLogWritesOnly = true
+//            it.pubsubLogWritesOnly = true
         }
 
     fun newMessage(topic: String, messageId: ByteArray, data: ByteArray) =
@@ -131,12 +137,14 @@ class ErasurePubsubRouterTest(
         val router2 = createRouterAndSubscribe()
         val router3 = createRouterAndSubscribe()
 
-        router1.connectSemiDuplex(router2, null, LogLevel.ERROR)
-        router1.connectSemiDuplex(router3, null, LogLevel.ERROR)
-        router2.connectSemiDuplex(router3, null, LogLevel.ERROR)
+        router1.connectSemiDuplex(router2, null, LogLevel.ERROR).setLatency(10.milliseconds)
+        router1.connectSemiDuplex(router3, null, LogLevel.ERROR).setLatency(10.milliseconds)
+        router2.connectSemiDuplex(router3, null, LogLevel.ERROR).setLatency(10.milliseconds)
 
         val msg = createMessage(3, 0x77)
         router1.router.publish(msg)
+
+        fuzz.timeController.addTime(1.days)
 
         assertThat(router2.inboundMessages.poll(5, TimeUnit.SECONDS)).isEqualTo(msg)
         assertThat(router3.inboundMessages.poll(5, TimeUnit.SECONDS)).isEqualTo(msg)
@@ -145,3 +153,5 @@ class ErasurePubsubRouterTest(
         assertThat(router3.inboundMessages).isEmpty()
     }
 }
+
+fun TimeController.addTime(kDuration: Duration) { this.addTime(kDuration.toJavaDuration()) }

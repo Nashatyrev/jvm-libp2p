@@ -26,12 +26,17 @@ import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration
 
 val cnt = AtomicInteger()
 val idCnt = AtomicInteger()
 
 class SemiduplexConnection(val conn1: TestConnection, val conn2: TestConnection) {
     val connections = listOf(conn1, conn2)
+    fun setLatency(latency: Duration) {
+        conn1.setLatency(latency)
+        conn2.setLatency(latency)
+    }
     fun disconnect() {
         conn1.disconnect()
         // conn2 should be dropped by the router

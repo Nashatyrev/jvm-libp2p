@@ -16,7 +16,10 @@ import java.net.SocketAddress
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration
 
 private val threadFactory = ThreadFactoryBuilder().setDaemon(true).setNameFormat("TestChannel-interconnect-executor-%d").build()
 
@@ -55,9 +58,10 @@ class TestChannel(
 
     var link: TestChannel? = null
     val sentMsgCount = AtomicLong()
-    var executor: Executor by lazyVar {
-        Executors.newSingleThreadExecutor(threadFactory)
+    var executor: ScheduledExecutorService by lazyVar {
+        Executors.newSingleThreadScheduledExecutor(threadFactory)
     }
+    var latency: Duration = Duration.ZERO
 
     fun <TRet> onChannelThread(task: (EmbeddedChannel) -> TRet): CompletableFuture<TRet> {
         return CompletableFuture.supplyAsync({ task(this) }, executor)
@@ -77,11 +81,21 @@ class TestChannel(
         }
     }
 
-    fun send(msg: Any) {
-        link!!.executor.execute {
-            sentMsgCount.incrementAndGet()
-            link!!.writeInbound(msg)
+    private fun send(msg: Any) {
+        if (latency == Duration.ZERO) {
+            link!!.executor.execute {
+                doSend(msg)
+            }
+        } else {
+            link!!.executor.schedule({
+                doSend(msg)
+            }, latency.inWholeMilliseconds, TimeUnit.MILLISECONDS)
         }
+    }
+
+    private fun doSend(msg: Any) {
+        sentMsgCount.incrementAndGet()
+        link!!.writeInbound(msg)
     }
 
     override fun localAddress(): SocketAddress {
@@ -105,6 +119,10 @@ class TestChannel(
     }
 
     class TestConnection(val ch1: TestChannel, val ch2: TestChannel) {
+        fun setLatency(latency: Duration) {
+            ch1.latency = latency
+            ch2.latency = latency
+        }
         fun getMessageCount() = ch1.sentMsgCount.get() + ch2.sentMsgCount.get()
         fun disconnect() {
             ch1.close()
