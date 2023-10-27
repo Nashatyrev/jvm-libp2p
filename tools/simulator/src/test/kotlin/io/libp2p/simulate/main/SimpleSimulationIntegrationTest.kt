@@ -28,9 +28,9 @@ class SimpleSimulationIntegrationTest {
 
         assertThat(deliveryAggrStats.getCount()).isEqualTo(99)
         val stats = deliveryAggrStats.getDescriptiveStatistics()
-        assertThat(stats.min).isEqualTo(59.0)
-        assertThat(stats.getPercentile(50.0).smartRound()).isEqualTo(323.0)
-        assertThat(stats.max).isEqualTo(524.0)
+        assertThat(stats.min).isEqualTo(57.0)
+        assertThat(stats.getPercentile(50.0).smartRound()).isEqualTo(317.0)
+        assertThat(stats.max).isEqualTo(514.0)
     }
 
     @Test
@@ -51,8 +51,8 @@ class SimpleSimulationIntegrationTest {
 
         assertThat(deliveryAggrStats.getCount()).isEqualTo(495)
         val stats = deliveryAggrStats.getDescriptiveStatistics()
-        assertThat(stats.min).isEqualTo(59.0)
-        assertThat(stats.getPercentile(50.0).smartRound()).isEqualTo(323.0)
-        assertThat(stats.max).isEqualTo(524.0)
+        assertThat(stats.min).isEqualTo(57.0)
+        assertThat(stats.getPercentile(50.0).smartRound()).isEqualTo(317.0)
+        assertThat(stats.max).isEqualTo(514.0)
     }
 }

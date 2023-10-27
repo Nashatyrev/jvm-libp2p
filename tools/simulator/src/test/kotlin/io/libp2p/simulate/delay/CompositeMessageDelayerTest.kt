@@ -41,8 +41,8 @@ class CompositeMessageDelayerTest {
         println(msg1.get())
         println(msg2.get())
 
-        assertThat(msg1.get().first).isCloseTo(110, offset(2))
-        assertThat(msg2.get().first).isCloseTo(120, offset(2))
+        assertThat(msg1.get().first).isCloseTo(107, offset(2))
+        assertThat(msg2.get().first).isCloseTo(114, offset(2))
     }
 
     @Test
