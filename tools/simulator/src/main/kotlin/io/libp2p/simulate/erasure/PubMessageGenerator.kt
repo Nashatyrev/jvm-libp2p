@@ -8,7 +8,7 @@ import io.libp2p.simulate.util.MsgSizeEstimator
 import pubsub.pb.Rpc
 import java.nio.ByteOrder
 
-class ErasurePubMessageGenerator(
+class PubMessageGenerator(
     val sizeEstimator: MsgSizeEstimator,
     val messageIdRetriever: (ByteArray) -> SimMessageId,
     val msgGenerator: (messageId: SimMessageId, size: Int) -> ByteArray
@@ -34,21 +34,21 @@ private fun generateIdBytes(id: Long): ByteArray = id.toBytesBigEndian()
 private fun readIdBytes(bytes: ByteArray): Long = bytes.toLongBigEndian()
 
 fun averagePubSubMsgSizeEstimator(avrgMsgLen: Int, measureTcpOverhead: Boolean = true) =
-    ErasurePubMessageGenerator(
+    PubMessageGenerator(
         genericPubSubMsgSizeEstimator({ avrgMsgLen }, measureTcpOverhead),
         { readIdBytes(it) },
         { id, _ -> generateIdBytes(id) }
     )
 
 fun strictPubSubMsgSizeEstimator(measureTcpOverhead: Boolean = true) =
-    ErasurePubMessageGenerator(
+    PubMessageGenerator(
         genericPubSubMsgSizeEstimator({ it.size() }, measureTcpOverhead),
         { bytes -> readIdBytes(bytes.copyOfRange(0, 8)) },
         { id, size -> generateIdBytes(id) + ByteArray(size) }
     )
 
 fun trickyPubSubMsgSizeEstimator(measureTcpOverhead: Boolean = true) =
-    ErasurePubMessageGenerator(
+    PubMessageGenerator(
         genericPubSubMsgSizeEstimator(
             { it.asReadOnlyByteBuffer().order(ByteOrder.BIG_ENDIAN).getInt(8) },
             measureTcpOverhead

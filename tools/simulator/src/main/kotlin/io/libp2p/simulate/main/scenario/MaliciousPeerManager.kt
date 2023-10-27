@@ -2,9 +2,9 @@ package io.libp2p.simulate.main.scenario
 
 import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.simulate.SimPeerId
+import io.libp2p.simulate.erasure.MessageValidation
 import io.libp2p.simulate.gossip.GossipSimConfig
 import io.libp2p.simulate.gossip.GossipSimPeerConfig
-import io.libp2p.simulate.gossip.MessageValidation
 import kotlin.time.Duration
 
 class MaliciousPeerManager(

@@ -9,6 +9,13 @@ import io.libp2p.pubsub.gossip.GossipScoreParams
 import io.libp2p.simulate.*
 import io.libp2p.simulate.delay.TimeDelayer
 import io.libp2p.simulate.delay.latency.LatencyDistribution
+import io.libp2p.simulate.erasure.InOutBandwidth
+import io.libp2p.simulate.erasure.MessageValidation
+import io.libp2p.simulate.erasure.MessageValidationGenerator
+import io.libp2p.simulate.erasure.PubMessageGenerator
+import io.libp2p.simulate.erasure.SimAbstractConfig
+import io.libp2p.simulate.erasure.SimAbstractPeerConfig
+import io.libp2p.simulate.erasure.trickyPubSubMsgSizeEstimator
 import io.libp2p.simulate.stream.StreamSimConnection
 import io.libp2p.simulate.topology.RandomNPeers
 import java.util.Random
@@ -16,46 +23,31 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.ZERO
 import kotlin.time.Duration.Companion.seconds
 
-data class InOutBandwidth(
-    val inbound: Bandwidth,
-    val outbound: Bandwidth = inbound
-)
-
-data class MessageValidation(
-    val validationDelay: Duration,
-    val validationResult: ValidationResult
-)
-
-typealias MessageValidationGenerator = (MessageApi) -> MessageValidation
-
 data class GossipSimPeerConfig(
     // Gossip router config
-    val gossipProtocol: PubsubProtocol,
+    override val pubsubProtocol: PubsubProtocol,
     val gossipParams: GossipParams,
     val gossipScoreParams: GossipScoreParams,
     val additionalHeartbeatDelay: Duration,
 
     // Gossip simulation config
-    val topics: List<Topic>,
-    val messageValidationGenerator: MessageValidationGenerator,
+    override val topics: List<Topic>,
+    override val messageValidationGenerator: MessageValidationGenerator,
 
     // Other
-    val bandwidth: InOutBandwidth,
-)
+    override val bandwidth: InOutBandwidth,
+) : SimAbstractPeerConfig
 
 data class GossipSimConfig(
-    val peerConfigs: List<GossipSimPeerConfig>,
+    override val peerConfigs: List<GossipSimPeerConfig>,
 
-    val messageGenerator: GossipPubMessageGenerator = trickyPubSubMsgSizeEstimator(true),
-    val latency: LatencyDistribution = LatencyDistribution.createConst(ZERO),
+    override val messageGenerator: PubMessageGenerator = trickyPubSubMsgSizeEstimator(true),
+    override val latency: LatencyDistribution = LatencyDistribution.createConst(ZERO),
 
-    val topology: Topology = RandomNPeers(10),
-    val warmUpDelay: Duration = 10.seconds,
-    val randomSeed: Long = 0,
-) {
-
-    val totalPeers: Int get() = peerConfigs.size
-}
+    override val topology: Topology = RandomNPeers(10),
+    override val warmUpDelay: Duration = 10.seconds,
+    override val randomSeed: Long = 0,
+) : SimAbstractConfig
 
 data class GossipSimPeerConfigGenerator(
     // Gossip router config

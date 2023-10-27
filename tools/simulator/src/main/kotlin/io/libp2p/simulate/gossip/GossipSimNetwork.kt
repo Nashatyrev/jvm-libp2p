@@ -29,33 +29,37 @@ class GossipSimNetwork(
     protected fun createSimPeer(number: SimPeerId): GossipSimPeer {
         val peerConfig = cfg.peerConfigs[number]
 
-        val routerBuilder = routerBuilderFactory(number).also {
-            it.protocol = peerConfig.gossipProtocol
-            it.params = peerConfig.gossipParams
-            it.scoreParams = peerConfig.gossipScoreParams
-            it.additionalHeartbeatDelay = peerConfig.additionalHeartbeatDelay
-        }
+        val routerBuilder =
+            routerBuilderFactory(number)
+                .also {
+                    it.protocol = peerConfig.pubsubProtocol
+                    it.params = peerConfig.gossipParams
+                    it.scoreParams = peerConfig.gossipScoreParams
+                    it.additionalHeartbeatDelay = peerConfig.additionalHeartbeatDelay
+                }
 
-        val simPeer = GossipSimPeer(number, commonRnd, peerConfig.gossipProtocol, routerBuilder).also { simPeer ->
-            simPeer.simExecutor = commonExecutor
-            simPeer.currentTime = { timeController.time }
-            simPeer.msgSizeEstimator = cfg.messageGenerator.sizeEstimator
-            simPeer.inboundBandwidth =
-                AccurateBandwidthTracker(
-                    peerConfig.bandwidth.inbound,
-                    simPeer.simExecutor,
-                    simPeer.currentTime,
-                    name = "[$simPeer]-in"
-                )
-            simPeer.outboundBandwidth =
-                AccurateBandwidthTracker(
-                    peerConfig.bandwidth.inbound,
-                    simPeer.simExecutor,
-                    simPeer.currentTime,
-                    name = "[$simPeer]-in"
-                )
-            simPeerModifier(number, simPeer)
-        }
+        val simPeer =
+            GossipSimPeer(number, commonRnd, peerConfig.pubsubProtocol, routerBuilder)
+                .also { simPeer ->
+                    simPeer.simExecutor = commonExecutor
+                    simPeer.currentTime = { timeController.time }
+                    simPeer.msgSizeEstimator = cfg.messageGenerator.sizeEstimator
+                    simPeer.inboundBandwidth =
+                        AccurateBandwidthTracker(
+                            peerConfig.bandwidth.inbound,
+                            simPeer.simExecutor,
+                            simPeer.currentTime,
+                            name = "[$simPeer]-in"
+                        )
+                    simPeer.outboundBandwidth =
+                        AccurateBandwidthTracker(
+                            peerConfig.bandwidth.inbound,
+                            simPeer.simExecutor,
+                            simPeer.currentTime,
+                            name = "[$simPeer]-in"
+                        )
+                    simPeerModifier(number, simPeer)
+                }
         return simPeer
     }
 

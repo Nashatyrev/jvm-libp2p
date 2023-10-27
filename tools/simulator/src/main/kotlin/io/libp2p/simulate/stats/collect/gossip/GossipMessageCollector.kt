@@ -2,7 +2,7 @@ package io.libp2p.simulate.stats.collect.gossip
 
 import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import io.libp2p.simulate.Network
-import io.libp2p.simulate.gossip.GossipPubMessageGenerator
+import io.libp2p.simulate.erasure.PubMessageGenerator
 import io.libp2p.simulate.gossip.GossipSimPeer
 import io.libp2p.simulate.stats.collect.ConnectionsMessageCollector
 import pubsub.pb.Rpc
@@ -17,7 +17,7 @@ fun GossipSimPeer.getMessageIdGenerator(): GossipMessageIdGenerator = {
 class GossipMessageCollector(
     network: Network,
     timeSupplier: CurrentTimeSupplier,
-    val msgGenerator: GossipPubMessageGenerator,
+    val msgGenerator: PubMessageGenerator,
     val gossipMessageIdGenerator: GossipMessageIdGenerator
 ) : ConnectionsMessageCollector<RPC>(network, timeSupplier) {
 

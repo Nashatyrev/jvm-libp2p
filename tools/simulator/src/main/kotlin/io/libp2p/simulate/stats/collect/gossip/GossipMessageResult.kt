@@ -4,7 +4,7 @@ import com.google.protobuf.AbstractMessage
 import io.libp2p.etc.types.toWBytes
 import io.libp2p.pubsub.MessageId
 import io.libp2p.simulate.SimPeer
-import io.libp2p.simulate.gossip.GossipPubMessageGenerator
+import io.libp2p.simulate.erasure.PubMessageGenerator
 import io.libp2p.simulate.stats.collect.CollectedMessage
 import pubsub.pb.Rpc
 
@@ -13,7 +13,7 @@ typealias SimMessageId = Long
 
 data class GossipMessageResult(
     val messages: List<CollectedMessage<Rpc.RPC>>,
-    private val msgGenerator: GossipPubMessageGenerator,
+    private val msgGenerator: PubMessageGenerator,
     private val gossipMessageIdGenerator: GossipMessageIdGenerator,
     private val gossipMessageIdToSimMessageIdHint: Map<GossipMessageId, SimMessageId> = emptyMap()
 ) {

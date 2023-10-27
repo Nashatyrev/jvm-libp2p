@@ -23,28 +23,27 @@ data class MessageValidation(
 
 typealias MessageValidationGenerator = (MessageApi) -> MessageValidation
 
-data class SimAbstractPeerConfig(
+interface SimAbstractPeerConfig {
     // Gossip router config
-    val pubsubProtocol: PubsubProtocol,
+    val pubsubProtocol: PubsubProtocol
 
     // Gossip simulation config
-    val topics: List<Topic>,
-    val messageValidationGenerator: MessageValidationGenerator,
+    val topics: List<Topic>
+    val messageValidationGenerator: MessageValidationGenerator
 
     // Other
-    val bandwidth: InOutBandwidth,
-)
+    val bandwidth: InOutBandwidth
+}
 
-data class SimAbstractConfig(
-    val peerConfigs: List<SimAbstractPeerConfig>,
+interface SimAbstractConfig {
+    val peerConfigs: List<SimAbstractPeerConfig>
 
-    val messageGenerator: ErasurePubMessageGenerator = trickyPubSubMsgSizeEstimator(true),
-    val latency: LatencyDistribution = LatencyDistribution.createConst(ZERO),
+    val messageGenerator: PubMessageGenerator
+    val latency: LatencyDistribution
 
-    val topology: Topology = RandomNPeers(10),
-    val warmUpDelay: Duration = 10.seconds,
-    val randomSeed: Long = 0,
-) {
+    val topology: Topology
+    val warmUpDelay: Duration
+    val randomSeed: Long
 
     val totalPeers: Int get() = peerConfigs.size
 }

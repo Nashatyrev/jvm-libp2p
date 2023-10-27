@@ -7,6 +7,8 @@ import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.RandomDistribution
 import io.libp2p.simulate.Topology
 import io.libp2p.simulate.delay.latency.LatencyDistribution
+import io.libp2p.simulate.erasure.MessageValidation
+import io.libp2p.simulate.erasure.averagePubSubMsgSizeEstimator
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.milliseconds
 import io.libp2p.simulate.stats.Stats
