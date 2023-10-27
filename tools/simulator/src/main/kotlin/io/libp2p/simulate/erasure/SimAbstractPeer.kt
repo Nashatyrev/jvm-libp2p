@@ -4,6 +4,7 @@ import io.libp2p.core.PeerId
 import io.libp2p.core.Stream
 import io.libp2p.core.pubsub.createPubsubApi
 import io.libp2p.etc.types.lazyVar
+import io.libp2p.pubsub.AbstractRouter
 import io.libp2p.pubsub.PubsubProtocol
 import io.libp2p.simulate.erasure.router.SimAbstractRouterBuilder
 import io.libp2p.simulate.stream.StreamSimPeer
@@ -12,14 +13,14 @@ import io.netty.handler.logging.LoggingHandler
 import java.util.*
 import java.util.concurrent.CompletableFuture
 
-class SimAbstractPeer(
+open class SimAbstractPeer(
     override val simPeerId: Int,
     override val random: Random,
     protocol: PubsubProtocol,
     val routerBuilder: SimAbstractRouterBuilder
 ) : StreamSimPeer<Unit>(true, protocol.announceStr) {
 
-    var router by lazyVar {
+    protected var abstractRouter: AbstractRouter by lazyVar {
         routerBuilder.also {
             it.name = name
             it.scheduledAsyncExecutor = simExecutor
@@ -27,6 +28,8 @@ class SimAbstractPeer(
             it.random = random
         }.build()
     }
+
+    open val router: AbstractRouter get() = abstractRouter
 
     val api by lazy { createPubsubApi(router) }
     val apiPublisher by lazy { api.createPublisher(keyPair.first, 0L) }

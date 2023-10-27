@@ -18,10 +18,10 @@ class GossipSimPeerTest {
         val timeController = TimeControllerImpl()
 
         val createPeer = {
-            val peer = GossipSimPeer(1, Random(), PubsubProtocol.Gossip_V_1_1)
-            peer.routerBuilder = SimGossipRouterBuilder().also {
+            val routerBuilder = SimGossipRouterBuilder().also {
                 it.serializeMessagesToBytes = true
             }
+            val peer = GossipSimPeer(1, Random(), PubsubProtocol.Gossip_V_1_1, routerBuilder)
 
             peer.pubsubLogs = { true }
             peer.simExecutor = ControlledExecutorServiceImpl(timeController)

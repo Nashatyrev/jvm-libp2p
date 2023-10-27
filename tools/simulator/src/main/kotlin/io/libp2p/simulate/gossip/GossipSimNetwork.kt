@@ -36,8 +36,7 @@ class GossipSimNetwork(
             it.additionalHeartbeatDelay = peerConfig.additionalHeartbeatDelay
         }
 
-        val simPeer = GossipSimPeer(number, commonRnd, peerConfig.gossipProtocol).also { simPeer ->
-            simPeer.routerBuilder = routerBuilder
+        val simPeer = GossipSimPeer(number, commonRnd, peerConfig.gossipProtocol, routerBuilder).also { simPeer ->
             simPeer.simExecutor = commonExecutor
             simPeer.currentTime = { timeController.time }
             simPeer.msgSizeEstimator = cfg.messageGenerator.sizeEstimator
