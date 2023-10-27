@@ -17,8 +17,8 @@ import java.util.Random
 
 class TestMessageRouterFactory(
     val random: Random,
-    val ackSendStrategy: () -> AckSendStrategy,
-    val sampleSendStrategy: () -> SampleSendStrategy
+    val ackSendStrategy: (SampledMessage) -> AckSendStrategy,
+    val sampleSendStrategy: (SampledMessage) -> SampleSendStrategy
 ) : MessageRouterFactory() {
 
     override fun create(message: MutableSampledMessage, peers: List<PeerId>): MessageRouter =
@@ -26,7 +26,14 @@ class TestMessageRouterFactory(
 
     inner class TestMessagePeerHandlerFactory : MessagePeerHandlerFactory() {
         override fun create(message: MutableSampledMessage, peer: PeerId): AbstractMessagePeerHandler {
-            return SimpleMessagePeerHandler(message, peer, sender, random, ackSendStrategy(), sampleSendStrategy())
+            return SimpleMessagePeerHandler(
+                message,
+                peer,
+                sender,
+                random,
+                ackSendStrategy(message),
+                sampleSendStrategy(message)
+            )
         }
     }
 }

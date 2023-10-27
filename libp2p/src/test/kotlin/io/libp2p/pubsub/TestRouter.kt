@@ -10,6 +10,7 @@ import io.libp2p.etc.PROTOCOL
 import io.libp2p.etc.types.lazyVar
 import io.libp2p.etc.util.netty.LoggingHandlerShort
 import io.libp2p.etc.util.netty.nettyInitializer
+import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import io.libp2p.tools.NullTransport
 import io.libp2p.tools.TestChannel
 import io.libp2p.tools.TestChannel.TestConnection
@@ -21,6 +22,7 @@ import io.netty.handler.logging.LogLevel
 import io.netty.handler.logging.LoggingHandler
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.text.SimpleDateFormat
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
@@ -68,6 +70,7 @@ class TestRouter(
     val peerId by lazy { PeerId.fromPubKey(keyPair.second) }
     val protocol = router.protocol.announceStr
     var pubsubLogWritesOnly = false
+    var simTimeSupplier: CurrentTimeSupplier? = null
 
     init {
         router.initHandler(routerHandler)
@@ -102,6 +105,8 @@ class TestRouter(
                         ret.skipRead = true
                         ret.skipFlush = true
                     }
+                    ret.simulateTimeSupplier = simTimeSupplier
+                    ret.simulateTimeFormnat = SimpleDateFormat("ss.SSS")
                     ret
                 }
                 router.addPeerWithDebugHandler(stream1, pubsubLogHandler)

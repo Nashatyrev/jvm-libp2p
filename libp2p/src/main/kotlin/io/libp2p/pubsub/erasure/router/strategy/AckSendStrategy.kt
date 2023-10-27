@@ -23,6 +23,11 @@ interface AckSendStrategy {
         }
 
         fun whenMessageCompleteOnly(msg: SampledMessage) = object : AckSendStrategy {
+            override fun onInboundSample(msg: ErasureSample) = false
+            override fun onNewSamples(newSamples: Set<ErasureSample>) = msg.isComplete()
+        }
+
+        fun allInboundAndWhenComplete(msg: SampledMessage) = object : AckSendStrategy {
             override fun onInboundSample(msg: ErasureSample) = true
             override fun onNewSamples(newSamples: Set<ErasureSample>) = msg.isComplete()
         }

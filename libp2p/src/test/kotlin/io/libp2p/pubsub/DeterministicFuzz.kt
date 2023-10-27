@@ -12,7 +12,9 @@ import java.security.SecureRandom
 import java.util.Random
 import java.util.concurrent.ScheduledExecutorService
 
-typealias DeterministicFuzzRouterFactory = (ScheduledExecutorService, CurrentTimeSupplier, Random) -> PubsubRouterDebug
+fun interface DeterministicFuzzRouterFactory {
+    fun create(executor: ScheduledExecutorService, timeSupplier: CurrentTimeSupplier, random: Random): PubsubRouterDebug
+}
 
 class DeterministicFuzz {
 
@@ -32,7 +34,7 @@ class DeterministicFuzz {
 
     fun createTestRouter(routerCtor: DeterministicFuzzRouterFactory): TestRouter {
         val deterministicExecutor = createControlledExecutor()
-        val router = routerCtor(deterministicExecutor, { timeController.time }, random)
+        val router = routerCtor.create(deterministicExecutor, { timeController.time }, random)
 
         return TestRouter("" + (cnt++), router).apply {
             val randomBytes = ByteArray(8)
@@ -43,8 +45,8 @@ class DeterministicFuzz {
     }
 
     companion object {
-        fun createGossipFuzzRouterFactory(routerBuilderFactory: () -> GossipRouterBuilder): DeterministicFuzzRouterFactory =
-            { executor, curTime, random ->
+        fun createGossipFuzzRouterFactory(routerBuilderFactory: () -> GossipRouterBuilder)=
+            DeterministicFuzzRouterFactory { executor, curTime, random ->
                 routerBuilderFactory().also {
                     it.scheduledAsyncExecutor = executor
                     it.currentTimeSuppluer = curTime
@@ -52,13 +54,13 @@ class DeterministicFuzz {
                 }.build()
             }
 
-        fun createMockFuzzRouterFactory(): DeterministicFuzzRouterFactory =
-            { executor, _, _ ->
+        fun createMockFuzzRouterFactory() =
+            DeterministicFuzzRouterFactory { executor, _, _ ->
                 MockRouter(executor)
             }
 
-        fun createFloodFuzzRouterFactory(): DeterministicFuzzRouterFactory =
-            { executor, _, _ ->
+        fun createFloodFuzzRouterFactory() =
+            DeterministicFuzzRouterFactory { executor, _, _ ->
                 FloodRouter(executor)
             }
     }

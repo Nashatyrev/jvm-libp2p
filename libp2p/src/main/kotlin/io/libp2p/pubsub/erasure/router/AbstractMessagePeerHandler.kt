@@ -19,11 +19,11 @@ abstract class AbstractMessagePeerHandler(
     val random: Random
 ) {
 
-    fun send(msgs: List<ErasureMessage>): CompletableFuture<Unit> {
-        val promise = sender(peer, msgs)
-        msgs.forEach { onOutboundMessageSent(it) }
-        return promise
-    }
+    fun send(msgs: List<ErasureMessage>): CompletableFuture<Unit> =
+        sender(peer, msgs)
+            .thenApply {
+                msgs.forEach { onOutboundMessageSent(it) }
+            }
     fun send(msg: ErasureMessage): CompletableFuture<Unit> = send(listOf(msg))
 
     fun onInboundMessage(msg: ErasureMessage) {

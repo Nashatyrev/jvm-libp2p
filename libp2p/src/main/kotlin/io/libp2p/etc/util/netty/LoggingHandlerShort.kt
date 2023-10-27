@@ -1,9 +1,12 @@
 package io.libp2p.etc.util.netty
 
+import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.logging.ByteBufFormat
 import io.netty.handler.logging.LogLevel
 import io.netty.handler.logging.LoggingHandler
+import java.text.SimpleDateFormat
+import java.util.Date
 
 /**
  * [LoggingHandler] limiting message size
@@ -29,9 +32,26 @@ class LoggingHandlerShort : LoggingHandler {
     var charsCutThreshold = 256
     var skipRead = false
     var skipFlush = false
+    var simulateTimeSupplier: CurrentTimeSupplier? = null
 
-    override fun format(ctx: ChannelHandlerContext?, eventName: String?, arg: Any?): String {
-        val orig = super.format(ctx, eventName, arg)
+    var simulateTimeFormnat = SimpleDateFormat("HH:mm:ss.SSS")
+    private fun modifyEventName(eventName: String): String =
+        simulateTimeSupplier?.let {
+            val simTime = it()
+            "(${simulateTimeFormnat.format(Date(simTime))}) $eventName"
+        }
+            ?: eventName
+
+    override fun format(ctx: ChannelHandlerContext?, eventName: String): String {
+        return super.format(ctx, modifyEventName(eventName))
+    }
+
+    override fun format(ctx: ChannelHandlerContext?, eventName: String, firstArg: Any?, secondArg: Any?): String {
+        return super.format(ctx, modifyEventName(eventName), firstArg, secondArg)
+    }
+
+    override fun format(ctx: ChannelHandlerContext?, eventName: String, arg: Any?): String {
+        val orig = super.format(ctx, modifyEventName(eventName), arg)
         val lines = orig.lines()
         val extraLines = lines.size - (maxHeadingLines + maxTrailingLines)
 
