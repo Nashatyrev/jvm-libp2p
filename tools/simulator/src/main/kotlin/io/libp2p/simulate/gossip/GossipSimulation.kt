@@ -23,6 +23,10 @@ class GossipSimulation(
         anyPeer.getMessageIdGenerator()
     )
 
+    init {
+        start()
+    }
+
     fun gatherPubDeliveryStats(): GossipPubDeliveryResult =
         messageCollector.gatherResult().getGossipPubDeliveryResult()
 }

@@ -46,7 +46,7 @@ abstract class AbstractSimulation(
 
     abstract val messageCollector: ConnectionsMessageCollector<*>
 
-    init {
+    fun start() {
         subscribeAll()
         forwardTime(cfg.warmUpDelay)
     }
