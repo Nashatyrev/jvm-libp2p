@@ -1,5 +1,6 @@
 package io.libp2p.simulate.erasure
 
+import io.libp2p.pubsub.PubsubProtocol
 import io.libp2p.simulate.Network
 import io.libp2p.simulate.SimPeerId
 import io.libp2p.simulate.delay.TimeDelayer
@@ -11,30 +12,42 @@ import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl
 import io.libp2p.tools.schedulers.TimeControllerImpl
 import java.util.Random
 
-typealias ErasureRouterBuilderFactory = (SimPeerId) -> SimAbstractRouterBuilder
-typealias ErasureSimPeerModifier = (SimPeerId, SimAbstractPeer) -> Unit
+typealias AbstractRouterBuilderFactory = (SimPeerId) -> SimAbstractRouterBuilder
+typealias AbstractSimPeerModifier = (SimPeerId, SimAbstractPeer) -> Unit
 
-class SimAbstractNetwork(
+abstract class SimAbstractNetwork(
     val cfg: SimAbstractConfig,
-    val routerBuilderFactory: ErasureRouterBuilderFactory,
-    val simPeerModifier: ErasureSimPeerModifier = { _, _ -> }
+    val routerBuilderFactory: AbstractRouterBuilderFactory,
+    val simPeerModifier: AbstractSimPeerModifier = { _, _ -> }
 ) {
-    val peers = sortedMapOf<SimPeerId, SimAbstractPeer>()
+    open val peers = sortedMapOf<SimPeerId, SimAbstractPeer>()
     lateinit var network: Network
 
     val timeController = TimeControllerImpl()
     val commonRnd = Random(cfg.randomSeed)
     val commonExecutor = ControlledExecutorServiceImpl(timeController)
 
+    protected abstract fun alterRouterBuilder(builder: SimAbstractRouterBuilder, peerConfig: SimAbstractPeerConfig)
+
+    protected abstract fun createPeerInstance(
+        simPeerId: Int,
+        random: Random,
+        protocol: PubsubProtocol,
+        routerBuilder: SimAbstractRouterBuilder
+    ): SimAbstractPeer
+
     protected fun createSimPeer(number: SimPeerId): SimAbstractPeer {
         val peerConfig = cfg.peerConfigs[number]
 
-        val routerBuilder = routerBuilderFactory(number).also {
-            it.protocol = peerConfig.pubsubProtocol
-        }
+        val routerBuilder =
+            routerBuilderFactory(number)
+                .also {
+                    it.protocol = peerConfig.pubsubProtocol
+                    alterRouterBuilder(it, peerConfig)
+                }
 
         val simPeer =
-            SimAbstractPeer(number, commonRnd, peerConfig.pubsubProtocol, routerBuilder)
+            createPeerInstance(number, commonRnd, peerConfig.pubsubProtocol, routerBuilder)
                 .also { simPeer ->
                     simPeer.simExecutor = commonExecutor
                     simPeer.currentTime = { timeController.time }

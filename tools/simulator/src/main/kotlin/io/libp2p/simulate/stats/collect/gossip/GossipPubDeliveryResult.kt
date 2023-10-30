@@ -1,5 +1,6 @@
 package io.libp2p.simulate.stats.collect.gossip
 
+import io.libp2p.simulate.erasure.SimAbstractPeer
 import io.libp2p.simulate.gossip.GossipSimPeer
 
 class GossipPubDeliveryResult(
@@ -8,7 +9,7 @@ class GossipPubDeliveryResult(
 
     data class MessagePublish(
         val simMsgId: SimMessageId,
-        val fromPeer: GossipSimPeer,
+        val fromPeer: SimAbstractPeer,
         val sentTime: Long,
     )
 
@@ -86,7 +87,7 @@ class GossipPubDeliveryResult(
                 gossipMessageResult.originatingPublishMessages.mapValues { (_, msg) ->
                     MessagePublish(
                         msg.simMsgId,
-                        msg.origMsg.sendingPeer as GossipSimPeer,
+                        msg.origMsg.sendingPeer as SimAbstractPeer,
                         msg.origMsg.sendTime
                     )
                 }

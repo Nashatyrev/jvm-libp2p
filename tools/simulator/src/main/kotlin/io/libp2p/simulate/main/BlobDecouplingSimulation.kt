@@ -287,7 +287,7 @@ class BlobDecouplingSimulation(
 
         logger("Sending test messages...")
         scenario.test(params.decoupling, testMessageCount)
-        val messageResult = scenario.simulation.gossipMessageCollector.gatherResult()
+        val messageResult = scenario.simulation.messageCollector.gatherResult()
 
 //        tempResults(messageResult)
 

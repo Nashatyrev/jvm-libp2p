@@ -4,6 +4,7 @@ import io.libp2p.core.pubsub.Topic
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.delay.bandwidth.AccurateBandwidthTracker
 import io.libp2p.simulate.delay.bandwidth.AccurateBandwidthTracker.Message
+import io.libp2p.simulate.erasure.SimAbstractPeer
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
 import io.libp2p.simulate.topology.AllToAllTopology
@@ -165,7 +166,7 @@ class AccurateBandwidthTest {
         }
     }
 
-    val simPeerModifier = { _: Int, _: GossipSimPeer ->
+    val simPeerModifier = { _: Int, _: SimAbstractPeer ->
 //            peer.pubsubLogs = { true }
     }
 

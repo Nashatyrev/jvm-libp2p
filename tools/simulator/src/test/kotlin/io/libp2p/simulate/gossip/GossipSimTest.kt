@@ -3,6 +3,7 @@ package io.libp2p.simulate.gossip
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.simulate.*
 import io.libp2p.simulate.delay.latency.LatencyDistribution
+import io.libp2p.simulate.erasure.SimAbstractPeer
 import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.stats.collect.gossip.GossipMessageResult
@@ -39,7 +40,7 @@ class GossipSimTest {
             }
         }
 
-        val simPeerModifier = { _: Int, _: GossipSimPeer ->
+        val simPeerModifier = { _: Int, _: SimAbstractPeer ->
 //            peer.pubsubLogs = { true }
         }
 
@@ -101,7 +102,7 @@ class GossipSimTest {
                 simulation.forwardTime(5.seconds)
             }
 
-            return simulation.gossipMessageCollector.gatherResult()
+            return simulation.messageCollector.gatherResult()
         }
 
         fun gatherActualConnectionLatencies(res: GossipMessageResult): Map<Pair<SimPeer, SimPeer>, List<Long>> {

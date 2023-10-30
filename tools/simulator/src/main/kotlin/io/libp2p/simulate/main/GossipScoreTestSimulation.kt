@@ -73,7 +73,7 @@ class GossipScoreTestSimulation {
 
     private fun getScoreStats(network: GossipSimNetwork) =
         StatsFactory.DEFAULT.createStats("gossipScore").also {
-            it += network.peers.values
+            it += network.gossipPeers.values
                 .map { it.router }
                 .flatMap { gossip ->
                     gossip.peers.map {

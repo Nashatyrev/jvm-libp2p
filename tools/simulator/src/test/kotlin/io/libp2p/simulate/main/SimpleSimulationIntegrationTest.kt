@@ -18,7 +18,7 @@ class SimpleSimulationIntegrationTest {
         val simpleSim = SimpleSimulation(nodeCount = 100, nodePeerCount = 3)
         simpleSim.publishMessage()
 
-        val messagesResult = simpleSim.simulation.gossipMessageCollector.gatherResult()
+        val messagesResult = simpleSim.simulation.messageCollector.gatherResult()
 
         assertThat(messagesResult.getTotalMessageCount()).isEqualTo(783)
         assertThat(messagesResult.getTotalTraffic()).isEqualTo(6647421)
@@ -41,7 +41,7 @@ class SimpleSimulationIntegrationTest {
             simpleSim.publishMessage(it)
         }
 
-        val messagesResult = simpleSim.simulation.gossipMessageCollector.gatherResult()
+        val messagesResult = simpleSim.simulation.messageCollector.gatherResult()
 
         assertThat(messagesResult.getTotalMessageCount()).isEqualTo(1563)
         assertThat(messagesResult.getTotalTraffic()).isEqualTo(33108921)

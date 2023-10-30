@@ -1,11 +1,14 @@
 package io.libp2p.simulate.erasure
 
-import io.libp2p.core.pubsub.*
+import io.libp2p.core.pubsub.MessageApi
+import io.libp2p.core.pubsub.PubsubSubscription
+import io.libp2p.core.pubsub.Topic
+import io.libp2p.core.pubsub.ValidationResult
+import io.libp2p.core.pubsub.Validator
 import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import io.libp2p.simulate.SimPeerId
-import io.libp2p.simulate.gossip.SimMessage
 import io.libp2p.simulate.stats.collect.ConnectionsMessageCollector
-import io.libp2p.simulate.stats.collect.gossip.*
+import io.libp2p.simulate.stats.collect.gossip.SimMessageId
 import io.libp2p.tools.schedule
 import io.netty.buffer.Unpooled
 import java.util.concurrent.CompletableFuture
@@ -23,9 +26,9 @@ data class SimMessage(
     val pubResult: CompletableFuture<Unit>
 )
 
-class AbstractSimulation(
-    val cfg: SimAbstractConfig,
-    val network: SimAbstractNetwork
+abstract class AbstractSimulation(
+    open val cfg: SimAbstractConfig,
+    open val network: SimAbstractNetwork
 ) {
 
     private val idCounter = AtomicLong(0)
@@ -39,9 +42,9 @@ class AbstractSimulation(
 
     val currentTimeSupplier: CurrentTimeSupplier = { network.timeController.time }
 
-    private val anyGossipPeer get() = network.peers.values.first()
+    protected val anyPeer get() = network.peers.values.first()
 
-    val gossipMessageCollector: ConnectionsMessageCollector<*> = TODO()
+    abstract val messageCollector: ConnectionsMessageCollector<*>
 
     init {
         subscribeAll()
@@ -112,7 +115,7 @@ class AbstractSimulation(
         maxPendingMessagesAllowed: Int = 10
     ) {
         var totalDuration = 0.seconds
-        while (totalDuration <= maxDuration && gossipMessageCollector.pendingMessages.size > maxPendingMessagesAllowed) {
+        while (totalDuration <= maxDuration && messageCollector.pendingMessages.size > maxPendingMessagesAllowed) {
             network.timeController.addTime(step.toJavaDuration())
             totalDuration += step
         }
@@ -139,6 +142,6 @@ class AbstractSimulation(
     }
 
     fun clearAllMessages() {
-        gossipMessageCollector.clear()
+        messageCollector.clear()
     }
 }

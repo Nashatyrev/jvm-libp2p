@@ -8,6 +8,7 @@ import io.libp2p.simulate.RandomDistribution
 import io.libp2p.simulate.Topology
 import io.libp2p.simulate.delay.latency.LatencyDistribution
 import io.libp2p.simulate.erasure.MessageValidation
+import io.libp2p.simulate.erasure.SimAbstractPeer
 import io.libp2p.simulate.erasure.averagePubSubMsgSizeEstimator
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.milliseconds
@@ -39,7 +40,7 @@ class MiscParamsOptimizationSimulation {
 
     data class GossipStats(
         val msgDelay: Stats,
-        val someMissingPeers: List<GossipSimPeer> = emptyList()
+        val someMissingPeers: List<SimAbstractPeer> = emptyList()
     )
 
     data class FlatSimConfig(
@@ -395,7 +396,7 @@ class MiscParamsOptimizationSimulation {
                 return NetworkStats(result.getTotalMessageCount().toLong(), result.getTotalTraffic())
             }
 
-            println("Initial stat: " + getNetStats(simulation.gossipMessageCollector.gatherResult()))
+            println("Initial stat: " + getNetStats(simulation.messageCollector.gatherResult()))
             simulation.clearAllMessages()
 
             for (i in 0 until opt.sentMessageCount) {
@@ -406,10 +407,10 @@ class MiscParamsOptimizationSimulation {
                 if (opt.isZeroHeartbeatsEnabled()) {
                     simulation.forwardTime(opt.zeroHeartbeatsDelay)
                     run {
-                        val messageResult = simulation.gossipMessageCollector.gatherResult()
+                        val messageResult = simulation.messageCollector.gatherResult()
                         val gossipPubDeliveryResult: GossipPubDeliveryResult = messageResult.getGossipPubDeliveryResult()
                         val ns = getNetStats(messageResult)
-                        val gs = calcGossipStats(simNetwork.peers.values, gossipPubDeliveryResult)
+                        val gs = calcGossipStats(simNetwork.gossipPeers.values, gossipPubDeliveryResult)
                         ret.zeroHeartbeats.packetCountPerMessage.addValue(ns.msgCount.toDouble() / (cfg.totalPeers - 1))
                         ret.zeroHeartbeats.trafficPerMessage.addValue(ns.traffic.toDouble() / (cfg.totalPeers - 1))
                         ret.zeroHeartbeats.deliverDelay.addAllValues(gossipPubDeliveryResult.deliveryDelays)
@@ -421,10 +422,10 @@ class MiscParamsOptimizationSimulation {
                 simulation.forwardTime(opt.manyHeartbeatsDelay)
 
                 run {
-                    val messageResult = simulation.gossipMessageCollector.gatherResult()
+                    val messageResult = simulation.messageCollector.gatherResult()
                     val gossipPubDeliveryResult: GossipPubDeliveryResult = messageResult.getGossipPubDeliveryResult()
                     val ns = getNetStats(messageResult)
-                    val gs = calcGossipStats(simNetwork.peers.values, gossipPubDeliveryResult)
+                    val gs = calcGossipStats(simNetwork.gossipPeers.values, gossipPubDeliveryResult)
                     ret.manyHeartbeats.packetCountPerMessage.addValue(ns.msgCount.toDouble() / (cfg.totalPeers - 1))
                     ret.manyHeartbeats.trafficPerMessage.addValue(ns.traffic.toDouble() / (cfg.totalPeers - 1))
                     ret.manyHeartbeats.deliverDelay.addAllValues(gossipPubDeliveryResult.deliveryDelays)
@@ -434,7 +435,7 @@ class MiscParamsOptimizationSimulation {
 
                 val t2 = simulation.currentTimeSupplier()
                 simulation.forwardTime(opt.manyHeartbeatsDelay)
-                val messageResult = simulation.gossipMessageCollector
+                val messageResult = simulation.messageCollector
                     .gatherResult()
                     .slice(t2)
                 val nsDiff = getNetStats(messageResult)

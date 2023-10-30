@@ -5,6 +5,7 @@ import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.BandwidthDelayer
 import io.libp2p.simulate.delay.bandwidth.SequentialBandwidthTracker
 import io.libp2p.simulate.delay.bandwidth.SimpleBandwidthTracker
+import io.libp2p.simulate.erasure.SimAbstractPeer
 import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
 import io.libp2p.simulate.topology.AllToAllTopology
@@ -33,7 +34,7 @@ class BandwidthTest {
         }
     }
 
-    val simPeerModifier = { _: Int, _: GossipSimPeer ->
+    val simPeerModifier = { _: Int, _: SimAbstractPeer ->
 //            peer.pubsubLogs = { true }
     }
 

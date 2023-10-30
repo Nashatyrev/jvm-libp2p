@@ -63,7 +63,7 @@ class SlowPeersTrafficSimulation(
     fun run(params: SimParams): RunResult {
         val scenario = createBlobScenario(params)
         scenario.test(params.decoupling)
-        val messageResult = scenario.simulation.gossipMessageCollector.gatherResult()
+        val messageResult = scenario.simulation.messageCollector.gatherResult()
         return calcResult(messageResult)
     }
 

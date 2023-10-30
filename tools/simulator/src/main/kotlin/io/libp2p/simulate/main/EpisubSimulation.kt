@@ -276,11 +276,11 @@ class EpisubSimulation(
     }
 
     fun calcChokeResults(simulation: GossipSimulation): ChokeResult {
-        val allTopics = simulation.network.peers.values.flatMap { it.router.mesh.keys }.distinct()
+        val allTopics = simulation.network.gossipPeers.values.flatMap { it.router.mesh.keys }.distinct()
 
         val res = allTopics
             .associateWith { topic ->
-                simulation.network.peers.values
+                simulation.network.gossipPeers.values
                     .map {
                         PeerChokeResult(
                             it,
@@ -297,7 +297,7 @@ class EpisubSimulation(
     }
 
     fun calcResult(simulation: GossipSimulation, chokeResults: ChokeResult): RunResult {
-        val messageResult = simulation.gossipMessageCollector.gatherResult()
+        val messageResult = simulation.messageCollector.gatherResult()
         val messageGroups = simulation.publishedMessages
             .groupBy { it.sentTime }
             .values

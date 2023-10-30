@@ -55,7 +55,7 @@ class SimpleSimulation(
         simulation.forwardTimeUntilNoPendingMessages()
         logger("No more pending messages at time ${simulation.network.timeController.time}")
 
-        val messagesResult = simulation.gossipMessageCollector.gatherResult()
+        val messagesResult = simulation.messageCollector.gatherResult()
         logger("Network statistics: messages: ${messagesResult.getTotalMessageCount()}, traffic: ${messagesResult.getTotalTraffic()}")
 
         val deliveryStats = simulation.gatherPubDeliveryStats()
