@@ -5,22 +5,15 @@ import io.libp2p.simulate.Network
 import io.libp2p.simulate.pubsub.PubMessageGenerator
 import io.libp2p.simulate.pubsub.SimAbstractPeer
 import io.libp2p.simulate.stats.collect.ConnectionsMessageCollector
-import pubsub.pb.Rpc
 import pubsub.pb.Rpc.RPC
-
-typealias GossipMessageIdGenerator = (Rpc.Message) -> GossipMessageId
-
-fun SimAbstractPeer.getMessageIdGenerator(): GossipMessageIdGenerator = {
-    this.router.messageFactory(it).messageId
-}
 
 class GossipMessageCollector(
     network: Network,
     timeSupplier: CurrentTimeSupplier,
     val msgGenerator: PubMessageGenerator,
-    val gossipMessageIdGenerator: GossipMessageIdGenerator
+    val pubsubMessageIdGenerator: PubsubMessageIdGenerator
 ) : ConnectionsMessageCollector<RPC>(network, timeSupplier) {
 
     fun gatherResult() =
-        GossipMessageResult(deliveredMessages, msgGenerator, gossipMessageIdGenerator)
+        GossipMessageResult(deliveredMessages, msgGenerator, pubsubMessageIdGenerator)
 }

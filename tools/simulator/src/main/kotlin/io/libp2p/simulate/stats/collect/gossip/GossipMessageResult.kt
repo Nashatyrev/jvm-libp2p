@@ -8,14 +8,14 @@ import io.libp2p.simulate.pubsub.PubMessageGenerator
 import io.libp2p.simulate.stats.collect.CollectedMessage
 import pubsub.pb.Rpc
 
-typealias GossipMessageId = MessageId
+typealias PubsubMessageId = MessageId
 typealias SimMessageId = Long
 
 data class GossipMessageResult(
     val messages: List<CollectedMessage<Rpc.RPC>>,
     private val msgGenerator: PubMessageGenerator,
-    private val gossipMessageIdGenerator: GossipMessageIdGenerator,
-    private val gossipMessageIdToSimMessageIdHint: Map<GossipMessageId, SimMessageId> = emptyMap()
+    private val pubsubMessageIdGenerator: PubsubMessageIdGenerator,
+    private val pubsubMessageIdToSimMessageIdHint: Map<PubsubMessageId, SimMessageId> = emptyMap()
 ) {
 
     interface MessageWrapper<TMessage> {
@@ -70,7 +70,7 @@ data class GossipMessageResult(
     data class PubMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.Message>,
         val simMsgId: SimMessageId,
-        val gossipMsgId: GossipMessageId
+        val gossipMsgId: PubsubMessageId
     ) : MessageWrapper<Rpc.Message>
 
     val publishMessages by lazy {
@@ -81,7 +81,7 @@ data class GossipMessageResult(
                     PubMessageWrapper(
                         origMsg,
                         msgGenerator.messageIdRetriever(origMsg.message.data.toByteArray()),
-                        gossipMessageIdGenerator(pubMsg)
+                        pubsubMessageIdGenerator(pubMsg)
                     )
                 }
             }
@@ -95,8 +95,8 @@ data class GossipMessageResult(
             }
     }
 
-    private val gossipMessageIdToSimMessageIdMap: Map<GossipMessageId, SimMessageId> by lazy {
-        publishMessages.associate { it.gossipMsgId to it.simMsgId } + gossipMessageIdToSimMessageIdHint
+    private val pubsubMessageIdToSimMessageIdMap: Map<PubsubMessageId, SimMessageId> by lazy {
+        publishMessages.associate { it.gossipMsgId to it.simMsgId } + pubsubMessageIdToSimMessageIdHint
     }
 
     private fun <TMessage : AbstractMessage, TMsgWrapper : MessageWrapper<TMessage>> flattenControl(
@@ -124,7 +124,7 @@ data class GossipMessageResult(
             IHaveMessageWrapper(
                 it,
                 it.message.messageIDsList.map {
-                    gossipMessageIdToSimMessageIdMap[it.toWBytes()]
+                    pubsubMessageIdToSimMessageIdMap[it.toWBytes()]
                 }
             )
         })
@@ -134,7 +134,7 @@ data class GossipMessageResult(
             IWantMessageWrapper(
                 it,
                 it.message.messageIDsList.map {
-                    gossipMessageIdToSimMessageIdMap[it.toWBytes()]
+                    pubsubMessageIdToSimMessageIdMap[it.toWBytes()]
                 }
             )
         })
@@ -149,7 +149,7 @@ data class GossipMessageResult(
         flattenControl({ it.chokeMessageList }, {
             ChokeMessageMessageWrapper(
                 it,
-                gossipMessageIdToSimMessageIdMap[it.message.messageID.toWBytes()]
+                pubsubMessageIdToSimMessageIdMap[it.message.messageID.toWBytes()]
             )
         })
     }
@@ -246,5 +246,5 @@ data class GossipMessageResult(
     fun getTotalMessageCount() = messages.size
 
     private fun copyWithMessages(messages: List<CollectedMessage<Rpc.RPC>>) =
-        this.copy(messages = messages, gossipMessageIdToSimMessageIdHint = gossipMessageIdToSimMessageIdMap)
+        this.copy(messages = messages, pubsubMessageIdToSimMessageIdHint = pubsubMessageIdToSimMessageIdMap)
 }
