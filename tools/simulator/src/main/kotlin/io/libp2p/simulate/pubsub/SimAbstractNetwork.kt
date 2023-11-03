@@ -59,10 +59,10 @@ abstract class SimAbstractNetwork(
                         )
                     simPeer.outboundBandwidth =
                         AccurateBandwidthTracker(
-                            peerConfig.bandwidth.inbound,
+                            peerConfig.bandwidth.outbound,
                             simPeer.simExecutor,
                             simPeer.currentTime,
-                            name = "[$simPeer]-in"
+                            name = "[$simPeer]-out"
                         )
                 }
         return simPeer
