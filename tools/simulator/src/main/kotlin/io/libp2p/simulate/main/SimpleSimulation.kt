@@ -5,7 +5,10 @@ import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.RandomDistribution
 import io.libp2p.simulate.delay.latency.LatencyDistribution
-import io.libp2p.simulate.gossip.*
+import io.libp2p.simulate.pubsub.gossip.GossipSimConfig
+import io.libp2p.simulate.pubsub.gossip.GossipSimNetwork
+import io.libp2p.simulate.pubsub.gossip.GossipSimPeerConfigGenerator
+import io.libp2p.simulate.pubsub.gossip.GossipSimulation
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.tools.log

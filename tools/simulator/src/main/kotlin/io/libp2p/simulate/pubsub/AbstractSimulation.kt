@@ -1,4 +1,4 @@
-package io.libp2p.simulate.erasure
+package io.libp2p.simulate.pubsub
 
 import io.libp2p.core.pubsub.MessageApi
 import io.libp2p.core.pubsub.PubsubSubscription

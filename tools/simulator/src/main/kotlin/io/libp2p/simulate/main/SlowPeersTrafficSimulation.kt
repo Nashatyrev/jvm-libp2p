@@ -2,7 +2,7 @@ package io.libp2p.simulate.main
 
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.RandomDistribution
-import io.libp2p.simulate.gossip.Eth2DefaultGossipParams
+import io.libp2p.simulate.pubsub.gossip.Eth2DefaultGossipParams
 import io.libp2p.simulate.main.scenario.BlobDecouplingScenario
 import io.libp2p.simulate.main.scenario.Decoupling
 import io.libp2p.simulate.stats.collect.gossip.GossipMessageResult

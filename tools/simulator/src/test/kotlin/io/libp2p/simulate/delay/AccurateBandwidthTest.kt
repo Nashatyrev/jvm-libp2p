@@ -4,9 +4,15 @@ import io.libp2p.core.pubsub.Topic
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.delay.bandwidth.AccurateBandwidthTracker
 import io.libp2p.simulate.delay.bandwidth.AccurateBandwidthTracker.Message
-import io.libp2p.simulate.erasure.SimAbstractPeer
+import io.libp2p.simulate.pubsub.SimAbstractPeer
 import io.libp2p.simulate.gossip.*
-import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
+import io.libp2p.simulate.pubsub.gossip.router.SimGossipRouterBuilder
+import io.libp2p.simulate.pubsub.gossip.Eth2DefaultGossipParams
+import io.libp2p.simulate.pubsub.gossip.Eth2DefaultScoreParams
+import io.libp2p.simulate.pubsub.gossip.GossipSimConfig
+import io.libp2p.simulate.pubsub.gossip.GossipSimNetwork
+import io.libp2p.simulate.pubsub.gossip.GossipSimPeerConfigGenerator
+import io.libp2p.simulate.pubsub.gossip.GossipSimulation
 import io.libp2p.simulate.topology.AllToAllTopology
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.data.Offset

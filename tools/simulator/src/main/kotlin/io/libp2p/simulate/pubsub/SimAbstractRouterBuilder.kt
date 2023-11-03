@@ -1,4 +1,4 @@
-package io.libp2p.simulate.erasure.router
+package io.libp2p.simulate.pubsub
 
 import io.libp2p.pubsub.AbstractRouter
 import io.libp2p.pubsub.PubsubProtocol

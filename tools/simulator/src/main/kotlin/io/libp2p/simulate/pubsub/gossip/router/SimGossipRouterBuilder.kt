@@ -1,12 +1,11 @@
-package io.libp2p.simulate.gossip.router
+package io.libp2p.simulate.pubsub.gossip.router
 
 import io.libp2p.core.crypto.sha256
 import io.libp2p.etc.types.toWBytes
 import io.libp2p.pubsub.AbstractPubsubMessage
 import io.libp2p.pubsub.MessageId
-import io.libp2p.pubsub.gossip.GossipRouter
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
-import io.libp2p.simulate.erasure.router.SimAbstractRouterBuilder
+import io.libp2p.simulate.pubsub.SimAbstractRouterBuilder
 import pubsub.pb.Rpc
 import kotlin.time.Duration
 

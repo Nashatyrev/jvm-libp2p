@@ -2,7 +2,7 @@ package io.libp2p.simulate.main
 
 import io.libp2p.simulate.*
 import io.libp2p.simulate.delay.latency.LatencyDistribution
-import io.libp2p.simulate.gossip.Eth2DefaultGossipParams
+import io.libp2p.simulate.pubsub.gossip.Eth2DefaultGossipParams
 import io.libp2p.simulate.main.BlobDecouplingSimulation.MessageChoke.*
 import io.libp2p.simulate.main.EpisubSimulation.Companion.awsLatencyDistribution
 import io.libp2p.simulate.main.scenario.BlobDecouplingScenario

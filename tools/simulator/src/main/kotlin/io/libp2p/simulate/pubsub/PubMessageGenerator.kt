@@ -1,4 +1,4 @@
-package io.libp2p.simulate.erasure
+package io.libp2p.simulate.pubsub
 
 import com.google.protobuf.ByteString
 import io.libp2p.etc.types.toBytesBigEndian

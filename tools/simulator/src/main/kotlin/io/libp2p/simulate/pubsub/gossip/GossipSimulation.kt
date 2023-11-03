@@ -1,10 +1,7 @@
-package io.libp2p.simulate.gossip
+package io.libp2p.simulate.pubsub.gossip
 
-import io.libp2p.simulate.erasure.AbstractSimulation
-import io.libp2p.simulate.erasure.SimAbstractConfig
-import io.libp2p.simulate.erasure.SimAbstractNetwork
+import io.libp2p.simulate.pubsub.AbstractSimulation
 import io.libp2p.simulate.stats.collect.gossip.*
-import java.util.concurrent.CompletableFuture
 
 class GossipSimulation(
     cfg: GossipSimConfig,

@@ -3,8 +3,15 @@ package io.libp2p.simulate.gossip
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.simulate.*
 import io.libp2p.simulate.delay.latency.LatencyDistribution
-import io.libp2p.simulate.erasure.SimAbstractPeer
-import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
+import io.libp2p.simulate.pubsub.SimAbstractPeer
+import io.libp2p.simulate.pubsub.gossip.router.SimGossipRouterBuilder
+import io.libp2p.simulate.pubsub.gossip.BlocksTopic
+import io.libp2p.simulate.pubsub.gossip.Eth2DefaultGossipParams
+import io.libp2p.simulate.pubsub.gossip.Eth2DefaultScoreParams
+import io.libp2p.simulate.pubsub.gossip.GossipSimConfig
+import io.libp2p.simulate.pubsub.gossip.GossipSimNetwork
+import io.libp2p.simulate.pubsub.gossip.GossipSimPeerConfigGenerator
+import io.libp2p.simulate.pubsub.gossip.GossipSimulation
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.stats.collect.gossip.GossipMessageResult
 import io.libp2p.simulate.stats.collect.gossip.getGossipPubDeliveryResult

@@ -4,16 +4,24 @@ import io.libp2p.core.pubsub.Topic
 import io.libp2p.pubsub.PubsubProtocol
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.pubsub.gossip.GossipScoreParams
-import io.libp2p.simulate.*
+import io.libp2p.simulate.Bandwidth
+import io.libp2p.simulate.RandomDistribution
 import io.libp2p.simulate.delay.latency.LatencyDistribution
-import io.libp2p.simulate.gossip.*
-import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
+import io.libp2p.simulate.mbitsPerSecond
+import io.libp2p.simulate.pubsub.gossip.BlocksTopic
+import io.libp2p.simulate.pubsub.gossip.Eth2DefaultGossipParams
+import io.libp2p.simulate.pubsub.gossip.Eth2DefaultScoreParams
+import io.libp2p.simulate.pubsub.gossip.GossipRouterBuilderFactory
+import io.libp2p.simulate.pubsub.gossip.GossipSimConfig
+import io.libp2p.simulate.pubsub.gossip.GossipSimNetwork
+import io.libp2p.simulate.pubsub.gossip.GossipSimPeer
+import io.libp2p.simulate.pubsub.gossip.GossipSimPeerConfigGenerator
+import io.libp2p.simulate.pubsub.gossip.GossipSimulation
+import io.libp2p.simulate.pubsub.gossip.router.SimGossipRouterBuilder
 import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.tools.log
-import java.util.Random
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.toKotlinDuration
 
 enum class Decoupling {

@@ -4,7 +4,8 @@ import io.libp2p.core.pubsub.Subscriber
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.toByteBuf
 import io.libp2p.pubsub.PubsubProtocol
-import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
+import io.libp2p.simulate.pubsub.gossip.router.SimGossipRouterBuilder
+import io.libp2p.simulate.pubsub.gossip.GossipSimPeer
 import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl
 import io.libp2p.tools.schedulers.TimeControllerImpl
 import org.junit.jupiter.api.Assertions

@@ -1,11 +1,10 @@
-package io.libp2p.simulate.erasure
+package io.libp2p.simulate.pubsub
 
 import io.libp2p.pubsub.PubsubProtocol
 import io.libp2p.simulate.Network
 import io.libp2p.simulate.SimPeerId
 import io.libp2p.simulate.delay.TimeDelayer
 import io.libp2p.simulate.delay.bandwidth.AccurateBandwidthTracker
-import io.libp2p.simulate.erasure.router.SimAbstractRouterBuilder
 import io.libp2p.simulate.generateAndConnect
 import io.libp2p.simulate.stream.StreamSimConnection
 import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl

@@ -1,7 +1,7 @@
 package io.libp2p.simulate.stats.collect.gossip
 
-import io.libp2p.simulate.erasure.SimAbstractPeer
-import io.libp2p.simulate.gossip.GossipSimPeer
+import io.libp2p.simulate.pubsub.SimAbstractPeer
+import io.libp2p.simulate.pubsub.gossip.GossipSimPeer
 
 class GossipPubDeliveryResult(
     val deliveries: List<MessageDelivery>

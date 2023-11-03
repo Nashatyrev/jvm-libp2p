@@ -2,7 +2,13 @@ package io.libp2p.simulate.main
 
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.simulate.RandomDistribution
-import io.libp2p.simulate.gossip.*
+import io.libp2p.simulate.pubsub.gossip.BlocksTopic
+import io.libp2p.simulate.pubsub.gossip.Eth2DefaultGossipParams
+import io.libp2p.simulate.pubsub.gossip.Eth2DefaultScoreParams
+import io.libp2p.simulate.pubsub.gossip.GossipSimConfig
+import io.libp2p.simulate.pubsub.gossip.GossipSimNetwork
+import io.libp2p.simulate.pubsub.gossip.GossipSimPeerConfigGenerator
+import io.libp2p.simulate.pubsub.gossip.GossipSimulation
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.topology.RandomNPeers
 import kotlin.time.Duration.Companion.milliseconds

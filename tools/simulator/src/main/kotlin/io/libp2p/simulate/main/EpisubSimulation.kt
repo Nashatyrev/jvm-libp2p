@@ -10,10 +10,10 @@ import io.libp2p.simulate.delay.latency.LatencyDistribution
 import io.libp2p.simulate.delay.latency.aws.AwsLatencies
 import io.libp2p.simulate.delay.latency.aws.AwsRegion
 import io.libp2p.simulate.delay.latency.named
-import io.libp2p.simulate.gossip.Eth2DefaultGossipParams
-import io.libp2p.simulate.gossip.GossipSimPeer
-import io.libp2p.simulate.gossip.GossipSimulation
-import io.libp2p.simulate.gossip.router.SimGossipRouterBuilder
+import io.libp2p.simulate.pubsub.gossip.Eth2DefaultGossipParams
+import io.libp2p.simulate.pubsub.gossip.GossipSimPeer
+import io.libp2p.simulate.pubsub.gossip.GossipSimulation
+import io.libp2p.simulate.pubsub.gossip.router.SimGossipRouterBuilder
 import io.libp2p.simulate.main.PeerHonesty.Honest
 import io.libp2p.simulate.main.PeerHonesty.Malicious
 import io.libp2p.simulate.main.scenario.BlobDecouplingScenario

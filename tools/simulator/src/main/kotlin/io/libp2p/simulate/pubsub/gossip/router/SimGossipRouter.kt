@@ -1,4 +1,4 @@
-package io.libp2p.simulate.gossip.router
+package io.libp2p.simulate.pubsub.gossip.router
 
 import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.pubsub.*

@@ -4,7 +4,7 @@ import com.google.protobuf.AbstractMessage
 import io.libp2p.etc.types.toWBytes
 import io.libp2p.pubsub.MessageId
 import io.libp2p.simulate.SimPeer
-import io.libp2p.simulate.erasure.PubMessageGenerator
+import io.libp2p.simulate.pubsub.PubMessageGenerator
 import io.libp2p.simulate.stats.collect.CollectedMessage
 import pubsub.pb.Rpc
 
