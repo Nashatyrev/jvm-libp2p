@@ -1,4 +1,4 @@
-package io.libp2p.simulate.erasure
+package io.libp2p.simulate.pubsub
 
 import io.libp2p.core.PeerId
 import io.libp2p.core.Stream
@@ -6,7 +6,6 @@ import io.libp2p.core.pubsub.createPubsubApi
 import io.libp2p.etc.types.lazyVar
 import io.libp2p.pubsub.AbstractRouter
 import io.libp2p.pubsub.PubsubProtocol
-import io.libp2p.simulate.erasure.router.SimAbstractRouterBuilder
 import io.libp2p.simulate.stream.StreamSimPeer
 import io.netty.handler.logging.LogLevel
 import io.netty.handler.logging.LoggingHandler
