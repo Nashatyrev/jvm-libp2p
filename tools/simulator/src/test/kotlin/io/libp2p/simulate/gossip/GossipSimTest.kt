@@ -3,7 +3,6 @@ package io.libp2p.simulate.gossip
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.simulate.*
 import io.libp2p.simulate.delay.latency.LatencyDistribution
-import io.libp2p.simulate.pubsub.SimAbstractPeer
 import io.libp2p.simulate.pubsub.gossip.router.SimGossipRouterBuilder
 import io.libp2p.simulate.pubsub.gossip.BlocksTopic
 import io.libp2p.simulate.pubsub.gossip.Eth2DefaultGossipParams

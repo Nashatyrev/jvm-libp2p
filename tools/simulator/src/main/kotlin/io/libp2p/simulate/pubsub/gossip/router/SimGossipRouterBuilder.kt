@@ -5,11 +5,11 @@ import io.libp2p.etc.types.toWBytes
 import io.libp2p.pubsub.AbstractPubsubMessage
 import io.libp2p.pubsub.MessageId
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
-import io.libp2p.simulate.pubsub.SimAbstractRouterBuilder
+import io.libp2p.simulate.pubsub.SimPubsubRouterBuilder
 import pubsub.pb.Rpc
 import kotlin.time.Duration
 
-class SimGossipRouterBuilder : GossipRouterBuilder(), SimAbstractRouterBuilder {
+class SimGossipRouterBuilder : GossipRouterBuilder(), SimPubsubRouterBuilder {
     var serializeMessagesToBytes: Boolean = false
     var additionalHeartbeatDelay: Duration = Duration.ZERO
 

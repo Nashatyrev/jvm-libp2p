@@ -13,11 +13,11 @@ import io.netty.handler.logging.LoggingHandler
 import java.util.Random
 import java.util.concurrent.CompletableFuture
 
-open class SimAbstractPeer(
+open class SimPubsubPeer(
     override val simPeerId: Int,
     override val random: Random,
     protocol: PubsubProtocol,
-    val routerBuilder: SimAbstractRouterBuilder
+    val routerBuilder: SimPubsubRouterBuilder
 ) : StreamSimPeer<Unit>(true, protocol.announceStr) {
 
     protected var abstractRouter: AbstractRouter by lazyVar {
@@ -55,7 +55,7 @@ open class SimAbstractPeer(
     }
 }
 
-fun SimAbstractPeer.getMessageIdGenerator(): PubsubMessageIdGenerator = {
+fun SimPubsubPeer.getMessageIdGenerator(): PubsubMessageIdGenerator = {
     this.router.messageFactory(it).messageId
 }
 

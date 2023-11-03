@@ -11,8 +11,8 @@ import io.libp2p.simulate.pubsub.InOutBandwidth
 import io.libp2p.simulate.pubsub.MessageValidation
 import io.libp2p.simulate.pubsub.MessageValidationGenerator
 import io.libp2p.simulate.pubsub.PubMessageGenerator
-import io.libp2p.simulate.pubsub.SimAbstractConfig
-import io.libp2p.simulate.pubsub.SimAbstractPeerConfig
+import io.libp2p.simulate.pubsub.SimPubsubConfig
+import io.libp2p.simulate.pubsub.SimPubsubPeerConfig
 import io.libp2p.simulate.pubsub.trickyPubSubMsgSizeEstimator
 import io.libp2p.simulate.topology.RandomNPeers
 import java.util.Random
@@ -33,7 +33,7 @@ data class GossipSimPeerConfig(
 
     // Other
     override val bandwidth: InOutBandwidth,
-) : SimAbstractPeerConfig
+) : SimPubsubPeerConfig
 
 data class GossipSimConfig(
     override val peerConfigs: List<GossipSimPeerConfig>,
@@ -44,7 +44,7 @@ data class GossipSimConfig(
     override val topology: Topology = RandomNPeers(10),
     override val warmUpDelay: Duration = 10.seconds,
     override val randomSeed: Long = 0,
-) : SimAbstractConfig
+) : SimPubsubConfig
 
 data class GossipSimPeerConfigGenerator(
     // Gossip router config

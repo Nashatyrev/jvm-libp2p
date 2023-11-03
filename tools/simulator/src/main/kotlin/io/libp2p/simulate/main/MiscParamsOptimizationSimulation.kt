@@ -9,7 +9,7 @@ import io.libp2p.simulate.Topology
 import io.libp2p.simulate.delay.latency.LatencyDistribution
 import io.libp2p.simulate.milliseconds
 import io.libp2p.simulate.pubsub.MessageValidation
-import io.libp2p.simulate.pubsub.SimAbstractPeer
+import io.libp2p.simulate.pubsub.SimPubsubPeer
 import io.libp2p.simulate.pubsub.averagePubSubMsgSizeEstimator
 import io.libp2p.simulate.pubsub.gossip.GossipSimConfig
 import io.libp2p.simulate.pubsub.gossip.GossipSimNetwork
@@ -47,7 +47,7 @@ class MiscParamsOptimizationSimulation {
 
     data class GossipStats(
         val msgDelay: Stats,
-        val someMissingPeers: List<SimAbstractPeer> = emptyList()
+        val someMissingPeers: List<SimPubsubPeer> = emptyList()
     )
 
     data class FlatSimConfig(

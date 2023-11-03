@@ -1,6 +1,5 @@
 package io.libp2p.simulate.pubsub
 
-import io.libp2p.pubsub.PubsubProtocol
 import io.libp2p.simulate.Network
 import io.libp2p.simulate.SimPeerId
 import io.libp2p.simulate.delay.TimeDelayer
@@ -11,14 +10,13 @@ import io.libp2p.tools.schedulers.ControlledExecutorServiceImpl
 import io.libp2p.tools.schedulers.TimeControllerImpl
 import java.util.Random
 
-typealias AbstractRouterBuilderFactory = (SimPeerId) -> SimAbstractRouterBuilder
-typealias AbstractSimPeerModifier = (SimPeerId, SimAbstractPeer) -> Unit
+typealias PubsubRouterBuilderFactory = (SimPeerId) -> SimPubsubRouterBuilder
 
-abstract class SimAbstractNetwork(
-    val cfg: SimAbstractConfig,
-    val routerBuilderFactory: AbstractRouterBuilderFactory
+abstract class SimPubsubNetwork(
+    val cfg: SimPubsubConfig,
+    val routerBuilderFactory: PubsubRouterBuilderFactory
 ) {
-    open val peers = sortedMapOf<SimPeerId, SimAbstractPeer>()
+    open val peers = sortedMapOf<SimPeerId, SimPubsubPeer>()
     lateinit var network: Network
 
     val timeController = TimeControllerImpl()
@@ -28,11 +26,11 @@ abstract class SimAbstractNetwork(
     protected abstract fun createPeerInstance(
         simPeerId: Int,
         random: Random,
-        peerConfig: SimAbstractPeerConfig,
-        routerBuilder: SimAbstractRouterBuilder
-    ): SimAbstractPeer
+        peerConfig: SimPubsubPeerConfig,
+        routerBuilder: SimPubsubRouterBuilder
+    ): SimPubsubPeer
 
-    protected fun createSimPeer(number: SimPeerId): SimAbstractPeer {
+    protected fun createSimPeer(number: SimPeerId): SimPubsubPeer {
         val peerConfig = cfg.peerConfigs[number]
 
         val routerBuilder =

@@ -20,7 +20,7 @@ data class MessageValidation(
 
 typealias MessageValidationGenerator = (MessageApi) -> MessageValidation
 
-interface SimAbstractPeerConfig {
+interface SimPubsubPeerConfig {
     // Gossip router config
     val pubsubProtocol: PubsubProtocol
 
@@ -32,8 +32,8 @@ interface SimAbstractPeerConfig {
     val bandwidth: InOutBandwidth
 }
 
-interface SimAbstractConfig {
-    val peerConfigs: List<SimAbstractPeerConfig>
+interface SimPubsubConfig {
+    val peerConfigs: List<SimPubsubPeerConfig>
 
     val messageGenerator: PubMessageGenerator
     val latency: LatencyDistribution

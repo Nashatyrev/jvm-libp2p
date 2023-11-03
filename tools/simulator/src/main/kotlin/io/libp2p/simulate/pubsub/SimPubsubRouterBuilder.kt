@@ -6,7 +6,7 @@ import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import java.util.Random
 import java.util.concurrent.ScheduledExecutorService
 
-interface SimAbstractRouterBuilder {
+interface SimPubsubRouterBuilder {
 
     var name: String
     var scheduledAsyncExecutor: ScheduledExecutorService

@@ -5,8 +5,6 @@ import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.BandwidthDelayer
 import io.libp2p.simulate.delay.bandwidth.SequentialBandwidthTracker
 import io.libp2p.simulate.delay.bandwidth.SimpleBandwidthTracker
-import io.libp2p.simulate.pubsub.SimAbstractPeer
-import io.libp2p.simulate.gossip.*
 import io.libp2p.simulate.pubsub.gossip.router.SimGossipRouterBuilder
 import io.libp2p.simulate.pubsub.gossip.Eth2DefaultGossipParams
 import io.libp2p.simulate.pubsub.gossip.Eth2DefaultScoreParams

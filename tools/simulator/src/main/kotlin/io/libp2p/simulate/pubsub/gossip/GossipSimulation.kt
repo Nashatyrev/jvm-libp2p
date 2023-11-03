@@ -1,13 +1,13 @@
 package io.libp2p.simulate.pubsub.gossip
 
-import io.libp2p.simulate.pubsub.AbstractSimulation
+import io.libp2p.simulate.pubsub.PubsubSimulation
 import io.libp2p.simulate.pubsub.getMessageIdGenerator
 import io.libp2p.simulate.stats.collect.gossip.*
 
 class GossipSimulation(
     cfg: GossipSimConfig,
     network: GossipSimNetwork
-) : AbstractSimulation(cfg, network) {
+) : PubsubSimulation(cfg, network) {
 
     override val cfg: GossipSimConfig
         get() = super.cfg as GossipSimConfig

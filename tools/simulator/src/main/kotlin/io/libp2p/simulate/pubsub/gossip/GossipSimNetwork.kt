@@ -1,12 +1,10 @@
 package io.libp2p.simulate.pubsub.gossip
 
-import io.libp2p.pubsub.PubsubProtocol
 import io.libp2p.simulate.SimPeerId
-import io.libp2p.simulate.pubsub.AbstractSimPeerModifier
-import io.libp2p.simulate.pubsub.SimAbstractNetwork
-import io.libp2p.simulate.pubsub.SimAbstractPeer
-import io.libp2p.simulate.pubsub.SimAbstractPeerConfig
-import io.libp2p.simulate.pubsub.SimAbstractRouterBuilder
+import io.libp2p.simulate.pubsub.SimPubsubNetwork
+import io.libp2p.simulate.pubsub.SimPubsubPeer
+import io.libp2p.simulate.pubsub.SimPubsubPeerConfig
+import io.libp2p.simulate.pubsub.SimPubsubRouterBuilder
 import io.libp2p.simulate.pubsub.gossip.router.SimGossipRouterBuilder
 import java.util.*
 
@@ -15,7 +13,7 @@ typealias GossipRouterBuilderFactory = (SimPeerId) -> SimGossipRouterBuilder
 class GossipSimNetwork(
     cfg: GossipSimConfig,
     routerBuilderFactory: GossipRouterBuilderFactory = { SimGossipRouterBuilder() },
-) : SimAbstractNetwork(cfg, routerBuilderFactory) {
+) : SimPubsubNetwork(cfg, routerBuilderFactory) {
 
     @Suppress("UNCHECKED_CAST")
     val gossipPeers: Map<SimPeerId, GossipSimPeer>
@@ -24,9 +22,9 @@ class GossipSimNetwork(
     override fun createPeerInstance(
         simPeerId: Int,
         random: Random,
-        peerConfig: SimAbstractPeerConfig,
-        routerBuilder: SimAbstractRouterBuilder
-    ): SimAbstractPeer {
+        peerConfig: SimPubsubPeerConfig,
+        routerBuilder: SimPubsubRouterBuilder
+    ): SimPubsubPeer {
         routerBuilder as SimGossipRouterBuilder
         peerConfig as GossipSimPeerConfig
         routerBuilder.params = peerConfig.gossipParams

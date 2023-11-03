@@ -26,14 +26,14 @@ data class SimMessage(
     val pubResult: CompletableFuture<Unit>
 )
 
-abstract class AbstractSimulation(
-    open val cfg: SimAbstractConfig,
-    open val network: SimAbstractNetwork
+abstract class PubsubSimulation(
+    open val cfg: SimPubsubConfig,
+    open val network: SimPubsubNetwork
 ) {
 
     private val idCounter = AtomicLong(0)
 
-    private val subscriptions = mutableMapOf<SimAbstractPeer, MutableMap<Topic, PubsubSubscription>>()
+    private val subscriptions = mutableMapOf<SimPubsubPeer, MutableMap<Topic, PubsubSubscription>>()
 
     private val publishedMessagesMut = mutableListOf<SimMessage>()
     val publishedMessages: List<SimMessage> = publishedMessagesMut
@@ -62,7 +62,7 @@ abstract class AbstractSimulation(
         deliveredMessagesCount.computeIfAbsent(simMessageId) { AtomicInteger() }.incrementAndGet()
     }
 
-    fun subscribe(peer: SimAbstractPeer, topic: Topic) {
+    fun subscribe(peer: SimPubsubPeer, topic: Topic) {
         check(!(subscriptions[peer]?.contains(topic) ?: false))
         val subscription = peer.api.subscribe(
             Validator { message ->
@@ -86,7 +86,7 @@ abstract class AbstractSimulation(
         subscriptions.computeIfAbsent(peer) { mutableMapOf() }[topic] = subscription
     }
 
-    fun unsubscribe(peer: SimAbstractPeer, topic: Topic) {
+    fun unsubscribe(peer: SimPubsubPeer, topic: Topic) {
         val peerSubscriptions = subscriptions[peer]
             ?: throw IllegalArgumentException("No subscriptions found for peer $peer")
         val subscription = peerSubscriptions.remove(topic)
