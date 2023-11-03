@@ -42,8 +42,6 @@ abstract class AbstractSimulation(
 
     val currentTimeSupplier: CurrentTimeSupplier = { network.timeController.time }
 
-    protected val anyPeer get() = network.peers.values.first()
-
     abstract val messageCollector: ConnectionsMessageCollector<*>
 
     fun start() {

@@ -11,7 +11,6 @@ import io.libp2p.simulate.pubsub.gossip.router.SimGossipRouterBuilder
 import java.util.*
 
 typealias GossipRouterBuilderFactory = (SimPeerId) -> SimGossipRouterBuilder
-typealias GossipSimPeerModifier = (SimPeerId, GossipSimPeer) -> Unit
 
 class GossipSimNetwork(
     cfg: GossipSimConfig,
@@ -22,19 +21,17 @@ class GossipSimNetwork(
     val gossipPeers: Map<SimPeerId, GossipSimPeer>
         get() = super.peers as Map<SimPeerId, GossipSimPeer>
 
-    override fun alterRouterBuilder(builder: SimAbstractRouterBuilder, peerConfig: SimAbstractPeerConfig) {
-        builder as SimGossipRouterBuilder
-        peerConfig as GossipSimPeerConfig
-        builder.params = peerConfig.gossipParams
-        builder.scoreParams = peerConfig.gossipScoreParams
-        builder.additionalHeartbeatDelay = peerConfig.additionalHeartbeatDelay
-    }
-
     override fun createPeerInstance(
         simPeerId: Int,
         random: Random,
-        protocol: PubsubProtocol,
+        peerConfig: SimAbstractPeerConfig,
         routerBuilder: SimAbstractRouterBuilder
-    ): SimAbstractPeer =
-        GossipSimPeer(simPeerId,random,protocol, routerBuilder as SimGossipRouterBuilder)
+    ): SimAbstractPeer {
+        routerBuilder as SimGossipRouterBuilder
+        peerConfig as GossipSimPeerConfig
+        routerBuilder.params = peerConfig.gossipParams
+        routerBuilder.scoreParams = peerConfig.gossipScoreParams
+        routerBuilder.additionalHeartbeatDelay = peerConfig.additionalHeartbeatDelay
+        return GossipSimPeer(simPeerId, random, peerConfig.pubsubProtocol, routerBuilder as SimGossipRouterBuilder)
+    }
 }

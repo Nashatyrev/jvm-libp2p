@@ -25,12 +25,10 @@ abstract class SimAbstractNetwork(
     val commonRnd = Random(cfg.randomSeed)
     val commonExecutor = ControlledExecutorServiceImpl(timeController)
 
-    protected abstract fun alterRouterBuilder(builder: SimAbstractRouterBuilder, peerConfig: SimAbstractPeerConfig)
-
     protected abstract fun createPeerInstance(
         simPeerId: Int,
         random: Random,
-        protocol: PubsubProtocol,
+        peerConfig: SimAbstractPeerConfig,
         routerBuilder: SimAbstractRouterBuilder
     ): SimAbstractPeer
 
@@ -41,11 +39,10 @@ abstract class SimAbstractNetwork(
             routerBuilderFactory(number)
                 .also {
                     it.protocol = peerConfig.pubsubProtocol
-                    alterRouterBuilder(it, peerConfig)
                 }
 
         val simPeer =
-            createPeerInstance(number, commonRnd, peerConfig.pubsubProtocol, routerBuilder)
+            createPeerInstance(number, commonRnd, peerConfig, routerBuilder)
                 .also { simPeer ->
                     simPeer.simExecutor = commonExecutor
                     simPeer.currentTime = { timeController.time }
