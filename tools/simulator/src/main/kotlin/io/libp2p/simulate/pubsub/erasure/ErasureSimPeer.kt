@@ -1,7 +1,8 @@
-package io.libp2p.simulate.pubsub.episub
+package io.libp2p.simulate.pubsub.erasure
 
 import io.libp2p.pubsub.PubsubProtocol
 import io.libp2p.simulate.pubsub.SimPubsubPeer
+import io.libp2p.simulate.pubsub.erasure.router.SimErasureRouterBuilder
 import java.util.*
 
 class ErasureSimPeer(

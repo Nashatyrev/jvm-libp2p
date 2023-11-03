@@ -1,4 +1,4 @@
-package io.libp2p.simulate.pubsub.episub
+package io.libp2p.simulate.pubsub.erasure
 
 import io.libp2p.simulate.pubsub.PubsubSimulation
 import io.libp2p.simulate.stats.collect.ConnectionsMessageCollector
