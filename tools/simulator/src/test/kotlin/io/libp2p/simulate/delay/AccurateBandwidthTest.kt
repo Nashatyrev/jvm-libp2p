@@ -172,11 +172,7 @@ class AccurateBandwidthTest {
         }
     }
 
-    val simPeerModifier = { _: Int, _: SimAbstractPeer ->
-//            peer.pubsubLogs = { true }
-    }
-
-    val simNetwork = GossipSimNetwork(simConfig, gossipRouterCtor, simPeerModifier).also {
+    val simNetwork = GossipSimNetwork(simConfig, gossipRouterCtor).also {
         println("Creating peers...")
         it.createAllPeers()
     }

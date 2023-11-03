@@ -16,8 +16,7 @@ typealias AbstractSimPeerModifier = (SimPeerId, SimAbstractPeer) -> Unit
 
 abstract class SimAbstractNetwork(
     val cfg: SimAbstractConfig,
-    val routerBuilderFactory: AbstractRouterBuilderFactory,
-    val simPeerModifier: AbstractSimPeerModifier = { _, _ -> }
+    val routerBuilderFactory: AbstractRouterBuilderFactory
 ) {
     open val peers = sortedMapOf<SimPeerId, SimAbstractPeer>()
     lateinit var network: Network
@@ -65,7 +64,6 @@ abstract class SimAbstractNetwork(
                             simPeer.currentTime,
                             name = "[$simPeer]-in"
                         )
-                    simPeerModifier(number, simPeer)
                 }
         return simPeer
     }

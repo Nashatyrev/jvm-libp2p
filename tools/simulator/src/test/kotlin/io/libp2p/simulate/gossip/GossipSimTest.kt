@@ -47,11 +47,7 @@ class GossipSimTest {
             }
         }
 
-        val simPeerModifier = { _: Int, _: SimAbstractPeer ->
-//            peer.pubsubLogs = { true }
-        }
-
-        val simNetwork = GossipSimNetwork(simConfig, gossipRouterCtor, simPeerModifier)
+        val simNetwork = GossipSimNetwork(simConfig, gossipRouterCtor)
         println("Creating peers...")
         simNetwork.createAllPeers()
         println("Connecting peers...")

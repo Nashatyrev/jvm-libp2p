@@ -16,8 +16,7 @@ typealias GossipSimPeerModifier = (SimPeerId, GossipSimPeer) -> Unit
 class GossipSimNetwork(
     cfg: GossipSimConfig,
     routerBuilderFactory: GossipRouterBuilderFactory = { SimGossipRouterBuilder() },
-    simPeerModifier: AbstractSimPeerModifier = { _, _ -> }
-) : SimAbstractNetwork(cfg, routerBuilderFactory, simPeerModifier) {
+) : SimAbstractNetwork(cfg, routerBuilderFactory) {
 
     @Suppress("UNCHECKED_CAST")
     val gossipPeers: Map<SimPeerId, GossipSimPeer>
