@@ -1,5 +1,6 @@
 package io.libp2p.simulate.main
 
+import io.libp2p.simulate.main.sample.SimpleSimulation
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.util.smartRound
 import org.assertj.core.api.Assertions.assertThat

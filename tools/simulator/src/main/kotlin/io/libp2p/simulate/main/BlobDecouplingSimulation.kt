@@ -181,20 +181,12 @@ class BlobDecouplingSimulation(
         printResults(paramsSet.zip(results).toMap())
     }
 
-    interface NumberSeries<TNum : Number> {
-        val numbers: List<TNum>
-    }
-
-    class LongSeries(
-        override val numbers: List<Long>
-    ) : NumberSeries<Long>
-
     class RunResult1(
         messages: GossipMessageResult,
         deliveryResult: GossipPubDeliveryResult =
             messages.getGossipPubDeliveryResult().aggregateSlowestByPublishTime()
     ) {
-        val deliveryDelays = LongSeries(deliveryResult.deliveryDelays)
+        val deliveryDelays = deliveryResult.deliveryDelays
 
         val msgCount = messages.getTotalMessageCount()
         val traffic = messages.getTotalTraffic()
@@ -208,7 +200,7 @@ class BlobDecouplingSimulation(
 
     private fun printResults(res: Map<SimParams, RunResult1>) {
         val printer = ResultPrinter(res).apply {
-            addNumberStats { it.deliveryDelays.numbers }
+            addNumberStats { it.deliveryDelays }
                 .apply {
                     addGeneric("count") { it.size }
                     addLong("min") { it.min }
@@ -236,7 +228,7 @@ class BlobDecouplingSimulation(
         println("Ranged delays:")
         println("======================")
         println(printer
-            .createRangedLongStats { it.deliveryDelays.numbers }
+            .createRangedLongStats { it.deliveryDelays }
             .apply {
                 minValue = 0
                 rangeSize = 50

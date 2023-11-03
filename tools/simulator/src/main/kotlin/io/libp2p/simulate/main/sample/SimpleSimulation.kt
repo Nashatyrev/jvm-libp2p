@@ -1,4 +1,4 @@
-package io.libp2p.simulate.main
+package io.libp2p.simulate.main.sample
 
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.pubsub.gossip.GossipParams
