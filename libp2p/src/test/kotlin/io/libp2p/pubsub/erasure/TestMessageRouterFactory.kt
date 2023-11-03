@@ -3,12 +3,10 @@ package io.libp2p.pubsub.erasure
 import io.libp2p.core.PeerId
 import io.libp2p.pubsub.erasure.message.MutableSampledMessage
 import io.libp2p.pubsub.erasure.message.SampledMessage
-import io.libp2p.pubsub.erasure.message.isComplete
 import io.libp2p.pubsub.erasure.router.AbstractMessagePeerHandler
 import io.libp2p.pubsub.erasure.router.MessagePeerHandlerFactory
 import io.libp2p.pubsub.erasure.router.MessageRouter
 import io.libp2p.pubsub.erasure.router.MessageRouterFactory
-import io.libp2p.pubsub.erasure.router.PublishingMessageRouter
 import io.libp2p.pubsub.erasure.router.RelayingMessageRouter
 import io.libp2p.pubsub.erasure.router.SimpleMessagePeerHandler
 import io.libp2p.pubsub.erasure.router.strategy.AckSendStrategy

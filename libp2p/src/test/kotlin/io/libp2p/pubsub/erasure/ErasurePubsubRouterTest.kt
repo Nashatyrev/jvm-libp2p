@@ -30,7 +30,6 @@ class ErasureFuzzRouterFactory(
     val sampleSize: Int,
     val extensionFactor: Int,
     val ackSendStrategy: (SampledMessage) -> AckSendStrategy,
-    //val sampleSendStrategy: () -> SampleSendStrategy = { SampleSendStrategy.sendAll() }
     val sampleSendStrategy: (SampledMessage) -> SampleSendStrategy,
     val random: Random = Random(1)
 ) : DeterministicFuzzRouterFactory {
@@ -42,7 +41,7 @@ class ErasureFuzzRouterFactory(
         timeSupplier: CurrentTimeSupplier,
         random: java.util.Random
     ): PubsubRouterDebug {
-        val erasureCoder: ErasureCoder = TestErasureCoder(sampleSize, 4)
+        val erasureCoder: ErasureCoder = TestErasureCoder(sampleSize, extensionFactor)
         val messageRouterFactory: MessageRouterFactory = TestMessageRouterFactory(random, ackSendStrategy, sampleSendStrategy)
 
         val erasureRouter = ErasureRouter(executor, erasureCoder, messageRouterFactory)
