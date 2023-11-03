@@ -84,6 +84,7 @@ message ErasureHeader {
 	required bytes messageID = 2;
 	required int32 totalSampleCount = 3;
 	required int32 recoverSampleCount = 4;
+	optional bytes data = 5;
 }
 
 message ErasureAck {
