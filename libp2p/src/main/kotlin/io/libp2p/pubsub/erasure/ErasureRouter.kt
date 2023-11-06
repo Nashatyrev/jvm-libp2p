@@ -139,6 +139,7 @@ class ErasureRouter(
                     .setMessageID(msg.messageId.toProtobuf())
                     .setTotalSampleCount(msg.totalSampleCount)
                     .setRecoverSampleCount(msg.recoverSampleCount)
+                    .setData(msg.payload.toProtobuf())
             }
             is ErasureSample -> peerParts.addSample(msg)
             is MessageACK -> peerParts.addAck(msg)
@@ -151,7 +152,8 @@ class ErasureRouter(
                 header.topicID,
                 header.messageID.toWBytes(),
                 header.totalSampleCount,
-                header.recoverSampleCount
+                header.recoverSampleCount,
+                header.data.toWBytes()
             ),
             from
         )

@@ -23,11 +23,11 @@ interface MutableSampleBox : ObservableSampleBox {
 }
 
 
-class SamplesBoxImpl : MutableSampleBox {
+class SamplesBoxImpl(
+    override val samples: MutableSet<ErasureSample> = mutableSetOf()
+) : MutableSampleBox {
 
     override val observers: MutableList<SampleBoxObserver> = CopyOnWriteArrayList()
-
-    override val samples: MutableSet<ErasureSample> = mutableSetOf()
 
     override fun addSamples(addedSamples: Collection<ErasureSample>) {
         val newSamples = addedSamples.toSet() - samples

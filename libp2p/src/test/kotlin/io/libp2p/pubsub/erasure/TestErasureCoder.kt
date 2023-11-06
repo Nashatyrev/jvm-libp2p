@@ -28,7 +28,7 @@ class TestErasureCoder(
         val originalSamplesCount = (msg.blob.array.size - 1) / sampleSize + 1
         val extendedSamplesCount = originalSamplesCount * extensionFactor
 
-        val header = ErasureHeaderImpl(msg.topic, msg.messageId, extendedSamplesCount, originalSamplesCount)
+        val header = ErasureHeaderImpl(msg.topic, msg.messageId, extendedSamplesCount, originalSamplesCount, WBytes.EMPTY)
         val sampleBytes = msg.blob.slice(0, sampleSize)
         val samples = generateTestSamples(extendedSamplesCount, msg.messageId, sampleBytes)
         val sampleBox = SamplesBoxImpl()

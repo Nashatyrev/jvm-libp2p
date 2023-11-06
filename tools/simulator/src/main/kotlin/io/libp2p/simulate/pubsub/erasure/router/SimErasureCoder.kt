@@ -1,8 +1,6 @@
 package io.libp2p.simulate.pubsub.erasure.router
 
-import io.libp2p.etc.types.WBytes
-import io.libp2p.etc.types.repeat
-import io.libp2p.etc.types.slice
+import io.libp2p.etc.types.toWBytes
 import io.libp2p.pubsub.MessageId
 import io.libp2p.pubsub.erasure.ErasureCoder
 import io.libp2p.pubsub.erasure.message.ErasureSample
@@ -12,54 +10,64 @@ import io.libp2p.pubsub.erasure.message.SamplesBoxImpl
 import io.libp2p.pubsub.erasure.message.SourceMessage
 import io.libp2p.pubsub.erasure.message.impl.ErasureHeaderImpl
 import io.libp2p.pubsub.erasure.message.impl.SampledMessageImpl
-import io.libp2p.simulate.pubsub.PubsubMessageSizes
+import io.libp2p.simulate.pubsub.MessageBodyGenerator
+import io.libp2p.simulate.stats.collect.gossip.SimMessageId
 
 class SimErasureCoder(
     val sampleSize: Int,
     val extensionFactor: Int,
     val proofSize: Int,
-    val pubsubMessageSizes: PubsubMessageSizes
+    val headerSize: Int,
+    messageBodyGenerator: MessageBodyGenerator
 ) : ErasureCoder {
 
-    private fun generateTestSamples(count: Int, messageId: MessageId, sampleData: WBytes): List<ErasureSample> =
+    val messageSizeRetriever = messageBodyGenerator.messageSizeRetriever
+    val messageSimIdRetriever = messageBodyGenerator.messageIdRetriever
+    val msgGenerator = messageBodyGenerator.msgGenerator
+
+    private fun generateSamples(count: Int, messageId: MessageId, simMessageId: SimMessageId): List<ErasureSample> =
         (0 until count)
             .map { sampleIndex ->
-                ErasureSample(messageId, sampleIndex, sampleData)
+                val samplePayload =
+                    msgGenerator(simMessageId, sampleSize + proofSize)
+                        .toWBytes()
+                ErasureSample(messageId, sampleIndex, samplePayload)
             }
 
     override fun extend(msg: SourceMessage): SampledMessage {
-        TODO()
-//        val origMessageSize = pubMessageGenerator.sizeEstimator()
-        val originalSamplesCount = (msg.blob.array.size - 1) / sampleSize + 1
+        val origMessageSize = messageSizeRetriever(msg.blob.array)
+        val origSimMessageId = messageSimIdRetriever(msg.blob.array)
+        val originalSamplesCount = (origMessageSize - 1) / sampleSize + 1
         val extendedSamplesCount = originalSamplesCount * extensionFactor
 
-        val adjustedMessageSize = originalSamplesCount * sampleSize
+        val headerPayload =
+            msgGenerator(origSimMessageId, headerSize).toWBytes()
+        val header =
+            ErasureHeaderImpl(msg.topic, msg.messageId, extendedSamplesCount, originalSamplesCount, headerPayload)
 
-        val header = ErasureHeaderImpl(msg.topic, msg.messageId, extendedSamplesCount, originalSamplesCount)
-        val sampleBytes = msg.blob.slice(0, sampleSize)
-        val samples = generateTestSamples(extendedSamplesCount, msg.messageId, sampleBytes)
-        val sampleBox = SamplesBoxImpl()
-        sampleBox.addSamples(samples)
-        return SampledMessageImpl(header, this, sampleBox)
+        val erasureSamples = generateSamples(extendedSamplesCount, msg.messageId, origSimMessageId)
+
+        return SampledMessageImpl(header, this, SamplesBoxImpl(erasureSamples.toMutableSet()))
     }
 
     override fun restore(sampledMessage: MutableSampledMessage): SourceMessage {
-        TODO()
         require(sampledMessage.sampleBox.samples.size >= sampledMessage.header.recoverSampleCount)
         require(sampledMessage.sampleBox.samples.map { it.data }.distinct().size == 1)
         val sampleBytes = sampledMessage.sampleBox.samples.first().data
+        val messsageSimId = messageSimIdRetriever(sampleBytes.array)
         val allSamples =
-            generateTestSamples(
+            generateSamples(
                 sampledMessage.header.totalSampleCount,
                 sampledMessage.header.messageId,
-                sampleBytes
+                messsageSimId
             ).toSet()
         val missingSamples = allSamples - sampledMessage.sampleBox.samples
         sampledMessage.sampleBox.addSamples(missingSamples)
+        val msgBody = msgGenerator(messsageSimId, sampledMessage.header.recoverSampleCount * sampleSize)
         return SourceMessage(
             sampledMessage.header.topic,
             sampledMessage.header.messageId,
-            sampleBytes.repeat(sampledMessage.header.recoverSampleCount)
+            msgBody.toWBytes()
         )
     }
 }

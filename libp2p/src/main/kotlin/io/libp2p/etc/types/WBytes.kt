@@ -22,6 +22,10 @@ class WBytes(val array: ByteArray) {
     }
 
     override fun toString() = array.toHex()
+
+    companion object {
+        val EMPTY = WBytes(ByteArray(0))
+    }
 }
 
 fun ByteArray.toWBytes() = WBytes(this)
