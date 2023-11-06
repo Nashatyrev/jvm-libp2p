@@ -1,6 +1,7 @@
 package io.libp2p.simulate.pubsub.erasure
 
 import io.libp2p.simulate.SimPeerId
+import io.libp2p.simulate.pubsub.SimPubsubConfig
 import io.libp2p.simulate.pubsub.SimPubsubNetwork
 import io.libp2p.simulate.pubsub.SimPubsubPeer
 import io.libp2p.simulate.pubsub.SimPubsubPeerConfig
@@ -18,8 +19,15 @@ class ErasureSimNetwork(
     override fun createPeerInstance(
         simPeerId: Int,
         random: Random,
+        simConfig: SimPubsubConfig,
         peerConfig: SimPubsubPeerConfig,
         routerBuilder: SimPubsubRouterBuilder
-    ): SimPubsubPeer =
-        ErasureSimPeer(simPeerId,random,routerBuilder as SimErasureRouterBuilder)
+    ): SimPubsubPeer {
+        routerBuilder as SimErasureRouterBuilder
+        simConfig as ErasureSimConfig
+        routerBuilder.sampleSendStrategy = simConfig.sampleSendStrategy
+        routerBuilder.ackSendStrategy = simConfig.ackSendStrategy
+        routerBuilder.simErasureCoder = simConfig.simErasureCoder
+        return ErasureSimPeer(simPeerId, random, routerBuilder)
+    }
 }

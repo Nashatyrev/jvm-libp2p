@@ -1,6 +1,7 @@
 package io.libp2p.simulate.pubsub.gossip
 
 import io.libp2p.simulate.SimPeerId
+import io.libp2p.simulate.pubsub.SimPubsubConfig
 import io.libp2p.simulate.pubsub.SimPubsubNetwork
 import io.libp2p.simulate.pubsub.SimPubsubPeer
 import io.libp2p.simulate.pubsub.SimPubsubPeerConfig
@@ -22,6 +23,7 @@ class GossipSimNetwork(
     override fun createPeerInstance(
         simPeerId: Int,
         random: Random,
+        simConfig: SimPubsubConfig,
         peerConfig: SimPubsubPeerConfig,
         routerBuilder: SimPubsubRouterBuilder
     ): SimPubsubPeer {

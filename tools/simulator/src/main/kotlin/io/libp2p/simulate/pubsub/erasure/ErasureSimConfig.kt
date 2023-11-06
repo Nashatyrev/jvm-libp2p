@@ -3,6 +3,9 @@ package io.libp2p.simulate.pubsub.erasure
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.pubsub.PubsubProtocol
+import io.libp2p.pubsub.erasure.message.SampledMessage
+import io.libp2p.pubsub.erasure.router.strategy.AckSendStrategy
+import io.libp2p.pubsub.erasure.router.strategy.SampleSendStrategy
 import io.libp2p.simulate.*
 import io.libp2p.simulate.delay.latency.LatencyDistribution
 import io.libp2p.simulate.pubsub.InOutBandwidth
@@ -12,6 +15,7 @@ import io.libp2p.simulate.pubsub.PubsubMessageSizes
 import io.libp2p.simulate.pubsub.SimPubsubConfig
 import io.libp2p.simulate.pubsub.SimPubsubPeerConfig
 import io.libp2p.simulate.pubsub.createGenericPubsubMessageSizes
+import io.libp2p.simulate.pubsub.erasure.router.SimErasureCoder
 import io.libp2p.simulate.pubsub.trickyMessageBodyGenerator
 import io.libp2p.simulate.topology.RandomNPeers
 import java.util.Random
@@ -36,6 +40,10 @@ data class ErasureSimConfig(
     override val topology: Topology = RandomNPeers(10),
     override val warmUpDelay: Duration = 10.seconds,
     override val randomSeed: Long = 0,
+
+    val ackSendStrategy: (SampledMessage) -> AckSendStrategy,
+    val sampleSendStrategy: (SampledMessage) -> SampleSendStrategy,
+    val simErasureCoder: SimErasureCoder
 ) : SimPubsubConfig
 
 data class ErasureSimPeerConfigGenerator(

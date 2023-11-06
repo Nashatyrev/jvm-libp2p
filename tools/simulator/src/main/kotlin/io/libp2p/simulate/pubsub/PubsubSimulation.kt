@@ -5,6 +5,7 @@ import io.libp2p.core.pubsub.PubsubSubscription
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.core.pubsub.Validator
+import io.libp2p.pubsub.MessageId
 import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import io.libp2p.simulate.SimPeerId
 import io.libp2p.simulate.stats.collect.ConnectionsMessageCollector
@@ -26,6 +27,12 @@ data class SimMessage(
     val pubResult: CompletableFuture<Unit>
 )
 
+data class SimMessageDelivery(
+    val message: SimMessage,
+    val receivingPeer: Int,
+    val receiveTime: Long,
+)
+
 abstract class PubsubSimulation(
     open val cfg: SimPubsubConfig,
     open val network: SimPubsubNetwork
@@ -35,10 +42,12 @@ abstract class PubsubSimulation(
 
     private val subscriptions = mutableMapOf<SimPubsubPeer, MutableMap<Topic, PubsubSubscription>>()
 
-    private val publishedMessagesMut = mutableListOf<SimMessage>()
-    val publishedMessages: List<SimMessage> = publishedMessagesMut
+    private val publishedMessagesMut = LinkedHashMap<SimMessageId, SimMessage>()
+    val publishedMessages: List<SimMessage> get() = publishedMessagesMut.values.toList()
     private val pendingValidationCount = AtomicInteger()
     private val deliveredMessagesCount = mutableMapOf<SimMessageId, AtomicInteger>()
+
+    val apiMessageDeliveries = mutableListOf<SimMessageDelivery>()
 
     val currentTimeSupplier: CurrentTimeSupplier = { network.timeController.time }
 
@@ -57,16 +66,21 @@ abstract class PubsubSimulation(
         }
     }
 
-    private fun onNewApiMessage(msg: MessageApi) {
+    private fun onNewApiMessage(receivingPeer: SimPubsubPeer, msg: MessageApi) {
         val simMessageId = cfg.pubsubMessageSizes.messageBodyGenerator.messageIdRetriever(msg.data.array())
         deliveredMessagesCount.computeIfAbsent(simMessageId) { AtomicInteger() }.incrementAndGet()
+        apiMessageDeliveries += SimMessageDelivery(
+            publishedMessagesMut[simMessageId]!!,
+            receivingPeer.simPeerId,
+            currentTimeSupplier()
+        )
     }
 
     fun subscribe(peer: SimPubsubPeer, topic: Topic) {
         check(!(subscriptions[peer]?.contains(topic) ?: false))
         val subscription = peer.api.subscribe(
             Validator { message ->
-                onNewApiMessage(message)
+                onNewApiMessage(peer, message)
                 val (validationDelay, validationResult) =
                     cfg.peerConfigs[peer.simPeerId].messageValidationGenerator(message)
                 if (validationDelay == Duration.ZERO) {
@@ -135,7 +149,7 @@ abstract class PubsubSimulation(
         val msg = Unpooled.wrappedBuffer(cfg.pubsubMessageSizes.messageBodyGenerator.msgGenerator(msgId, size))
         val future = peer.apiPublisher.publish(msg, topic)
         val ret = SimMessage(msgId, srcPeer, network.timeController.time, future)
-        publishedMessagesMut += ret
+        publishedMessagesMut[msgId] = ret
         return ret
     }
 

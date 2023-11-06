@@ -16,7 +16,7 @@ import io.libp2p.simulate.stats.collect.gossip.SimMessageId
 class SimErasureCoder(
     val sampleSize: Int,
     val extensionFactor: Int,
-    val proofSize: Int,
+    val sampleExtraSize: Int, // proof size + erasure coding extra
     val headerSize: Int,
     messageBodyGenerator: MessageBodyGenerator
 ) : ErasureCoder {
@@ -29,7 +29,7 @@ class SimErasureCoder(
         (0 until count)
             .map { sampleIndex ->
                 val samplePayload =
-                    msgGenerator(simMessageId, sampleSize + proofSize)
+                    msgGenerator(simMessageId, sampleSize + sampleExtraSize)
                         .toWBytes()
                 ErasureSample(messageId, sampleIndex, samplePayload)
             }

@@ -1,4 +1,4 @@
-package io.libp2p.simulate.gossip
+package io.libp2p.simulate.pubsub.gossip
 
 import io.libp2p.core.pubsub.Subscriber
 import io.libp2p.core.pubsub.Topic

@@ -15,11 +15,7 @@ import io.libp2p.simulate.pubsub.SimPubsubRouterBuilder
 import java.util.Random
 import java.util.concurrent.ScheduledExecutorService
 
-class SimErasureRouterBuilder(
-    val ackSendStrategy: (SampledMessage) -> AckSendStrategy,
-    val sampleSendStrategy: (SampledMessage) -> SampleSendStrategy,
-    val simErasureCoder: SimErasureCoder
-) : SimPubsubRouterBuilder {
+class SimErasureRouterBuilder : SimPubsubRouterBuilder {
 
     override var name: String = ""
     override lateinit var scheduledAsyncExecutor: ScheduledExecutorService
@@ -27,9 +23,13 @@ class SimErasureRouterBuilder(
     override lateinit var random: Random
     override var protocol: PubsubProtocol = PubsubProtocol.ErasureSub
 
+    lateinit var ackSendStrategy: (SampledMessage) -> AckSendStrategy
+    lateinit var sampleSendStrategy: (SampledMessage) -> SampleSendStrategy
+    lateinit var simErasureCoder: SimErasureCoder
+
     override fun build(): ErasureRouter {
         val simMessageRouterFactory = SimMessageRouterFactory(random, ackSendStrategy, sampleSendStrategy)
-        return ErasureRouter(
+        return SimErasureRouter(
             scheduledAsyncExecutor,
             simErasureCoder,
             simMessageRouterFactory

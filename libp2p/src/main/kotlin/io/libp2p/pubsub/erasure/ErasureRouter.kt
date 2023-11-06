@@ -1,6 +1,7 @@
 package io.libp2p.pubsub.erasure
 
 import io.libp2p.core.PeerId
+import io.libp2p.core.crypto.sha256
 import io.libp2p.etc.types.WBytes
 import io.libp2p.etc.types.toProtobuf
 import io.libp2p.etc.types.toWBytes
@@ -30,7 +31,7 @@ import pubsub.pb.Rpc.RPC
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
 
-class ErasureRouter(
+open class ErasureRouter(
     executor: ExecutorService,
     val erasureCoder: ErasureCoder,
     val messageRouterFactory: MessageRouterFactory
@@ -39,7 +40,7 @@ class ErasureRouter(
     PubsubProtocol.ErasureSub,
     TopicSubscriptionFilter.AllowAllTopicSubscriptionFilter(),
     Int.MAX_VALUE,
-    NoopPubsubMessageFactory(),
+    ErasurePubsubMessageFactory(),
     NoopSeenCache(),
     NoopPubsubRouterMessageValidator()
 ) {
@@ -242,12 +243,6 @@ class ErasureRouter(
         }
     }
 
-    class NoopPubsubMessageFactory : PubsubMessageFactory {
-        override fun invoke(p1: Rpc.Message): PubsubMessage {
-            throw IllegalStateException("Shouldn't get here")
-        }
-    }
-
     class NoopPubsubRouterMessageValidator : PubsubRouterMessageValidator {
         override fun validate(msg: PubsubMessage) {
             throw IllegalStateException("Shouldn't get here")
@@ -307,6 +302,16 @@ class ErasureRouter(
 
         override fun isEmpty(): Boolean {
             return super.isEmpty() && sampleQueue.isEmpty() && lastAck == null
+        }
+    }
+
+    class ErasurePubsubMessageFactory : PubsubMessageFactory {
+        override fun invoke(rpcMsg: Rpc.Message): PubsubMessage {
+            return ErasurePubsubMessage(
+                sha256(rpcMsg.data.toByteArray()).toWBytes(),
+                rpcMsg.getTopicIDs(0),
+                rpcMsg.data.toWBytes()
+            )
         }
     }
 

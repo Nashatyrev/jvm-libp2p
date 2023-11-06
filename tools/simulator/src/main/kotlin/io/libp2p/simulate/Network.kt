@@ -13,5 +13,5 @@ class ImmutableNetworkImpl(
     override val activeConnections: List<SimConnection>,
     override val topologyGraph: TopologyGraph
 ) : Network {
-    override val peers = activeConnections.map { it.dialer }.distinct()
+    override val peers = activeConnections.flatMap { listOf(it.dialer, it.listener) }.distinct()
 }

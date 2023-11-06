@@ -26,6 +26,7 @@ abstract class SimPubsubNetwork(
     protected abstract fun createPeerInstance(
         simPeerId: Int,
         random: Random,
+        simConfig: SimPubsubConfig,
         peerConfig: SimPubsubPeerConfig,
         routerBuilder: SimPubsubRouterBuilder
     ): SimPubsubPeer
@@ -37,10 +38,11 @@ abstract class SimPubsubNetwork(
             routerBuilderFactory(number)
                 .also {
                     it.protocol = peerConfig.pubsubProtocol
+                    it.name = "$number"
                 }
 
         val simPeer =
-            createPeerInstance(number, commonRnd, peerConfig, routerBuilder)
+            createPeerInstance(number, commonRnd, cfg, peerConfig, routerBuilder)
                 .also { simPeer ->
                     simPeer.simExecutor = commonExecutor
                     simPeer.currentTime = { timeController.time }

@@ -67,6 +67,13 @@ data class GossipMessageResult(
         override fun toString() = "Unchoke[$origMsg, topicId: '${origMsg.message.topicID}']"
     }
 
+    data class ErasureSampleMessageWrapper(
+        override val origMsg: CollectedMessage<Rpc.ErasureSample>,
+        val simMsgId: SimMessageId
+    ) : MessageWrapper<Rpc.ErasureSample> {
+        override fun toString() = "ErasureSample[id:$simMsgId, sampleIndex: '${origMsg.message.sampleIndex}']"
+    }
+
     data class PubMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.Message>,
         val simMsgId: SimMessageId,
@@ -153,12 +160,24 @@ data class GossipMessageResult(
             )
         })
     }
+    val erasureSampleMessages by lazy {
+        messages
+            .flatMap { collMsg ->
+                collMsg.message.erasureSampleList.map { pubMsg ->
+                    val origMsg = collMsg.withMessage(pubMsg)
+                    ErasureSampleMessageWrapper(
+                        origMsg,
+                        msgGenerator.messageBodyGenerator.messageIdRetriever(origMsg.message.data.toByteArray())
+                    )
+                }
+            }
+    }
 
     val allGossipMessages by lazy {
         (publishMessages + graftMessages + pruneMessages +
                 iHaveMessages + iWantMessages +
                 chokeMessages + unchokeMessages +
-                chokeMessageMessages)
+                chokeMessageMessages + erasureSampleMessages)
             .sortedBy { it.origMsg.sendTime }
     }
 
