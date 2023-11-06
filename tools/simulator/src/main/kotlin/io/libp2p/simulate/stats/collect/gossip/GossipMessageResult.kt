@@ -241,7 +241,7 @@ data class GossipMessageResult(
 
 
     fun getTotalTraffic() = messages
-        .sumOf { msgGenerator.sizeEstimator(it.message) }
+        .sumOf { msgGenerator.sizeEstimator.estimateSize(it.message) }
 
     fun getTotalMessageCount() = messages.size
 

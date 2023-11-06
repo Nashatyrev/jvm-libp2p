@@ -17,7 +17,7 @@ class PubMessageGenerator(
 fun genericPubSubMsgSizeEstimator(
     publishDataSizeEstimator: (ByteString) -> Int,
     measureTcpOverhead: Boolean = true
-): MsgSizeEstimator = { msg: Any ->
+): MsgSizeEstimator = MsgSizeEstimator { msg: Any ->
     val payloadSize = (msg as Rpc.RPC).run {
         subscriptionsList.sumOf { it.topicid.length + 2 } +
             control.graftList.sumOf { it.topicID.length + 1 } +

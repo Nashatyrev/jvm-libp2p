@@ -2,9 +2,10 @@ package io.libp2p.simulate.util
 
 import io.netty.buffer.ByteBuf
 
-typealias MsgSizeEstimator = (Any) -> Long
-
-val GeneralSizeEstimator: MsgSizeEstimator = { msg ->
+fun interface MsgSizeEstimator {
+    fun estimateSize(msg: Any): Long
+}
+val GeneralSizeEstimator: MsgSizeEstimator = MsgSizeEstimator { msg ->
     when (msg) {
         is ByteBuf -> msg.readableBytes().toLong()
         else -> 0

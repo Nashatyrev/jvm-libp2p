@@ -13,6 +13,7 @@ import io.libp2p.etc.types.lazyVar
 import io.libp2p.etc.types.toBytesBigEndian
 import io.libp2p.simulate.*
 import io.libp2p.simulate.util.GeneralSizeEstimator
+import io.libp2p.simulate.util.MsgSizeEstimator
 import io.netty.handler.logging.LogLevel
 import java.security.SecureRandom
 import java.util.Random
@@ -48,7 +49,7 @@ abstract class StreamSimPeer<TProtocolController>(
     }
     override val peerId by lazy { PeerId.fromPubKey(keyPair.second) }
 
-    var msgSizeEstimator = GeneralSizeEstimator
+    var msgSizeEstimator: MsgSizeEstimator = GeneralSizeEstimator
     var wireLogs: LogLevel? = null
 
     override fun connectImpl(other: SimPeer): CompletableFuture<SimConnection> {

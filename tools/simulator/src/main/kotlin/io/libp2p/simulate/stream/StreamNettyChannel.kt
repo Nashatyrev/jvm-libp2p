@@ -74,7 +74,7 @@ class StreamNettyChannel(
     private fun send(other: StreamNettyChannel, msg: Any) {
         msgVisitors.forEach { it.onOutbound(msg) }
 
-        val size = msgSizeEstimator(msg)
+        val size = msgSizeEstimator.estimateSize(msg)
         val delay = msgDelayer.delay(size)
 
         delay.thenApply { delayData ->
