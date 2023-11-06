@@ -35,7 +35,7 @@ interface SimPubsubPeerConfig {
 interface SimPubsubConfig {
     val peerConfigs: List<SimPubsubPeerConfig>
 
-    val messageGenerator: PubMessageGenerator
+    val pubsubMessageSizes: PubsubMessageSizes
     val latency: LatencyDistribution
 
     val topology: Topology

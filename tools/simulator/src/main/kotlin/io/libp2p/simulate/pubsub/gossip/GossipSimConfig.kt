@@ -10,10 +10,11 @@ import io.libp2p.simulate.delay.latency.LatencyDistribution
 import io.libp2p.simulate.pubsub.InOutBandwidth
 import io.libp2p.simulate.pubsub.MessageValidation
 import io.libp2p.simulate.pubsub.MessageValidationGenerator
-import io.libp2p.simulate.pubsub.PubMessageGenerator
+import io.libp2p.simulate.pubsub.PubsubMessageSizes
 import io.libp2p.simulate.pubsub.SimPubsubConfig
 import io.libp2p.simulate.pubsub.SimPubsubPeerConfig
-import io.libp2p.simulate.pubsub.trickyPubSubMsgSizeEstimator
+import io.libp2p.simulate.pubsub.createGenericPubsubMessageSizes
+import io.libp2p.simulate.pubsub.trickyMessageBodyGenerator
 import io.libp2p.simulate.topology.RandomNPeers
 import java.util.Random
 import kotlin.time.Duration
@@ -38,7 +39,7 @@ data class GossipSimPeerConfig(
 data class GossipSimConfig(
     override val peerConfigs: List<GossipSimPeerConfig>,
 
-    override val messageGenerator: PubMessageGenerator = trickyPubSubMsgSizeEstimator(true),
+    override val pubsubMessageSizes: PubsubMessageSizes = trickyMessageBodyGenerator.createGenericPubsubMessageSizes(),
     override val latency: LatencyDistribution = LatencyDistribution.createConst(ZERO),
 
     override val topology: Topology = RandomNPeers(10),

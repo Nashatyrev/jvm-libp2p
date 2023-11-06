@@ -44,7 +44,7 @@ abstract class SimPubsubNetwork(
                 .also { simPeer ->
                     simPeer.simExecutor = commonExecutor
                     simPeer.currentTime = { timeController.time }
-                    simPeer.msgSizeEstimator = cfg.messageGenerator.sizeEstimator
+                    simPeer.msgSizeEstimator = cfg.pubsubMessageSizes.sizeEstimator
                     simPeer.inboundBandwidth =
                         AccurateBandwidthTracker(
                             peerConfig.bandwidth.inbound,

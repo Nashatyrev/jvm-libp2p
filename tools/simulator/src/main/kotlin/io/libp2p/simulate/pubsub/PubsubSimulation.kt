@@ -58,7 +58,7 @@ abstract class PubsubSimulation(
     }
 
     private fun onNewApiMessage(msg: MessageApi) {
-        val simMessageId = cfg.messageGenerator.messageIdRetriever(msg.data.array())
+        val simMessageId = cfg.pubsubMessageSizes.messageBodyGenerator.messageIdRetriever(msg.data.array())
         deliveredMessagesCount.computeIfAbsent(simMessageId) { AtomicInteger() }.incrementAndGet()
     }
 
@@ -132,7 +132,7 @@ abstract class PubsubSimulation(
         val peer = network.peers[srcPeer] ?: throw IllegalArgumentException("Invalid peer index $srcPeer")
         val msgId = idCounter.incrementAndGet()
 
-        val msg = Unpooled.wrappedBuffer(cfg.messageGenerator.msgGenerator(msgId, size))
+        val msg = Unpooled.wrappedBuffer(cfg.pubsubMessageSizes.messageBodyGenerator.msgGenerator(msgId, size))
         val future = peer.apiPublisher.publish(msg, topic)
         val ret = SimMessage(msgId, srcPeer, network.timeController.time, future)
         publishedMessagesMut += ret

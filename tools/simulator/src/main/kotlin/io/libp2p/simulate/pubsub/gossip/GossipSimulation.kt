@@ -18,7 +18,7 @@ class GossipSimulation(
     override val messageCollector = GossipMessageCollector(
         network.network,
         currentTimeSupplier,
-        cfg.messageGenerator,
+        cfg.pubsubMessageSizes,
         anyPeer.getMessageIdGenerator()
     )
 

@@ -10,7 +10,8 @@ import io.libp2p.simulate.delay.latency.LatencyDistribution
 import io.libp2p.simulate.milliseconds
 import io.libp2p.simulate.pubsub.MessageValidation
 import io.libp2p.simulate.pubsub.SimPubsubPeer
-import io.libp2p.simulate.pubsub.averagePubSubMsgSizeEstimator
+import io.libp2p.simulate.pubsub.averageSizeMessageBodyGenerator
+import io.libp2p.simulate.pubsub.createGenericPubsubMessageSizes
 import io.libp2p.simulate.pubsub.gossip.GossipSimConfig
 import io.libp2p.simulate.pubsub.gossip.GossipSimNetwork
 import io.libp2p.simulate.pubsub.gossip.GossipSimPeer
@@ -373,7 +374,7 @@ class MiscParamsOptimizationSimulation {
                     }
                 ,
 
-                messageGenerator = averagePubSubMsgSizeEstimator(cfg.avrgMessageSize, opt.measureTCPFramesOverhead),
+                pubsubMessageSizes = averageSizeMessageBodyGenerator(cfg.avrgMessageSize).createGenericPubsubMessageSizes(),
                 latency = LatencyDistribution.createRandomConst(cfg.latency),
                 topology = cfg.topology,
                 warmUpDelay = opt.warmUpDelay,

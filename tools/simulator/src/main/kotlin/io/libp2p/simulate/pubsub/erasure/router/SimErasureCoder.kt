@@ -12,13 +12,13 @@ import io.libp2p.pubsub.erasure.message.SamplesBoxImpl
 import io.libp2p.pubsub.erasure.message.SourceMessage
 import io.libp2p.pubsub.erasure.message.impl.ErasureHeaderImpl
 import io.libp2p.pubsub.erasure.message.impl.SampledMessageImpl
-import io.libp2p.simulate.pubsub.PubMessageGenerator
+import io.libp2p.simulate.pubsub.PubsubMessageSizes
 
 class SimErasureCoder(
     val sampleSize: Int,
     val extensionFactor: Int,
     val proofSize: Int,
-    val pubMessageGenerator: PubMessageGenerator
+    val pubsubMessageSizes: PubsubMessageSizes
 ) : ErasureCoder {
 
     private fun generateTestSamples(count: Int, messageId: MessageId, sampleData: WBytes): List<ErasureSample> =
