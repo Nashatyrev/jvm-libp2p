@@ -10,9 +10,15 @@ fun interface LatencyDistribution {
 
     companion object {
 
+        /**
+         * Constant latency for every connection and over time
+         */
         fun createConst(latency: Duration): LatencyDistribution =
             createRandomConst(RandomDistribution.const(latency))
 
+        /**
+         * Assigns a latency to a connection chosen at random which is then constant over time
+         */
         fun createUniformConst(from: Duration, to: Duration): LatencyDistribution =
             createRandomConst(
                 RandomDistribution
@@ -21,6 +27,9 @@ fun interface LatencyDistribution {
                     .named("[$from, $to)")
             )
 
+        /**
+         * Assigns a latency to a connection chosen at random from [distrib] which is then constant over time
+         */
         fun createRandomConst(distrib: RandomDistribution<Duration>): LatencyDistribution =
             RandomConstLatencyDistribution(distrib)
     }
