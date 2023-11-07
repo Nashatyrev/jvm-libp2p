@@ -1,12 +1,13 @@
-package io.libp2p.simulate.stats.collect.gossip
+package io.libp2p.simulate.stats.collect.pubsub
 
 import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import io.libp2p.simulate.Network
 import io.libp2p.simulate.pubsub.PubsubMessageSizes
 import io.libp2p.simulate.stats.collect.ConnectionsMessageCollector
+import io.libp2p.simulate.stats.collect.gossip.PubsubMessageIdGenerator
 import pubsub.pb.Rpc.RPC
 
-class GossipMessageCollector(
+class PubsubMessageCollector(
     network: Network,
     timeSupplier: CurrentTimeSupplier,
     val msgGenerator: PubsubMessageSizes,
@@ -14,5 +15,5 @@ class GossipMessageCollector(
 ) : ConnectionsMessageCollector<RPC>(network, timeSupplier) {
 
     fun gatherResult() =
-        GossipMessageResult(deliveredMessages, msgGenerator, pubsubMessageIdGenerator)
+        PubsubMessageResult(deliveredMessages, msgGenerator, pubsubMessageIdGenerator)
 }

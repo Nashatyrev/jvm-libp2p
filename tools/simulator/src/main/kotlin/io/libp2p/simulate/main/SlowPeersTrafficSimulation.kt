@@ -2,10 +2,10 @@ package io.libp2p.simulate.main
 
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.RandomDistribution
-import io.libp2p.simulate.pubsub.gossip.Eth2DefaultGossipParams
 import io.libp2p.simulate.main.scenario.BlobDecouplingScenario
 import io.libp2p.simulate.main.scenario.Decoupling
-import io.libp2p.simulate.stats.collect.gossip.GossipMessageResult
+import io.libp2p.simulate.pubsub.gossip.Eth2DefaultGossipParams
+import io.libp2p.simulate.stats.collect.pubsub.PubsubMessageResult
 import io.libp2p.simulate.util.*
 
 fun main() {
@@ -67,7 +67,7 @@ class SlowPeersTrafficSimulation(
         return calcResult(messageResult)
     }
 
-    fun calcResult(res: GossipMessageResult): RunResult {
+    fun calcResult(res: PubsubMessageResult): RunResult {
         val bandwidthPeerCount = res.allPeers
             .groupingBy { it.inboundBandwidth.totalBandwidth }
             .eachCount()

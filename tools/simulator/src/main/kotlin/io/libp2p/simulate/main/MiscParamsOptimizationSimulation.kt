@@ -20,9 +20,9 @@ import io.libp2p.simulate.pubsub.gossip.GossipSimulation
 import io.libp2p.simulate.stats.Stats
 import io.libp2p.simulate.stats.StatsFactory
 import io.libp2p.simulate.stats.WritableStats
-import io.libp2p.simulate.stats.collect.gossip.GossipMessageResult
-import io.libp2p.simulate.stats.collect.gossip.GossipPubDeliveryResult
-import io.libp2p.simulate.stats.collect.gossip.getGossipPubDeliveryResult
+import io.libp2p.simulate.stats.collect.pubsub.gossip.GossipPubDeliveryResult
+import io.libp2p.simulate.stats.collect.pubsub.gossip.getGossipPubDeliveryResult
+import io.libp2p.simulate.stats.collect.pubsub.PubsubMessageResult
 import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.simulate.util.formatTable
 import io.libp2p.simulate.util.propertiesAsMap
@@ -400,7 +400,7 @@ class MiscParamsOptimizationSimulation {
                 operator fun plus(other: NetworkStats) =
                     NetworkStats(msgCount + other.msgCount, traffic + other.traffic)
             }
-            fun getNetStats(result: GossipMessageResult): NetworkStats {
+            fun getNetStats(result: PubsubMessageResult): NetworkStats {
                 return NetworkStats(result.getTotalMessageCount().toLong(), result.getTotalTraffic())
             }
 

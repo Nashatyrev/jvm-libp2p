@@ -11,7 +11,7 @@ import io.libp2p.pubsub.erasure.message.SourceMessage
 import io.libp2p.pubsub.erasure.message.impl.ErasureHeaderImpl
 import io.libp2p.pubsub.erasure.message.impl.SampledMessageImpl
 import io.libp2p.simulate.pubsub.MessageBodyGenerator
-import io.libp2p.simulate.stats.collect.gossip.SimMessageId
+import io.libp2p.simulate.stats.collect.SimMessageId
 
 class SimErasureCoder(
     val sampleSize: Int,

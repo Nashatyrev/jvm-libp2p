@@ -5,7 +5,6 @@ import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.RandomDistribution
 import io.libp2p.simulate.delay.latency.LatencyDistribution
-import io.libp2p.simulate.main.BlobDecouplingSimulation
 import io.libp2p.simulate.main.SimulationLogger
 import io.libp2p.simulate.main.SimulationRunner
 import io.libp2p.simulate.mbitsPerSecond
@@ -14,18 +13,11 @@ import io.libp2p.simulate.pubsub.gossip.GossipSimNetwork
 import io.libp2p.simulate.pubsub.gossip.GossipSimPeerConfigGenerator
 import io.libp2p.simulate.pubsub.gossip.GossipSimulation
 import io.libp2p.simulate.stats.ResultPrinter
-import io.libp2p.simulate.stats.StatsFactory
-import io.libp2p.simulate.stats.collect.gossip.GossipMessageResult
-import io.libp2p.simulate.stats.collect.gossip.GossipPubDeliveryResult
-import io.libp2p.simulate.stats.collect.gossip.duplicatePublishes
-import io.libp2p.simulate.stats.collect.gossip.getDeliveriesByIWant
-import io.libp2p.simulate.stats.collect.gossip.getGossipPubDeliveryResult
-import io.libp2p.simulate.stats.collect.gossip.iWantRequestCount
-import io.libp2p.simulate.stats.collect.gossip.publishesByIWant
-import io.libp2p.simulate.stats.collect.gossip.roundPublishes
+import io.libp2p.simulate.stats.collect.pubsub.gossip.getGossipPubDeliveryResult
+import io.libp2p.simulate.stats.collect.pubsub.gossip.iWantRequestCount
+import io.libp2p.simulate.stats.collect.pubsub.PubsubMessageResult
 import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.simulate.util.cartesianProduct
-import io.libp2p.tools.log
 import kotlin.time.Duration.Companion.milliseconds
 
 fun main() {
@@ -71,7 +63,7 @@ class SimpleMultiSimulation(
         val latency: LatencyDistribution,
     )
 
-    class RunResult(messages: GossipMessageResult) {
+    class RunResult(messages: PubsubMessageResult) {
         val deliveryDelays = messages.getGossipPubDeliveryResult().aggregateSlowestByPublishTime().deliveryDelays
         val msgCount = messages.getTotalMessageCount()
         val traffic = messages.getTotalTraffic()

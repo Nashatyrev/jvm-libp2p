@@ -12,8 +12,8 @@ import io.libp2p.simulate.pubsub.gossip.GossipSimNetwork
 import io.libp2p.simulate.pubsub.gossip.GossipSimPeerConfigGenerator
 import io.libp2p.simulate.pubsub.gossip.GossipSimulation
 import io.libp2p.simulate.stats.StatsFactory
-import io.libp2p.simulate.stats.collect.gossip.GossipMessageResult
-import io.libp2p.simulate.stats.collect.gossip.getGossipPubDeliveryResult
+import io.libp2p.simulate.stats.collect.pubsub.gossip.getGossipPubDeliveryResult
+import io.libp2p.simulate.stats.collect.pubsub.PubsubMessageResult
 import io.libp2p.simulate.topology.AllToAllTopology
 import io.libp2p.simulate.topology.asFixedTopology
 import io.libp2p.tools.log
@@ -74,7 +74,7 @@ class GossipSimTest {
 
     @Test
     fun `test latency and validation delays are fixed per peer and connection and vary with seed`() {
-        fun run(seed: Long): GossipMessageResult {
+        fun run(seed: Long): PubsubMessageResult {
             val simConfig = GossipSimConfig(
                 peerConfigs = GossipSimPeerConfigGenerator(
                     topics = listOf(Topic(BlocksTopic)),
@@ -107,7 +107,7 @@ class GossipSimTest {
             return simulation.messageCollector.gatherResult()
         }
 
-        fun gatherActualConnectionLatencies(res: GossipMessageResult): Map<Pair<SimPeer, SimPeer>, List<Long>> {
+        fun gatherActualConnectionLatencies(res: PubsubMessageResult): Map<Pair<SimPeer, SimPeer>, List<Long>> {
             return res.messages.groupBy {
                 listOf(it.sendingPeer, it.receivingPeer)
                     .sortedBy { it.simPeerId }
@@ -117,7 +117,7 @@ class GossipSimTest {
             }
         }
 
-        fun gatherPeerValidationDelays(res: GossipMessageResult, peerId: SimPeerId): List<Long> {
+        fun gatherPeerValidationDelays(res: PubsubMessageResult, peerId: SimPeerId): List<Long> {
             val deliveryResult = res.getGossipPubDeliveryResult()
             return deliveryResult.originalMessages.map { origPublish ->
                 val p1 = deliveryResult.deliveries
@@ -131,7 +131,7 @@ class GossipSimTest {
             }
         }
 
-        fun gatherValidationDelays(res: GossipMessageResult): Map<SimPeerId, List<Long>> =
+        fun gatherValidationDelays(res: PubsubMessageResult): Map<SimPeerId, List<Long>> =
             listOf(1, 2)
                 .associateWith {
                     gatherPeerValidationDelays(res, it)

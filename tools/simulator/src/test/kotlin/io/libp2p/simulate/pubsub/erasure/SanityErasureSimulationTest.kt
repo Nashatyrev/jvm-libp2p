@@ -119,12 +119,19 @@ class SanityErasureSimulationTest {
         logger("API messages deliver max time: $maxDeliverTime")
         assertThat(maxDeliverTime).isLessThan(2000)
 
-        val rpcMessages = simulation.messageCollector.deliveredMessages
-        logger("RPC messages: ${rpcMessages.size}")
-        val traffic = rpcMessages.sumOf { messageSizes.sizeEstimator.estimateSize(it.message) }
-        logger("Total traffic: $traffic")
+        val messagesRes = simulation.messageCollector.gatherResult()
+        logger("RPC messages: ${messagesRes.getTotalMessageCount()}")
+        logger("Total traffic: ${messagesRes.getTotalTraffic()}")
         val idealTraffic = messageSize * (nodeCount - 1)
-        val excessFactor = traffic.toDouble() / idealTraffic
+        val excessFactor = messagesRes.getTotalTraffic().toDouble() / idealTraffic
         logger("Traffic excess factor: $excessFactor")
+        assertThat(excessFactor).isGreaterThan(1.0)
+
+        logger("ErasureHeader count: " + messagesRes.erasureHeaderMessages.size)
+        assertThat(messagesRes.erasureHeaderMessages.size).isGreaterThanOrEqualTo(nodeCount)
+        logger("ErasureSample count: " + messagesRes.erasureSampleMessages.size)
+        assertThat(messagesRes.erasureSampleMessages.size).isGreaterThanOrEqualTo(nodeCount)
+        logger("ErasureAck count: " + messagesRes.erasureAckMessages.size)
+        assertThat(messagesRes.erasureAckMessages.size).isGreaterThanOrEqualTo(nodeCount)
     }
 }

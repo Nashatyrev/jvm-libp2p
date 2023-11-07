@@ -9,11 +9,6 @@ class ErasureSimulation(
     network: ErasureSimNetwork
 ) : PubsubSimulation(cfg, network) {
 
-    override val messageCollector = ConnectionsMessageCollector<RPC>(
-        network.network,
-        currentTimeSupplier
-    )
-
     init {
         start()
     }

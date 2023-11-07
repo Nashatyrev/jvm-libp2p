@@ -1,7 +1,9 @@
-package io.libp2p.simulate.stats.collect.gossip
+package io.libp2p.simulate.stats.collect.pubsub.gossip
 
 import io.libp2p.simulate.pubsub.SimPubsubPeer
 import io.libp2p.simulate.pubsub.gossip.GossipSimPeer
+import io.libp2p.simulate.stats.collect.SimMessageId
+import io.libp2p.simulate.stats.collect.pubsub.PubsubMessageResult
 
 class GossipPubDeliveryResult(
     val deliveries: List<MessageDelivery>
@@ -15,7 +17,7 @@ class GossipPubDeliveryResult(
 
     data class MessageDelivery(
         val initialPublishMsg: MessagePublish,
-        val origGossipMsg: GossipMessageResult.PubMessageWrapper
+        val origGossipMsg: PubsubMessageResult.PubMessageWrapper
     ) {
         val toPeer: GossipSimPeer get() = origGossipMsg.origMsg.receivingPeer as GossipSimPeer
         val fromPeer: GossipSimPeer get() = origGossipMsg.origMsg.sendingPeer as GossipSimPeer
@@ -80,7 +82,7 @@ class GossipPubDeliveryResult(
                 .sortedBy { it.receivedTime }
                 .let { GossipPubDeliveryResult(it) }
 
-        fun fromGossipMessageResult(gossipMessageResult: GossipMessageResult): GossipPubDeliveryResult {
+        fun fromGossipMessageResult(gossipMessageResult: PubsubMessageResult): GossipPubDeliveryResult {
             val fastestReceives =
                 gossipMessageResult.receivedPublishMessagesByPeerFastest().values.flatten()
             val orinatingMessages =
@@ -106,7 +108,7 @@ class GossipPubDeliveryResult(
                 .let { GossipPubDeliveryResult(it) }
         }
 
-        private fun GossipMessageResult.receivedPublishMessagesByPeerFastest() =
+        private fun PubsubMessageResult.receivedPublishMessagesByPeerFastest() =
             this.peerReceivedMessages.mapValues { (_, msgs) ->
                 msgs
                     .publishMessages
@@ -121,6 +123,3 @@ class GossipPubDeliveryResult(
 
     }
 }
-
-fun GossipMessageResult.getGossipPubDeliveryResult() = GossipPubDeliveryResult.fromGossipMessageResult(this)
-fun Collection<GossipPubDeliveryResult>.merge() = GossipPubDeliveryResult.merge(this)

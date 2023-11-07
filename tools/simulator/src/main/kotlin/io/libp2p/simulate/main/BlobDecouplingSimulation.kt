@@ -8,7 +8,17 @@ import io.libp2p.simulate.main.EpisubSimulation.Companion.awsLatencyDistribution
 import io.libp2p.simulate.main.scenario.BlobDecouplingScenario
 import io.libp2p.simulate.main.scenario.Decoupling
 import io.libp2p.simulate.stats.ResultPrinter
+import io.libp2p.simulate.stats.collect.SimMessageId
 import io.libp2p.simulate.stats.collect.gossip.*
+import io.libp2p.simulate.stats.collect.pubsub.PubsubMessageResult
+import io.libp2p.simulate.stats.collect.pubsub.gossip.GossipPubDeliveryResult
+import io.libp2p.simulate.stats.collect.pubsub.gossip.duplicatePublishes
+import io.libp2p.simulate.stats.collect.pubsub.gossip.getDeliveriesByIWant
+import io.libp2p.simulate.stats.collect.pubsub.gossip.getGossipPubDeliveryResult
+import io.libp2p.simulate.stats.collect.pubsub.gossip.getIWantsForPubMessage
+import io.libp2p.simulate.stats.collect.pubsub.gossip.iWantRequestCount
+import io.libp2p.simulate.stats.collect.pubsub.gossip.publishesByIWant
+import io.libp2p.simulate.stats.collect.pubsub.gossip.roundPublishes
 import io.libp2p.simulate.util.ReadableSize
 import io.libp2p.simulate.util.cartesianProduct
 import io.libp2p.tools.log
@@ -139,7 +149,7 @@ class BlobDecouplingSimulation(
     )
 
     data class RunResult(
-        val messages: GossipMessageResult
+        val messages: PubsubMessageResult
     ) {
         val deliveryResult =
             messages.getGossipPubDeliveryResult().aggregateSlowestByPublishTime()
@@ -182,7 +192,7 @@ class BlobDecouplingSimulation(
     }
 
     class RunResult1(
-        messages: GossipMessageResult,
+        messages: PubsubMessageResult,
         deliveryResult: GossipPubDeliveryResult =
             messages.getGossipPubDeliveryResult().aggregateSlowestByPublishTime()
     ) {
@@ -239,7 +249,7 @@ class BlobDecouplingSimulation(
         log("Done.")
     }
 
-    private fun tempResults(res: GossipMessageResult) {
+    private fun tempResults(res: PubsubMessageResult) {
         val publishIWants = res.publishMessages
             .associateWith {
                 res.getIWantsForPubMessage(it)

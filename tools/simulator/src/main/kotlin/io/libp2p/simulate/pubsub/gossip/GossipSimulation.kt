@@ -1,8 +1,8 @@
 package io.libp2p.simulate.pubsub.gossip
 
 import io.libp2p.simulate.pubsub.PubsubSimulation
-import io.libp2p.simulate.pubsub.getMessageIdGenerator
-import io.libp2p.simulate.stats.collect.gossip.*
+import io.libp2p.simulate.stats.collect.pubsub.gossip.GossipPubDeliveryResult
+import io.libp2p.simulate.stats.collect.pubsub.gossip.getGossipPubDeliveryResult
 
 class GossipSimulation(
     cfg: GossipSimConfig,
@@ -13,14 +13,6 @@ class GossipSimulation(
         get() = super.cfg as GossipSimConfig
     override val network: GossipSimNetwork
         get() = super.network as GossipSimNetwork
-
-    private val anyPeer get() = network.peers.values.first()
-    override val messageCollector = GossipMessageCollector(
-        network.network,
-        currentTimeSupplier,
-        cfg.pubsubMessageSizes,
-        anyPeer.getMessageIdGenerator()
-    )
 
     init {
         start()

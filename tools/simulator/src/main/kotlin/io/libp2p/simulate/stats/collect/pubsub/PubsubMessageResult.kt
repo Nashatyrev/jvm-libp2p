@@ -1,4 +1,4 @@
-package io.libp2p.simulate.stats.collect.gossip
+package io.libp2p.simulate.stats.collect.pubsub
 
 import com.google.protobuf.AbstractMessage
 import io.libp2p.etc.types.toWBytes
@@ -6,12 +6,12 @@ import io.libp2p.pubsub.MessageId
 import io.libp2p.simulate.SimPeer
 import io.libp2p.simulate.pubsub.PubsubMessageSizes
 import io.libp2p.simulate.stats.collect.CollectedMessage
+import io.libp2p.simulate.stats.collect.PubsubMessageId
+import io.libp2p.simulate.stats.collect.SimMessageId
+import io.libp2p.simulate.stats.collect.gossip.PubsubMessageIdGenerator
 import pubsub.pb.Rpc
 
-typealias PubsubMessageId = MessageId
-typealias SimMessageId = Long
-
-data class GossipMessageResult(
+data class PubsubMessageResult(
     val messages: List<CollectedMessage<Rpc.RPC>>,
     private val msgGenerator: PubsubMessageSizes,
     private val pubsubMessageIdGenerator: PubsubMessageIdGenerator,
@@ -20,6 +20,19 @@ data class GossipMessageResult(
 
     interface MessageWrapper<TMessage> {
         val origMsg: CollectedMessage<TMessage>
+    }
+
+    data class PubMessageWrapper(
+        override val origMsg: CollectedMessage<Rpc.Message>,
+        val simMsgId: SimMessageId,
+        val gossipMsgId: PubsubMessageId
+    ) : MessageWrapper<Rpc.Message>
+
+    data class ErasureSampleMessageWrapper(
+        override val origMsg: CollectedMessage<Rpc.ErasureSample>,
+        val simMsgId: SimMessageId
+    ) : MessageWrapper<Rpc.ErasureSample> {
+        override fun toString() = "ErasureSample[id:$simMsgId, sampleIndex: '${origMsg.message.sampleIndex}']"
     }
 
     data class GraftMessageWrapper(
@@ -58,7 +71,7 @@ data class GossipMessageResult(
         override val origMsg: CollectedMessage<Rpc.ControlChokeMessage>,
         val simMsgId: SimMessageId?
     ) : MessageWrapper<Rpc.ControlChokeMessage> {
-        override fun toString() = "ChokeMessage[$origMsg, topicId: '$simMsgId']"
+        override fun toString() = "ChokeMessage[$origMsg, messageId: '$simMsgId']"
     }
 
     data class UnChokeMessageWrapper(
@@ -67,18 +80,18 @@ data class GossipMessageResult(
         override fun toString() = "Unchoke[$origMsg, topicId: '${origMsg.message.topicID}']"
     }
 
-    data class ErasureSampleMessageWrapper(
-        override val origMsg: CollectedMessage<Rpc.ErasureSample>,
-        val simMsgId: SimMessageId
-    ) : MessageWrapper<Rpc.ErasureSample> {
-        override fun toString() = "ErasureSample[id:$simMsgId, sampleIndex: '${origMsg.message.sampleIndex}']"
+    data class ErasureHeaderMessageWrapper(
+        override val origMsg: CollectedMessage<Rpc.ErasureHeader>,
+        val simMsgId: SimMessageId?
+    ) : MessageWrapper<Rpc.ErasureHeader> {
+        override fun toString() = "ErasureHeader[$origMsg, messageId: '$simMsgId']"
     }
 
-    data class PubMessageWrapper(
-        override val origMsg: CollectedMessage<Rpc.Message>,
-        val simMsgId: SimMessageId,
-        val gossipMsgId: PubsubMessageId
-    ) : MessageWrapper<Rpc.Message>
+    data class ErasureAckMessageWrapper(
+        override val origMsg: CollectedMessage<Rpc.ErasureAck>,
+    ) : MessageWrapper<Rpc.ErasureAck> {
+        override fun toString() = "ErasureAck[$origMsg]"
+    }
 
     val publishMessages by lazy {
         messages
@@ -94,31 +107,18 @@ data class GossipMessageResult(
             }
     }
 
-    val originatingPublishMessages: Map<SimMessageId, PubMessageWrapper> by lazy {
-        publishMessages
-            .groupBy { it.simMsgId }
-            .mapValues { (_, pubMessages) ->
-                pubMessages.first()
-            }
-    }
-
-    private val pubsubMessageIdToSimMessageIdMap: Map<PubsubMessageId, SimMessageId> by lazy {
-        publishMessages.associate { it.gossipMsgId to it.simMsgId } + pubsubMessageIdToSimMessageIdHint
-    }
-
-    private fun <TMessage : AbstractMessage, TMsgWrapper : MessageWrapper<TMessage>> flattenControl(
-        listExtractor: (Rpc.ControlMessage) -> Collection<TMessage>,
-        messageFactory: (CollectedMessage<TMessage>) -> TMsgWrapper
-    ): List<TMsgWrapper> =
+    val erasureSampleMessages by lazy {
         messages
-            .filter { it.message.hasControl() }
             .flatMap { collMsg ->
-                listExtractor(collMsg.message.control).map {
-                    messageFactory(
-                        collMsg.withMessage(it)
+                collMsg.message.erasureSampleList.map { pubMsg ->
+                    val origMsg = collMsg.withMessage(pubMsg)
+                    ErasureSampleMessageWrapper(
+                        origMsg,
+                        msgGenerator.messageBodyGenerator.messageIdRetriever(origMsg.message.data.toByteArray())
                     )
                 }
             }
+    }
 
     val graftMessages by lazy {
         flattenControl({ it.graftList }, { GraftMessageWrapper(it) })
@@ -160,24 +160,24 @@ data class GossipMessageResult(
             )
         })
     }
-    val erasureSampleMessages by lazy {
-        messages
-            .flatMap { collMsg ->
-                collMsg.message.erasureSampleList.map { pubMsg ->
-                    val origMsg = collMsg.withMessage(pubMsg)
-                    ErasureSampleMessageWrapper(
-                        origMsg,
-                        msgGenerator.messageBodyGenerator.messageIdRetriever(origMsg.message.data.toByteArray())
-                    )
-                }
-            }
+    val erasureHeaderMessages by lazy {
+        flattenControl({ it.erasureHeaderList }, {
+            ErasureHeaderMessageWrapper(
+                it,
+                msgGenerator.messageBodyGenerator.messageIdRetriever(it.message.data.toByteArray())
+            )
+        })
+    }
+    val erasureAckMessages by lazy {
+        flattenControl({ it.erasureAckList }, { ErasureAckMessageWrapper(it) })
     }
 
-    val allGossipMessages by lazy {
+    val allPubsubMessages by lazy {
         (publishMessages + graftMessages + pruneMessages +
                 iHaveMessages + iWantMessages +
                 chokeMessages + unchokeMessages +
-                chokeMessageMessages + erasureSampleMessages)
+                chokeMessageMessages +
+                erasureSampleMessages + erasureHeaderMessages + erasureAckMessages)
             .sortedBy { it.origMsg.sendTime }
     }
 
@@ -201,20 +201,28 @@ data class GossipMessageResult(
         allPeers.associateBy { it.simPeerId }
     }
 
-    fun slice(startTime: Long, endTime: Long = Long.MAX_VALUE): GossipMessageResult =
+    fun slice(startTime: Long, endTime: Long = Long.MAX_VALUE): PubsubMessageResult =
         copyWithMessages(
             messages.filter { it.sendTime in (startTime until endTime) }
         )
 
-    fun <K> groupBy(keySelectror: (CollectedMessage<Rpc.RPC>) -> K): Map<K, GossipMessageResult> =
+    fun <K> groupBy(keySelectror: (CollectedMessage<Rpc.RPC>) -> K): Map<K, PubsubMessageResult> =
         messages
             .groupBy { keySelectror(it) }
             .mapValues { copyWithMessages(it.value) }
 
-    fun filter(predicate: (CollectedMessage<Rpc.RPC>) -> Boolean): GossipMessageResult =
+    fun filter(predicate: (CollectedMessage<Rpc.RPC>) -> Boolean): PubsubMessageResult =
         messages
             .filter(predicate)
             .let { copyWithMessages(it) }
+
+    val originatingPublishMessages: Map<SimMessageId, PubMessageWrapper> by lazy {
+        publishMessages
+            .groupBy { it.simMsgId }
+            .mapValues { (_, pubMessages) ->
+                pubMessages.first()
+            }
+    }
 
     fun findPubMessagePath(peer: SimPeer, msgId: Long): List<PubMessageWrapper> {
         val ret = mutableListOf<PubMessageWrapper>()
@@ -228,13 +236,10 @@ data class GossipMessageResult(
         return ret.reversed()
     }
 
-    fun findPubMessageFirst(peer: SimPeer, msgId: Long): PubMessageWrapper? =
+    fun findPubMessageFirst(peer: SimPeer, msgId: SimMessageId): PubMessageWrapper? =
         publishMessages
             .filter { it.origMsg.receivingPeer === peer && it.simMsgId == msgId }
             .minByOrNull { it.origMsg.receiveTime }
-
-    fun getPeerGossipMessages(peer: SimPeer) =
-        getPeerMessages(peer).allGossipMessages
 
     fun getPeerMessages(peer: SimPeer) =
         ((peerReceivedMessages[peer]?.messages ?: emptyList()) +
@@ -246,23 +251,28 @@ data class GossipMessageResult(
         getPeerMessages(peer1)
             .getPeerMessages(peer2)
 
-    fun getIWantsForPubMessage(msg: PubMessageWrapper) =
-        peerSentMessages[msg.origMsg.receivingPeer]!!
-            .iWantMessages
-            .filter { iWantMsg ->
-                iWantMsg.origMsg.receivingPeer == msg.origMsg.sendingPeer &&
-                        msg.simMsgId in iWantMsg.simMsgIds &&
-                        iWantMsg.origMsg.receiveTime <= msg.origMsg.sendTime
-            }
-
-    fun isByIWantPubMessage(msg: PubMessageWrapper): Boolean =
-        getIWantsForPubMessage(msg).isNotEmpty()
-
-
     fun getTotalTraffic() = messages
         .sumOf { msgGenerator.sizeEstimator.estimateSize(it.message) }
 
     fun getTotalMessageCount() = messages.size
+
+    private val pubsubMessageIdToSimMessageIdMap: Map<PubsubMessageId, SimMessageId> by lazy {
+        publishMessages.associate { it.gossipMsgId to it.simMsgId } + pubsubMessageIdToSimMessageIdHint
+    }
+
+    private fun <TMessage : AbstractMessage, TMsgWrapper : MessageWrapper<TMessage>> flattenControl(
+        listExtractor: (Rpc.ControlMessage) -> Collection<TMessage>,
+        messageFactory: (CollectedMessage<TMessage>) -> TMsgWrapper
+    ): List<TMsgWrapper> =
+        messages
+            .filter { it.message.hasControl() }
+            .flatMap { collMsg ->
+                listExtractor(collMsg.message.control).map {
+                    messageFactory(
+                        collMsg.withMessage(it)
+                    )
+                }
+            }
 
     private fun copyWithMessages(messages: List<CollectedMessage<Rpc.RPC>>) =
         this.copy(messages = messages, pubsubMessageIdToSimMessageIdHint = pubsubMessageIdToSimMessageIdMap)

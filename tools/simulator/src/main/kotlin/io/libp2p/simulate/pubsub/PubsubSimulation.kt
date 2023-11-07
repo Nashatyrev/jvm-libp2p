@@ -5,11 +5,10 @@ import io.libp2p.core.pubsub.PubsubSubscription
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.core.pubsub.Validator
-import io.libp2p.pubsub.MessageId
 import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import io.libp2p.simulate.SimPeerId
-import io.libp2p.simulate.stats.collect.ConnectionsMessageCollector
-import io.libp2p.simulate.stats.collect.gossip.SimMessageId
+import io.libp2p.simulate.stats.collect.SimMessageId
+import io.libp2p.simulate.stats.collect.pubsub.PubsubMessageCollector
 import io.libp2p.tools.schedule
 import io.netty.buffer.Unpooled
 import java.util.concurrent.CompletableFuture
@@ -51,8 +50,13 @@ abstract class PubsubSimulation(
 
     val currentTimeSupplier: CurrentTimeSupplier = { network.timeController.time }
 
-    abstract val messageCollector: ConnectionsMessageCollector<*>
-
+    private val anyPeer get() = network.peers.values.first()
+    val messageCollector = PubsubMessageCollector(
+        network.network,
+        currentTimeSupplier,
+        cfg.pubsubMessageSizes,
+        anyPeer.getMessageIdGenerator()
+    )
     fun start() {
         subscribeAll()
         forwardTime(cfg.warmUpDelay)
