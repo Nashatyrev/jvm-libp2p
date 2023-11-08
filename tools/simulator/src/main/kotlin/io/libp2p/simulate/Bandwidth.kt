@@ -3,13 +3,13 @@ package io.libp2p.simulate
 import io.libp2p.simulate.util.ReadableSize
 import java.util.concurrent.CompletableFuture
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.microseconds
 
 const val BANDWIDTH_BITS_IN_BYTE_PER_SECOND = 8
 
 data class Bandwidth(val bytesPerSecond: Long) : Comparable<Bandwidth> {
-    fun getTransmitTimeMillis(size: Long): Long = (size * 1000 / bytesPerSecond)
-    fun getTransmitTime(size: Long): Duration = getTransmitTimeMillis(size).milliseconds
+    private fun getTransmitTimeMicrosec(size: Long): Long = (size * 1_000_000 / bytesPerSecond)
+    fun getTransmitTime(size: Long): Duration = getTransmitTimeMicrosec(size).microseconds
 
     fun getTransmitSize(timeMillis: Long): Long =
         bytesPerSecond * timeMillis / 1000
@@ -46,14 +46,17 @@ fun bandwidthDistribution(vararg entries: Pair<Bandwidth, Int>): RandomDistribut
         .named(name)
 }
 
-interface BandwidthDelayer : MessageDelayer {
+interface BandwidthDelayer {
 
     val totalBandwidth: Bandwidth
+
+    fun delay(remotePeer: SimPeerId, messageSize: Long): CompletableFuture<Unit>
 
     companion object {
         val UNLIM_BANDWIDTH = object : BandwidthDelayer {
             override val totalBandwidth = Bandwidth.UNLIM
-            override fun delay(size: Long) = CompletableFuture.completedFuture(Unit)
+            override fun delay(remotePeer: SimPeerId, messageSize: Long) = CompletableFuture.completedFuture(Unit)
         }
     }
 }
+

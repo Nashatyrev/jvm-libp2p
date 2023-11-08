@@ -4,6 +4,7 @@ import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import io.libp2p.simulate.BandwidthDelayer
 import io.libp2p.simulate.DelayDetails
 import io.libp2p.simulate.MessageDelayer
+import io.libp2p.simulate.SimPeerId
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ScheduledExecutorService
 
@@ -11,6 +12,8 @@ class CompositeMessageDelayer(
     val outboundBandwidthDelayer: BandwidthDelayer,
     val connectionLatencyDelayer: MessageDelayer,
     val inboundBandwidthDelayer: BandwidthDelayer,
+    val localPeer: SimPeerId,
+    val remotePeer: SimPeerId,
     val executor: ScheduledExecutorService,
     val currentTime: CurrentTimeSupplier,
 ) {
@@ -32,11 +35,11 @@ class CompositeMessageDelayer(
 
         val afterBandwidthFut = sequentialExecutor.enqueue {
             val beforeOutboundTime = currentTime()
-            val outDelay = outboundBandwidthDelayer.delay(msgSize)
+            val outDelay = outboundBandwidthDelayer.delay(remotePeer, msgSize)
                 .thenApply {
                     currentTime()
                 }
-            val inDelay = inboundBandwidthDelayer.delay(msgSize)
+            val inDelay = inboundBandwidthDelayer.delay(localPeer, msgSize)
                 .thenApply {
                     currentTime()
                 }

@@ -25,7 +25,7 @@ class CompositeMessageDelayerTest {
     val inBandwidth = AccurateBandwidthTracker(10.mbitsPerSecond, executor, { timeController.time })
     val latency = TimeDelayer(executor) { 100.milliseconds }
     val delayer =
-        CompositeMessageDelayer(outBandwidth, latency, inBandwidth, executor, { timeController.time })
+        CompositeMessageDelayer(outBandwidth, latency, inBandwidth, 0, 1, executor, { timeController.time })
 
     @Test
     fun `test that latency doesnt affect sequential message delays`() {
@@ -55,7 +55,7 @@ class CompositeMessageDelayerTest {
             latencyIt.next()
         }
         val delayer =
-            CompositeMessageDelayer(outBandwidth, latency, inBandwidth, executor, { timeController.time })
+            CompositeMessageDelayer(outBandwidth, latency, inBandwidth, 0, 1, executor, { timeController.time })
 
         val msg1 = delayer
             .delay(10 * 1024)

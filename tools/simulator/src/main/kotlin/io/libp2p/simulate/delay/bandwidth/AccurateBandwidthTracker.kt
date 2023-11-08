@@ -2,7 +2,6 @@ package io.libp2p.simulate.delay.bandwidth
 
 import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import io.libp2p.simulate.Bandwidth
-import io.libp2p.simulate.BandwidthDelayer
 import io.libp2p.simulate.util.isOrdered
 import io.libp2p.tools.schedule
 import java.util.concurrent.CompletableFuture
@@ -12,18 +11,18 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 class AccurateBandwidthTracker(
-    override val totalBandwidth: Bandwidth,
+    totalBandwidth: Bandwidth,
     val executor: ScheduledExecutorService,
     val timeSupplier: CurrentTimeSupplier,
     val name: String = "",
     val immediateExecutionBandwidth: Bandwidth = totalBandwidth / 10,
     val forceRemoveDeliveredMessagesOlderThan: Duration = 10.seconds
-) : BandwidthDelayer {
+) : FifoBandwidthDelayer(totalBandwidth) {
 
     private val transferringMessages = mutableListOf<MessageData>()
 
     override fun delay(size: Long): CompletableFuture<Unit> {
-        return if (immediateExecutionBandwidth.getTransmitTimeMillis(size) <= 1) {
+        return if (immediateExecutionBandwidth.getTransmitTime(size) <= 1.milliseconds) {
             CompletableFuture.completedFuture(Unit)
         } else {
             prune()
@@ -87,7 +86,7 @@ class AccurateBandwidthTracker(
             if (msgs.isEmpty()) return LongArray(0)
             if (msgs.size == 1) {
                 val msg = msgs[0]
-                val deliverTime = msg.sendTime + totalBandwidth.getTransmitTimeMillis(msg.size)
+                val deliverTime = msg.sendTime + totalBandwidth.getTransmitTime(msg.size).inWholeMilliseconds
                 return longArrayOf(deliverTime)
             }
             assert(msgs.map { it.sendTime }.isOrdered())
@@ -113,11 +112,11 @@ class AccurateBandwidthTracker(
                                 0,
                                 msg.lastUpdateSizeLeft - transmittedTillNowBytes
                             )
-                            msg.deliverTime = curTime + curBand.getTransmitTimeMillis(msg.lastUpdateSizeLeft)
+                            msg.deliverTime = curTime + curBand.getTransmitTime(msg.lastUpdateSizeLeft).inWholeMilliseconds
                         } else {
                             msg.deliverTime = curTime + java.lang.Long.max(
                                 1,
-                                curBand.getTransmitTimeMillis(msg.lastUpdateSizeLeft)
+                                curBand.getTransmitTime(msg.lastUpdateSizeLeft).inWholeMilliseconds
                             )
                         }
                     }

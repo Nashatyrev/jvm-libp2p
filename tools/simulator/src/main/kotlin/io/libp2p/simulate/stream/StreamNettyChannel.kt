@@ -29,7 +29,7 @@ class StreamNettyChannel(
 
     override val msgVisitors: MutableList<SimChannelMessageVisitor> = mutableListOf()
 
-    var link: StreamNettyChannel? = null
+    lateinit var link: StreamNettyChannel
 
     private var msgDelayer: CompositeMessageDelayer by lazyVar {
         createMessageDelayer(outboundBandwidth, MessageDelayer.NO_DELAYER, inboundBandwidth)
@@ -49,6 +49,8 @@ class StreamNettyChannel(
             outboundBandwidthDelayer,
             connectionLatencyDelayer,
             inboundBandwidthDelayer,
+            this.peer.simPeerId,
+            link.peer.simPeerId,
             executor,
             currentTime
         )
@@ -56,16 +58,16 @@ class StreamNettyChannel(
 
     @Synchronized
     fun connect(other: StreamNettyChannel) {
+        link = other
         while (outboundMessages().isNotEmpty()) {
             send(other, outboundMessages().poll())
         }
-        link = other
     }
 
     @Synchronized
     override fun handleOutboundMessage(msg: Any) {
-        if (link != null) {
-            send(link!!, msg)
+        if (::link.isInitialized) {
+            send(link, msg)
         } else {
             super.handleOutboundMessage(msg)
         }
