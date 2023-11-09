@@ -1,6 +1,8 @@
 package io.libp2p.simulate.main
 
 import io.libp2p.simulate.*
+import io.libp2p.simulate.delay.bandwidth.FairQDisk
+import io.libp2p.simulate.delay.bandwidth.QDiscBandwidthTracker
 import io.libp2p.simulate.delay.latency.LatencyDistribution
 import io.libp2p.simulate.pubsub.gossip.Eth2DefaultGossipParams
 import io.libp2p.simulate.main.BlobDecouplingSimulation.MessageChoke.*
@@ -32,29 +34,30 @@ fun main() {
 @Suppress("UNUSED_VARIABLE")
 class BlobDecouplingSimulation(
     val testMessageCount: Int = 10,
-    val floodPublish: Boolean = true,
+    val floodPublish: Boolean = false,
 
     val peerCountParams: List<Int> =
-        listOf(70),
+        listOf(30),
 
-    val sendingPeerBandwidth: Bandwidth = 100.mbitsPerSecond,
+    val sendingPeerBandwidth: Bandwidth = 10.mbitsPerSecond,
     val bandwidthsParams: List<RandomDistribution<Bandwidth>> =
         listOf(
-            RandomDistribution.const(100.mbitsPerSecond),
-            RandomDistribution.const(500.mbitsPerSecond),
-            RandomDistribution.const(1000.mbitsPerSecond),
+            RandomDistribution.const(10.mbitsPerSecond),
+//            RandomDistribution.const(100.mbitsPerSecond),
+//            RandomDistribution.const(500.mbitsPerSecond),
+//            RandomDistribution.const(1000.mbitsPerSecond),
 //            RandomDistribution.const(5000.mbitsPerSecond),
         ),
 //        listOf(RandomDistribution.const(sendingPeerBandwidth)),
 //        bandwidthDistributions.byIndexes(0, 1, 2),
     val decouplingParams: List<Decoupling> = listOf(
-        Decoupling.Coupled,
-//        Decoupling.DecoupledManyTopics,
+//        Decoupling.Coupled,
+        Decoupling.DecoupledManyTopics,
 //        Decoupling.DecoupledSingleTopic,
     ),
     val latencyParams: List<LatencyDistribution> =
         listOf(
-//            LatencyDistribution.createUniformConst(1.milliseconds, 50.milliseconds)
+            LatencyDistribution.createUniformConst(5.milliseconds, 50.milliseconds)
 //            LatencyDistribution.createConst(10.milliseconds),
 //            LatencyDistribution.createConst(50.milliseconds),
 //            LatencyDistribution.createConst(100.milliseconds),
@@ -64,14 +67,14 @@ class BlobDecouplingSimulation(
 //            LatencyDistribution.createUniformConst(10.milliseconds, 50.milliseconds),
 //            LatencyDistribution.createUniformConst(10.milliseconds, 100.milliseconds),
 //            LatencyDistribution.createUniformConst(10.milliseconds, 200.milliseconds),
-            awsLatencyDistribution
+//            awsLatencyDistribution
         ),
 //        listOf(awsLatencyDistribution),
 
     val validationDelayParams: List<RandomDistribution<Duration>> =
 //        listOf(RandomDistribution.const(10.milliseconds)),
         listOf(
-            RandomDistribution.const(10.milliseconds),
+            RandomDistribution.const(0.milliseconds),
 //            RandomDistribution.discreteEven(
 //                70.milliseconds to 33,
 //                50.milliseconds to 33,
@@ -89,18 +92,18 @@ class BlobDecouplingSimulation(
         ),
 
     val blockConfigs: List<BlockConfig> = listOf(
-        BlockConfig.ofKilobytes(128, 128, 7)
+        BlockConfig.ofKilobytes(128, 128, 3)
     ),
 
     val chokeMessageParams: List<MessageChoke> = listOf(
-        None,
-//        OnReceive,
+//        None,
+        OnReceive,
 //        OnNotify
     ),
 
     val nodeCountParams: List<Int> =
 //        listOf(200/*, 100, 500, 1000*/),
-        listOf(5000),
+        listOf(1000),
     val randomSeedParams: List<Long> =
 //        (1L..8L).toList(),
         listOf(1L),
@@ -170,6 +173,9 @@ class BlobDecouplingSimulation(
             peerBands = simParams.bandwidth,
             latency = simParams.latency,
             gossipParams = Eth2DefaultGossipParams.copy(
+                D = 4,
+                DLow = 3,
+                DHigh = 6,
                 floodPublish = floodPublish,
                 chokeMessageEnabled = simParams.chokeMessage != None,
                 sendingControlEnabled = simParams.chokeMessage == OnNotify
@@ -177,6 +183,13 @@ class BlobDecouplingSimulation(
             ),
             peerMessageValidationDelays = simParams.validationDelays,
             randomSeed = simParams.randomSeed,
+            simConfigModifier = {
+                it.copy(
+                    bandwidthTrackerFactory = { totalBandwidth, executor, timeSupplier, name ->
+                        QDiscBandwidthTracker(totalBandwidth, executor, FairQDisk(timeSupplier))
+                    }
+                )
+            }
         )
 
     fun runAndPrint() {

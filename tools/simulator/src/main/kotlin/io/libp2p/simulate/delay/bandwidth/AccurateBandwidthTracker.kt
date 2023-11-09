@@ -2,7 +2,7 @@ package io.libp2p.simulate.delay.bandwidth
 
 import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import io.libp2p.simulate.Bandwidth
-import io.libp2p.simulate.util.isOrdered
+import io.libp2p.simulate.util.isOrderedAscending
 import io.libp2p.tools.schedule
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ScheduledExecutorService
@@ -89,7 +89,7 @@ class AccurateBandwidthTracker(
                 val deliverTime = msg.sendTime + totalBandwidth.getTransmitTime(msg.size).inWholeMilliseconds
                 return longArrayOf(deliverTime)
             }
-            assert(msgs.map { it.sendTime }.isOrdered())
+            assert(msgs.map { it.sendTime }.isOrderedAscending())
 
             data class IntMessage(
                 val msg: Message,

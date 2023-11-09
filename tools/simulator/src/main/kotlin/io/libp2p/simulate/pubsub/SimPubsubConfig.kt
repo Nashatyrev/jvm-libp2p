@@ -5,6 +5,7 @@ import io.libp2p.core.pubsub.Topic
 import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.pubsub.PubsubProtocol
 import io.libp2p.simulate.*
+import io.libp2p.simulate.delay.bandwidth.BandwidthTrackerFactory
 import io.libp2p.simulate.delay.latency.LatencyDistribution
 import kotlin.time.Duration
 
@@ -37,6 +38,7 @@ interface SimPubsubConfig {
 
     val pubsubMessageSizes: PubsubMessageSizes
     val latency: LatencyDistribution
+    val bandwidthTrackerFactory: BandwidthTrackerFactory
 
     val topology: Topology
     val warmUpDelay: Duration

@@ -26,7 +26,7 @@ fun main() {
 
 class SimpleMultiSimulation(
     val logger: (String) -> Unit = ::println,
-    val simulatorThreadCount: Int = 4,
+    val simulatorThreadCount: Int = 1,
     val publishMessageCount: Int = 3,
 
     nodeCountParams: List<Int> = listOf(

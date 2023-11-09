@@ -1,7 +1,5 @@
 package io.libp2p.simulate.util
 
-import kotlin.reflect.full.memberProperties
-
 fun <K, V> Collection<Map.Entry<K, V>>.toMap() = this.map { it.key to it.value }.toMap()
 
 fun <T> Collection<T>.countValues(): Map<T, Int> = countValuesBy { it }
@@ -28,7 +26,7 @@ fun <K, V> Map<K, List<V>>.transpose(): List<Map<K, V>> {
     return ret
 }
 
-fun <T : Comparable<T>> Collection<T>.isOrdered() =
+fun <T : Comparable<T>> Collection<T>.isOrderedAscending() =
     this
         .windowed(2) { l -> l[1] >= l[0] }
         .all { it }

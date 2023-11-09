@@ -7,6 +7,8 @@ import io.libp2p.pubsub.erasure.message.SampledMessage
 import io.libp2p.pubsub.erasure.router.strategy.AckSendStrategy
 import io.libp2p.pubsub.erasure.router.strategy.SampleSendStrategy
 import io.libp2p.simulate.*
+import io.libp2p.simulate.delay.bandwidth.AccurateBandwidthTracker
+import io.libp2p.simulate.delay.bandwidth.BandwidthTrackerFactory
 import io.libp2p.simulate.delay.latency.LatencyDistribution
 import io.libp2p.simulate.pubsub.InOutBandwidth
 import io.libp2p.simulate.pubsub.MessageValidation
@@ -36,6 +38,8 @@ data class ErasureSimConfig(
 
     override val pubsubMessageSizes: PubsubMessageSizes = trickyMessageBodyGenerator.createGenericPubsubMessageSizes(),
     override val latency: LatencyDistribution = LatencyDistribution.createConst(ZERO),
+    override val bandwidthTrackerFactory: BandwidthTrackerFactory =
+        BandwidthTrackerFactory.fromLambda(::AccurateBandwidthTracker),
 
     override val topology: Topology = RandomNPeers(10),
     override val warmUpDelay: Duration = 10.seconds,
