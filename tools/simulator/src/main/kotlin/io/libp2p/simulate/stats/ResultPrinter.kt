@@ -84,7 +84,7 @@ class ResultPrinter<TParams : Any, TResult : Any>(
 
     inner class Metric(
         val name: String,
-        val extractor: (TResult) -> Any
+        val extractor: (TParams, TResult) -> Any
     )
 
     val metrics = mutableListOf<Metric>()
@@ -112,6 +112,10 @@ class ResultPrinter<TParams : Any, TResult : Any>(
         RangedNumberStats(NumberStats("", extractor))
 
     fun <R : Any> addMetric(name: String, extractor: (TResult) -> R) {
+        metrics += Metric(name) { _, r -> extractor(r) }
+    }
+
+    fun <R : Any> addMetricWithParams(name: String, extractor: (TParams, TResult) -> R) {
         metrics += Metric(name, extractor)
     }
 
@@ -131,10 +135,10 @@ class ResultPrinter<TParams : Any, TResult : Any>(
 
     fun createResultsTable() =
         Table.fromRows(
-            results.map { result ->
+            paramsAndResults.map { (params, result) ->
                 metrics
                     .map {
-                        it.name to it.extractor(result)
+                        it.name to it.extractor(params, result)
                     }
                     .toMap()
             }
