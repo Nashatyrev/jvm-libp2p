@@ -18,88 +18,103 @@ data class PubsubMessageResult(
     private val pubsubMessageIdToSimMessageIdHint: Map<PubsubMessageId, SimMessageId> = emptyMap()
 ) {
 
+    private val indexedMessages = messages.withIndex()
+
     interface MessageWrapper<TMessage> {
         val origMsg: CollectedMessage<TMessage>
+        val index: Int
     }
 
     data class PubMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.Message>,
+        override val index: Int,
         val simMsgId: SimMessageId,
         val gossipMsgId: PubsubMessageId
     ) : MessageWrapper<Rpc.Message>
 
     data class ErasureSampleMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.ErasureSample>,
+        override val index: Int,
         val simMsgId: SimMessageId
     ) : MessageWrapper<Rpc.ErasureSample> {
-        override fun toString() = "ErasureSample[id:$simMsgId, sampleIndex: '${origMsg.message.sampleIndex}']"
+        override fun toString() = "ErasureSample[($index) $origMsg, id:$simMsgId, sampleIndex: '${origMsg.message.sampleIndex}']"
     }
 
     data class GraftMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.ControlGraft>,
+        override val index: Int,
     ) : MessageWrapper<Rpc.ControlGraft> {
-        override fun toString() = "Graft[$origMsg, topicId: '${origMsg.message.topicID}']"
+        override fun toString() = "Graft[($index) $origMsg, topicId: '${origMsg.message.topicID}']"
     }
 
     data class PruneMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.ControlPrune>,
+        override val index: Int,
     ) : MessageWrapper<Rpc.ControlPrune> {
-        override fun toString() = "Prune[$origMsg, topicId: '${origMsg.message.topicID}']"
+        override fun toString() = "Prune[($index) $origMsg, topicId: '${origMsg.message.topicID}']"
     }
 
     data class IHaveMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.ControlIHave>,
+        override val index: Int,
         val simMsgId: List<SimMessageId?>
     ) : MessageWrapper<Rpc.ControlIHave> {
-        override fun toString() = "IHave[$origMsg, messageIds: $simMsgId]"
+        override fun toString() = "IHave[($index) $origMsg, messageIds: $simMsgId]"
     }
 
     data class IWantMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.ControlIWant>,
+        override val index: Int,
         val simMsgIds: List<SimMessageId?>
     ) : MessageWrapper<Rpc.ControlIWant> {
-        override fun toString() = "IWant[$origMsg, messageIds: $simMsgIds]"
+        override fun toString() = "IWant[($index) $origMsg, messageIds: $simMsgIds]"
     }
 
     data class ChokeMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.ControlChoke>,
+        override val index: Int,
     ) : MessageWrapper<Rpc.ControlChoke> {
-        override fun toString() = "Choke[$origMsg, topicId: '${origMsg.message.topicID}']"
+        override fun toString() = "Choke[($index) $origMsg, topicId: '${origMsg.message.topicID}']"
     }
 
     data class ChokeMessageMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.ControlChokeMessage>,
+        override val index: Int,
         val simMsgId: SimMessageId?
     ) : MessageWrapper<Rpc.ControlChokeMessage> {
-        override fun toString() = "ChokeMessage[$origMsg, messageId: '$simMsgId']"
+        override fun toString() = "ChokeMessage[($index) $origMsg, messageId: '$simMsgId']"
     }
 
     data class UnChokeMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.ControlUnChoke>,
+        override val index: Int,
     ) : MessageWrapper<Rpc.ControlUnChoke> {
-        override fun toString() = "Unchoke[$origMsg, topicId: '${origMsg.message.topicID}']"
+        override fun toString() = "Unchoke[($index) $origMsg, topicId: '${origMsg.message.topicID}']"
     }
 
     data class ErasureHeaderMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.ErasureHeader>,
+        override val index: Int,
         val simMsgId: SimMessageId?
     ) : MessageWrapper<Rpc.ErasureHeader> {
-        override fun toString() = "ErasureHeader[$origMsg, messageId: '$simMsgId']"
+        override fun toString() = "ErasureHeader[($index) $origMsg, messageId: '$simMsgId']"
     }
 
     data class ErasureAckMessageWrapper(
         override val origMsg: CollectedMessage<Rpc.ErasureAck>,
+        override val index: Int,
     ) : MessageWrapper<Rpc.ErasureAck> {
-        override fun toString() = "ErasureAck[$origMsg]"
+        override fun toString() = "ErasureAck[($index) $origMsg]"
     }
 
     val publishMessages by lazy {
-        messages
-            .flatMap { collMsg ->
+        indexedMessages
+            .flatMap { (index, collMsg) ->
                 collMsg.message.publishList.map { pubMsg ->
                     val origMsg = collMsg.withMessage(pubMsg)
                     PubMessageWrapper(
                         origMsg,
+                        index,
                         msgGenerator.messageBodyGenerator.messageIdRetriever(origMsg.message.data.toByteArray()),
                         pubsubMessageIdGenerator(pubMsg)
                     )
@@ -108,12 +123,13 @@ data class PubsubMessageResult(
     }
 
     val erasureSampleMessages by lazy {
-        messages
-            .flatMap { collMsg ->
+        indexedMessages
+            .flatMap { (index, collMsg) ->
                 collMsg.message.erasureSampleList.map { pubMsg ->
                     val origMsg = collMsg.withMessage(pubMsg)
                     ErasureSampleMessageWrapper(
                         origMsg,
+                        index,
                         msgGenerator.messageBodyGenerator.messageIdRetriever(origMsg.message.data.toByteArray())
                     )
                 }
@@ -121,55 +137,59 @@ data class PubsubMessageResult(
     }
 
     val graftMessages by lazy {
-        flattenControl({ it.graftList }, { GraftMessageWrapper(it) })
+        flattenControl({ it.graftList }, { GraftMessageWrapper(it.value, it.index) })
     }
     val pruneMessages by lazy {
-        flattenControl({ it.pruneList }, { PruneMessageWrapper(it) })
+        flattenControl({ it.pruneList }, { PruneMessageWrapper(it.value, it.index) })
     }
     val iHaveMessages by lazy {
-        flattenControl({ it.ihaveList }, {
+        flattenControl({ it.ihaveList }, { (index, colMsg) ->
             IHaveMessageWrapper(
-                it,
-                it.message.messageIDsList.map {
+                colMsg,
+                index,
+                colMsg.message.messageIDsList.map {
                     pubsubMessageIdToSimMessageIdMap[it.toWBytes()]
                 }
             )
         })
     }
     val iWantMessages by lazy {
-        flattenControl({ it.iwantList }, {
+        flattenControl({ it.iwantList }, {(index, colMsg) ->
             IWantMessageWrapper(
-                it,
-                it.message.messageIDsList.map {
+                colMsg,
+                index,
+                colMsg.message.messageIDsList.map {
                     pubsubMessageIdToSimMessageIdMap[it.toWBytes()]
                 }
             )
         })
     }
     val chokeMessages by lazy {
-        flattenControl({ it.chokeList }, { ChokeMessageWrapper(it) })
+        flattenControl({ it.chokeList }, { ChokeMessageWrapper(it.value, it.index) })
     }
     val unchokeMessages by lazy {
-        flattenControl({ it.unchokeList }, { UnChokeMessageWrapper(it) })
+        flattenControl({ it.unchokeList }, { UnChokeMessageWrapper(it.value, it.index) })
     }
     val chokeMessageMessages by lazy {
-        flattenControl({ it.chokeMessageList }, {
+        flattenControl({ it.chokeMessageList }, {(index, colMsg) ->
             ChokeMessageMessageWrapper(
-                it,
-                pubsubMessageIdToSimMessageIdMap[it.message.messageID.toWBytes()]
+                colMsg,
+                index,
+                pubsubMessageIdToSimMessageIdMap[colMsg.message.messageID.toWBytes()]
             )
         })
     }
     val erasureHeaderMessages by lazy {
-        flattenControl({ it.erasureHeaderList }, {
+        flattenControl({ it.erasureHeaderList }, { (index, colMsg) ->
             ErasureHeaderMessageWrapper(
-                it,
-                msgGenerator.messageBodyGenerator.messageIdRetriever(it.message.data.toByteArray())
+                colMsg,
+                index,
+                msgGenerator.messageBodyGenerator.messageIdRetriever(colMsg.message.data.toByteArray())
             )
         })
     }
     val erasureAckMessages by lazy {
-        flattenControl({ it.erasureAckList }, { ErasureAckMessageWrapper(it) })
+        flattenControl({ it.erasureAckList }, { ErasureAckMessageWrapper(it.value, it.index) })
     }
 
     val allPubsubMessages by lazy {
@@ -178,7 +198,7 @@ data class PubsubMessageResult(
                 chokeMessages + unchokeMessages +
                 chokeMessageMessages +
                 erasureSampleMessages + erasureHeaderMessages + erasureAckMessages)
-            .sortedBy { it.origMsg.sendTime }
+            .sortedWith(compareBy({ it.origMsg.sendTime }, { it.index }))
     }
 
     val peerReceivedMessages by lazy {
@@ -262,14 +282,17 @@ data class PubsubMessageResult(
 
     private fun <TMessage : AbstractMessage, TMsgWrapper : MessageWrapper<TMessage>> flattenControl(
         listExtractor: (Rpc.ControlMessage) -> Collection<TMessage>,
-        messageFactory: (CollectedMessage<TMessage>) -> TMsgWrapper
+        messageFactory: (IndexedValue<CollectedMessage<TMessage>>) -> TMsgWrapper
     ): List<TMsgWrapper> =
-        messages
-            .filter { it.message.hasControl() }
-            .flatMap { collMsg ->
+        indexedMessages
+            .filter { it.value.message.hasControl() }
+            .flatMap { (index, collMsg) ->
                 listExtractor(collMsg.message.control).map {
                     messageFactory(
-                        collMsg.withMessage(it)
+                        IndexedValue(
+                            index,
+                            collMsg.withMessage(it)
+                        )
                     )
                 }
             }
