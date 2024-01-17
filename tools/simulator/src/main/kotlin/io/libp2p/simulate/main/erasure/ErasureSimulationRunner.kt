@@ -6,6 +6,8 @@ import io.libp2p.pubsub.erasure.router.strategy.AckSendStrategy
 import io.libp2p.pubsub.erasure.router.strategy.SampleSendStrategy
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.RandomDistribution
+import io.libp2p.simulate.delay.bandwidth.FairQDisk
+import io.libp2p.simulate.delay.bandwidth.QDiscBandwidthTracker
 import io.libp2p.simulate.delay.latency.LatencyDistribution
 import io.libp2p.simulate.main.SimulationLogger
 import io.libp2p.simulate.main.SimulationRunner
@@ -20,7 +22,6 @@ import io.libp2p.simulate.pubsub.erasure.router.SimErasureCoder
 import io.libp2p.simulate.pubsub.erasure.router.SimErasureRouterBuilder
 import io.libp2p.simulate.pubsub.trickyMessageBodyGenerator
 import io.libp2p.simulate.stats.ResultPrinter
-import io.libp2p.simulate.stats.collect.pubsub.gossip.getGossipPubDeliveryResult
 import io.libp2p.simulate.stats.collect.pubsub.PubsubMessageResult
 import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.simulate.util.cartesianProduct
@@ -38,6 +39,7 @@ class ErasureSimulationRunner(
     val messageSizes: PubsubMessageSizes = trickyMessageBodyGenerator.createGenericPubsubMessageSizes(),
 
     nodeCountParams: List<Int> = listOf(
+        100,
         1000
     ),
     peerCountPrams: List<Int> = listOf(
@@ -57,10 +59,12 @@ class ErasureSimulationRunner(
         40,
     ),
     sampleExtraSizeParams: List<Int> = listOf(
-        1024
+        0
+//        1024
     ),
     headerSizeParams: List<Int> = listOf(
-        512
+        32
+//        512
     ),
     cWndSizeParams: List<Int> = listOf(
 //        1,
@@ -73,6 +77,7 @@ class ErasureSimulationRunner(
     ),
     bandwidthsParams: List<RandomDistribution<Bandwidth>> = listOf(
         RandomDistribution.const(10.mbitsPerSecond),
+//        RandomDistribution.const(100.mbitsPerSecond),
     ),
     latencyParams: List<LatencyDistribution> =
         listOf(
@@ -148,6 +153,9 @@ class ErasureSimulationRunner(
             bandwidths = params.bandwidth,
             messageValidationDelays = RandomDistribution.const(0.milliseconds)
         ).generate(0, params.nodeCount),
+        bandwidthTrackerFactory =
+//                BandwidthTrackerFactory.fromLambda(::AccurateBandwidthTracker),
+                QDiscBandwidthTracker.createFactory { FairQDisk(it) },
         topology = RandomNPeers(params.peerCount),
         latency = params.latency,
         sampleSendStrategy = params.sendConfig.sampleSendStrategy,
@@ -196,8 +204,17 @@ class ErasureSimulationRunner(
             publishMessage(params, simulation, logger, counter)
         }
         val pubsubMessageResult = simulation.messageCollector.gatherResult()
+//        printExtraInfo1(params, simulation)
         val messageDelays = simulation.apiMessageDeliveries.map { it.receiveTime - it.message.sentTime }
         return RunResult(pubsubMessageResult, messageDelays)
+    }
+
+    fun printExtraInfo1(params: SimParams, simulation: ErasureSimulation) {
+        val res = simulation.messageCollector.gatherResult()
+        res.allPeers.forEach { peer ->
+            val receivedMessages = res.peerReceivedMessages[peer]!!
+            println("$peer: inbound sample count: " + receivedMessages.erasureSampleMessages.size)
+        }
     }
 
     fun runAll(): List<RunResult> =
@@ -220,7 +237,7 @@ class ErasureSimulationRunner(
                     addLong("50%") { it.getPercentile(50.0) }
 //                    addLong("mean") { it.mean }
                     addLong("95%") { it.getPercentile(95.0) }
-//                    addLong("max") { it.max }
+                    addLong("max") { it.max }
                 }
             addMetric("msgCount") { it.msgCount }
             addMetricWithParams("traffic") { p, res ->
