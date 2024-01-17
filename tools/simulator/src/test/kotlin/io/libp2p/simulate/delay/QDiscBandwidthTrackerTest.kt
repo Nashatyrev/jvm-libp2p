@@ -12,7 +12,8 @@ class QDiscBandwidthTrackerTest : AbstractBandwidthTrackerTest() {
 
     val qDisc = FairQDisk { timeController.time }
 
-    override val tracker: QDiscBandwidthTracker = QDiscBandwidthTracker(Bandwidth(2000), executor, qDisc)
+    val bandwidth = Bandwidth(2000)
+    override val tracker: QDiscBandwidthTracker = QDiscBandwidthTracker(bandwidth, executor, qDisc)
 
     @Test
     fun `check the qdisc is fair 1`() {
@@ -44,6 +45,29 @@ class QDiscBandwidthTrackerTest : AbstractBandwidthTrackerTest() {
         assertThat(deliveries.getById(0).deliverTime).isEqualTo(1500)
         assertThat(deliveries.getById(2).deliverTime).isEqualTo(2050)
         assertThat(deliveries.getById(1).deliverTime).isEqualTo(2550)
+    }
+
+    @Test
+    fun `check multiple peers mutiple messages`() {
+        val peerCount = 10
+        val messageSize = 9L
+        val messageCount = 50
+        val messages = (0 until peerCount).flatMap { peer ->
+            (0 until  messageCount).map {
+                TestMessage(0, messageSize, peer)
+            }
+        }
+
+        val deliveries = calcDelayTimes(messages)
+        val lastDeliver = deliveries.maxOf { it.deliverTime }
+
+        val totalThroughput = peerCount * messageCount * messageSize
+        val expectedTime = bandwidth.getTransmitTime(totalThroughput)
+
+        println("Last deliver: $lastDeliver, expected: $expectedTime")
+
+        assertThat(lastDeliver).isGreaterThanOrEqualTo(expectedTime.inWholeMilliseconds)
+        assertThat(lastDeliver).isLessThan(expectedTime.inWholeMilliseconds + 100)
     }
 
     fun List<MessageDelivery>.getById(id: Int) =
