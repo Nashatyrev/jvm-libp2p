@@ -33,7 +33,9 @@ class SimErasureRouterBuilder : SimPubsubRouterBuilder {
             scheduledAsyncExecutor,
             simErasureCoder,
             simMessageRouterFactory
-        )
+        ).also {
+            it.name = name
+        }
     }
 }
 
