@@ -21,14 +21,14 @@ import kotlin.time.toJavaDuration
 
 data class SimMessage(
     val simMessageId: SimMessageId,
-    val sendingPeer: Int,
+    val sendingPeer: SimPeerId,
     val sentTime: Long,
     val pubResult: CompletableFuture<Unit>
 )
 
 data class SimMessageDelivery(
     val message: SimMessage,
-    val receivingPeer: Int,
+    val receivingPeer: SimPeerId,
     val receiveTime: Long,
 )
 

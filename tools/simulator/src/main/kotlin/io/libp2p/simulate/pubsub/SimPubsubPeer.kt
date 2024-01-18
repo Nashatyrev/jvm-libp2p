@@ -6,6 +6,7 @@ import io.libp2p.core.pubsub.createPubsubApi
 import io.libp2p.etc.types.lazyVar
 import io.libp2p.pubsub.AbstractRouter
 import io.libp2p.pubsub.PubsubProtocol
+import io.libp2p.simulate.SimPeerId
 import io.libp2p.simulate.stats.collect.gossip.PubsubMessageIdGenerator
 import io.libp2p.simulate.stream.StreamSimPeer
 import io.netty.handler.logging.LogLevel
@@ -14,7 +15,7 @@ import java.util.Random
 import java.util.concurrent.CompletableFuture
 
 open class SimPubsubPeer(
-    override val simPeerId: Int,
+    override val simPeerId: SimPeerId,
     override val random: Random,
     protocol: PubsubProtocol,
     val routerBuilder: SimPubsubRouterBuilder
