@@ -15,11 +15,11 @@ class ResultPrinter<TParams : Any, TResult : Any>(
 
     inner class NumberStats<TNum : Number>(
         val namePrefix: String = "",
-        val extractor: (TResult) -> List<TNum>
+        val extractor: (TResult) -> Collection<TNum>
     ) {
         private val namePrefixDash = if (namePrefix.isEmpty()) "" else "$namePrefix-"
 
-        fun <R : Any> addGeneric(name: String, calc: (List<TNum>) -> R) = also {
+        fun <R : Any> addGeneric(name: String, calc: (Collection<TNum>) -> R) = also {
             addMetric("$namePrefixDash$name") { calc(extractor(it)) }
         }
 
@@ -129,7 +129,7 @@ class ResultPrinter<TParams : Any, TResult : Any>(
         addMetric(name) { extractor(it).toDouble().toString(decimals) }
     }
 
-    fun <TNum : Number> addNumberStats(namePrefix: String = "", extractor: (TResult) -> List<TNum>): NumberStats<TNum> =
+    fun <TNum : Number> addNumberStats(namePrefix: String = "", extractor: (TResult) -> Collection<TNum>): NumberStats<TNum> =
         NumberStats(namePrefix, extractor)
 
 

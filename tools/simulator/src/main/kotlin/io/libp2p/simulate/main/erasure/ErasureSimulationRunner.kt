@@ -22,7 +22,7 @@ import io.libp2p.simulate.pubsub.erasure.router.SimErasureCoder
 import io.libp2p.simulate.pubsub.erasure.router.SimErasureRouterBuilder
 import io.libp2p.simulate.pubsub.trickyMessageBodyGenerator
 import io.libp2p.simulate.stats.ResultPrinter
-import io.libp2p.simulate.stats.collect.pubsub.PubsubMessageResult
+import io.libp2p.simulate.stats.collect.pubsub.SimulationResult
 import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.simulate.util.cartesianProduct
 import io.libp2p.simulate.util.smartRound
@@ -44,10 +44,13 @@ class ErasureSimulationRunner(
     ),
     peerCountPrams: List<Int> = listOf(
 //        2,
-//        3,
+        3,
+        4,
         5,
-//        7,
-//        9,
+        7,
+        10,
+        15,
+        20
     ),
     messageSizeParams: List<Int> = listOf(
         5 * 128 * 1024
@@ -81,11 +84,11 @@ class ErasureSimulationRunner(
     ),
     latencyParams: List<LatencyDistribution> =
         listOf(
-            LatencyDistribution.createConst(0.milliseconds),
-            LatencyDistribution.createConst(5.milliseconds),
-            LatencyDistribution.createConst(10.milliseconds),
-            LatencyDistribution.createConst(25.milliseconds),
-            LatencyDistribution.createConst(50.milliseconds),
+//            LatencyDistribution.createConst(0.milliseconds),
+//            LatencyDistribution.createConst(5.milliseconds),
+//            LatencyDistribution.createConst(10.milliseconds),
+//            LatencyDistribution.createConst(25.milliseconds),
+//            LatencyDistribution.createConst(50.milliseconds),
             LatencyDistribution.createConst(100.milliseconds),
         )
 ) {
@@ -121,16 +124,20 @@ class ErasureSimulationRunner(
         val bandwidth: RandomDistribution<Bandwidth>,
         val latency: LatencyDistribution,
     )
+
     val SimParams.minTheoreticalTraffic get() = messageSize * (nodeCount - 1)
+    val SimParams.minTheoreticalSamples get() = (messageSize / sampleSize) * (nodeCount - 1)
 
 
-    class RunResult(messages: PubsubMessageResult, messageDelays: List<Long>) {
-        val deliveryDelays = messageDelays
-        val msgCount = messages.getTotalMessageCount()
-        val traffic = messages.getTotalTraffic()
-        val samples = messages.erasureSampleMessages.size
-        val headers = messages.erasureHeaderMessages.size
-        val acks = messages.erasureAckMessages.size
+    class RunResult(simResult: SimulationResult) {
+        val deliveryDelays = simResult.apiDeliverDelays.values
+        val msgCount = simResult.pubsubMessageResult.getTotalMessageCount()
+        val traffic = simResult.pubsubMessageResult.getTotalTraffic()
+        val preDeliverTraffic = simResult.messagesPriorToDelivery.getTotalTraffic()
+        val samples = simResult.pubsubMessageResult.erasureSampleMessages.size
+        val preDeliverSamples = simResult.messagesPriorToDelivery.erasureSampleMessages.size
+        val headers = simResult.pubsubMessageResult.erasureHeaderMessages.size
+        val acks = simResult.pubsubMessageResult.erasureAckMessages.size
     }
 
     val allParams = cartesianProduct(
@@ -204,17 +211,32 @@ class ErasureSimulationRunner(
             publishMessage(params, simulation, logger, counter)
         }
         val pubsubMessageResult = simulation.messageCollector.gatherResult()
+        val simResult = SimulationResult(pubsubMessageResult, simulation.apiMessageDeliveries)
 //        printExtraInfo1(params, simulation)
         val messageDelays = simulation.apiMessageDeliveries.map { it.receiveTime - it.message.sentTime }
-        return RunResult(pubsubMessageResult, messageDelays)
+        return RunResult(simResult)
     }
 
     fun printExtraInfo1(params: SimParams, simulation: ErasureSimulation) {
-        val res = simulation.messageCollector.gatherResult()
-        res.allPeers.forEach { peer ->
-            val receivedMessages = res.peerReceivedMessages[peer]!!
-            println("$peer: inbound sample count: " + receivedMessages.erasureSampleMessages.size)
+        val result = simulation.messageCollector.gatherResult()
+        simulation.apiMessageDeliveries.forEach { apiDelivery ->
+            val simPeer = result.allPeers.first { it.simPeerId == apiDelivery.receivingPeer }
+            val inboundRpcMessages = result.messages
+                .filter { it.receivingPeer == simPeer }
+                .filter { it.receiveTime <= apiDelivery.receiveTime }
+            val totSize = inboundRpcMessages.sumOf { messageSizes.sizeEstimator.estimateSize(it.message) }
+            val samples = result
+                .peerReceivedMessages[simPeer]!!
+                .erasureSampleMessages
+                .filter { it.origMsg.receiveTime <= apiDelivery.receiveTime }
+
+            println("$simPeer: t=${apiDelivery.receiveTime}, rpcCnt=${inboundRpcMessages.size}, totSize=$totSize, sampleCnt=${samples.size}")
         }
+//        val res = simulation.messageCollector.gatherResult()
+//        res.allPeers.forEach { peer ->
+//            val receivedMessages = res.peerReceivedMessages[peer]!!
+//            println("$peer: inbound sample count: " + receivedMessages.erasureSampleMessages.size)
+//        }
     }
 
     fun runAll(): List<RunResult> =
@@ -243,7 +265,13 @@ class ErasureSimulationRunner(
             addMetricWithParams("traffic") { p, res ->
                 (res.traffic.toDouble() / p.minTheoreticalTraffic).smartRound()
             }
+            addMetricWithParams("preTraffic") { p, res ->
+                (res.preDeliverTraffic.toDouble() / p.minTheoreticalTraffic).smartRound()
+            }
             addMetric("samples") { it.samples }
+            addMetricWithParams("dupSamples") { p, res ->
+                (res.preDeliverSamples.toDouble() / p.minTheoreticalSamples).smartRound()
+            }
             addMetric("headers") { it.headers }
             addMetric("acks") { it.acks }
         }
