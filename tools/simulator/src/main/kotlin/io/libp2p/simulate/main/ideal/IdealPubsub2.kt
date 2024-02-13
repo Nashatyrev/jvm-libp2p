@@ -1,4 +1,4 @@
-package io.libp2p.simulate.main
+package io.libp2p.simulate.main.ideal
 
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.mbitsPerSecond

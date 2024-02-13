@@ -1,12 +1,12 @@
-package io.libp2p.simulate.main
+package io.libp2p.simulate.main.ideal
 
 import io.libp2p.simulate.Bandwidth
-import io.libp2p.simulate.main.IdealPubsub.SendParams
-import io.libp2p.simulate.main.IdealPubsub.SendType.*
+import io.libp2p.simulate.main.SimulationRunner
+import io.libp2p.simulate.main.ideal.IdealPubsub.SendParams
+import io.libp2p.simulate.main.ideal.IdealPubsub.SendType.*
 import io.libp2p.simulate.stats.ResultPrinter
 import io.libp2p.simulate.mbitsPerSecond
 import io.libp2p.simulate.util.cartesianProduct
-import io.libp2p.simulate.util.cartesianProductT
 import io.libp2p.tools.log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.TestScope
