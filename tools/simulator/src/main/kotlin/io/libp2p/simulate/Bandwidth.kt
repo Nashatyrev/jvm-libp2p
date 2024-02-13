@@ -4,6 +4,7 @@ import io.libp2p.simulate.util.ReadableSize
 import java.util.concurrent.CompletableFuture
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.microseconds
+import kotlin.time.DurationUnit
 
 const val BANDWIDTH_BITS_IN_BYTE_PER_SECOND = 8
 
@@ -13,6 +14,8 @@ data class Bandwidth(val bytesPerSecond: Long) : Comparable<Bandwidth> {
 
     fun getTransmitSize(timeMillis: Long): Long =
         bytesPerSecond * timeMillis / 1000
+    fun getTransmitSize(time: Duration): Double =
+        bytesPerSecond * time.toDouble(DurationUnit.SECONDS)
 
     operator fun div(d: Int) = Bandwidth(bytesPerSecond / d)
 
