@@ -1,4 +1,6 @@
-package io.libp2p.simulate.main.ideal
+package io.libp2p.simulate.main.ideal.func
+
+import java.util.TreeMap
 
 class Integrated<X: Comparable<X>, Y>(
     val scrFunction: (X) -> Y,
@@ -6,13 +8,18 @@ class Integrated<X: Comparable<X>, Y>(
     val mulXYFunction: (X, Y) -> Double,
     val integrationStep: X,
     val minX: X
-) : DisseminationFunction.Func<X, Double> {
+) : Func<X, Double> {
 
-    private val cache = mutableMapOf<X, Double>()
+    private val cache = TreeMap<X, Double>()
     override operator fun invoke(x: X): Double {
         val cachedVal = cache[x]
         if (cachedVal != null) {
             return cachedVal
+        } else {
+            val ceilEntry: Map.Entry<X, Double>? = cache.ceilingEntry(x)
+            if (ceilEntry != null && ceilEntry.key > x && minusXFunction(ceilEntry.key, integrationStep) < x) {
+                return ceilEntry.value
+            }
         }
         val (minCachedX, cachedSum) = cache.maxByOrNull { it.key }?.toPair()
             ?: (minusXFunction(minX, integrationStep) to 0.0)

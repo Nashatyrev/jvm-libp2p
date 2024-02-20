@@ -1,6 +1,7 @@
 package io.libp2p.simulate.main.ideal
 
 import io.libp2p.simulate.Bandwidth
+import io.libp2p.simulate.main.ideal.func.Integrated
 import org.junit.jupiter.api.Test
 import kotlin.time.Duration.Companion.milliseconds
 

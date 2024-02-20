@@ -1,9 +1,9 @@
-package io.libp2p.simulate.main.ideal
+package io.libp2p.simulate.main.ideal.legacy
 
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.main.SimulationRunner
-import io.libp2p.simulate.main.ideal.IdealPubsub.SendParams
-import io.libp2p.simulate.main.ideal.IdealPubsub.SendType.*
+import io.libp2p.simulate.main.ideal.legacy.IdealPubsub.SendParams
+import io.libp2p.simulate.main.ideal.legacy.IdealPubsub.SendType.*
 import io.libp2p.simulate.stats.ResultPrinter
 import io.libp2p.simulate.mbitsPerSecond
 import io.libp2p.simulate.util.cartesianProduct
