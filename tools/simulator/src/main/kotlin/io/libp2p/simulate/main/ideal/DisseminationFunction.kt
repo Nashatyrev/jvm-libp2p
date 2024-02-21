@@ -39,6 +39,14 @@ class DisseminationFunction(
         minX = ZERO
     )
 
+    val totalSentFunc: Func<Duration, Double> = Integrated(
+        scrFunction = { totalBandwidthFunc(it - calcDelta) },
+        minusXFunction = { x1, x2 -> x1 - x2 },
+        mulXYFunction = { x, y -> y.getTransmitSize(x) },
+        integrationStep = calcDelta,
+        minX = ZERO
+    )
+
     companion object {
 
         fun <Y : Comparable<Y>> solveIncreasingFunc(

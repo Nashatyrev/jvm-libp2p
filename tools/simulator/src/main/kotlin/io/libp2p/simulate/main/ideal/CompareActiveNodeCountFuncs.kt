@@ -5,6 +5,7 @@ import io.libp2p.simulate.main.ideal.DisseminationFunction.Companion.solveIncrea
 import io.libp2p.simulate.util.max
 import io.libp2p.simulate.util.toString
 import kotlin.time.Duration.Companion.ZERO
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 fun main() {
@@ -47,7 +48,7 @@ fun main() {
     val capTime = pivotTimes.max()
 
     val times =
-        (generateSequence(ZERO) { it + 1.seconds }.takeWhile { it <= capTime } +
+        (generateSequence(ZERO) { it + 10.milliseconds }.takeWhile { it <= capTime } +
                 pivotTimes)
             .toSortedSet()
 
@@ -60,9 +61,11 @@ fun main() {
         val delivered1 = simpleDisseminationFunction.totalDeliverFunc(t)
         val delivered2 = preciseDisseminationFunction.totalDeliverFunc(t)
         val delivered3 = integralDisseminationFunction.totalDeliverFunc(t)
+        val sent1 = simpleDisseminationFunction.totalSentFunc(t)
         println(
-            "$t\t$activeNodes1\t$activeNodes2\t$activeNodes3\t" +
-                    "${delivered1.deliverPercentString()}\t${delivered2.deliverPercentString()}\t${delivered3.deliverPercentString()}"
+            "${t.inWholeMilliseconds}\t$activeNodes1\t$activeNodes2\t$activeNodes3\t" +
+                    "${delivered1.deliverPercentString()}\t${delivered2.deliverPercentString()}\t${delivered3.deliverPercentString()}\t" +
+                    "${sent1.deliverPercentString()}"
         )
     }
     println("Done")
