@@ -2,6 +2,7 @@ package io.libp2p.simulate.main.ideal
 
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.main.ideal.DisseminationFunction.Companion.solveIncreasingFunc
+import io.libp2p.simulate.mbitsPerSecond
 import io.libp2p.simulate.util.max
 import io.libp2p.simulate.util.toString
 import kotlin.time.Duration.Companion.ZERO
@@ -10,12 +11,15 @@ import kotlin.time.Duration.Companion.seconds
 
 fun main() {
 
-    val latencyRounds = 10
+//    val latencyRounds = 4
     val msgSize = 1024L * 1024
     val partCount = 128
     val nodeCount = 100_000
-    val bandwidth = Bandwidth(msgSize)
-    val latency = 1.seconds * latencyRounds
+//    val bandwidth = Bandwidth(msgSize)
+//    val latency = 1.seconds * latencyRounds
+    val bandwidth = 10.mbitsPerSecond
+    val latency = 50.milliseconds
+    val timeStep = 2.milliseconds
 
     fun createDissemitationFunction(activeNodesFunctionSetup: (DisseminationFunction) -> Unit) =
         DisseminationFunction(
@@ -48,7 +52,7 @@ fun main() {
     val capTime = pivotTimes.max()
 
     val times =
-        (generateSequence(ZERO) { it + 10.milliseconds }.takeWhile { it <= capTime } +
+        (generateSequence(ZERO) { it + timeStep }.takeWhile { it <= capTime } +
                 pivotTimes)
             .toSortedSet()
 
@@ -63,9 +67,8 @@ fun main() {
         val delivered3 = integralDisseminationFunction.totalDeliverFunc(t)
         val sent1 = simpleDisseminationFunction.totalSentFunc(t)
         println(
-            "${t.inWholeMilliseconds}\t$activeNodes1\t$activeNodes2\t$activeNodes3\t" +
-                    "${delivered1.deliverPercentString()}\t${delivered2.deliverPercentString()}\t${delivered3.deliverPercentString()}\t" +
-                    "${sent1.deliverPercentString()}"
+            "${t.inWholeMilliseconds}\t$activeNodes2\t$activeNodes3\t"
+//                    "${delivered2.deliverPercentString()}\t${delivered3.deliverPercentString()}\t"
         )
     }
     println("Done")
