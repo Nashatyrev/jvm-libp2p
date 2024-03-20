@@ -1,5 +1,6 @@
 package io.libp2p.simulate.main.ideal
 
+import com.google.common.collect.Comparators.max
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.main.SimulationRunner
 import io.libp2p.simulate.main.erasure.ErasureSimulationRunner
@@ -7,7 +8,6 @@ import io.libp2p.simulate.mbitsPerSecond
 import io.libp2p.simulate.stats.ResultPrinter
 import io.libp2p.simulate.util.cartesianProduct
 import io.libp2p.simulate.util.smartRound
-import java.lang.Integer.max
 import kotlin.math.roundToInt
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -58,6 +58,7 @@ class DisseminationFunctionSimulation(
         4 * 1024,
         8 * 1024,
         16 * 1024,
+        256 * 1024,
     ),
     val messageSizeParams: List<Long> = listOf(
 //        10 * 4
@@ -128,7 +129,7 @@ class DisseminationFunctionSimulation(
             initialStep = 1.seconds
         )
         val allActiveSent = disseminationFunc.totalSentFunc(allActiveT) * 100 / disseminationFunc.targetTotalDeliver
-        return Result(dissemT.inWholeMilliseconds, allActiveT.inWholeMilliseconds, allActiveSent)
+        return Result(max(dissemT, allActiveT).inWholeMilliseconds, allActiveT.inWholeMilliseconds, allActiveSent)
     }
 
     private fun printResults(res: Map<SimParams, Result>) {
@@ -138,6 +139,9 @@ class DisseminationFunctionSimulation(
 
         println("\nResult:\n")
         println(printer.printPretty())
+
+        println()
+        println(printer.printTabSeparated())
     }
 
     fun runAllAndPrintResults() {

@@ -94,10 +94,6 @@ class IdealPubsubSimulation2(
                         "delivered: ${totDelivered - lastTotDelivered}, " +
                         "total sent: $totSent")
 
-//                sent.forEach {
-//                    println("  $it")
-//                }
-
                 println("Delivered: " + sim.countDeliveredParts().toSortedMap().values.joinToString("\t"))
                 println("Sent     : " + sim.countSentParts().toSortedMap().values.joinToString("\t"))
                 println("Part counts: " + sim.nodes.map { it.deliveredMessageParts.size }.joinToString(" "))
