@@ -106,12 +106,14 @@ class PreciseActiveNodesFunction(
         val t: Duration,
         val type: Type
     ) : Comparable<Event> {
+        private val id = idGen++
         override fun equals(other: Any?) = this === other
-        override fun hashCode() = t.hashCode()
+        override fun hashCode() = id
         override fun compareTo(other: Event) = comparator.compare(this, other)
 
         companion object {
-            private val comparator = compareBy<Event> { it.t }.thenBy { System.identityHashCode(it) }
+            private var idGen = 0
+            private val comparator = compareBy<Event> { it.t }.thenBy { it.id }
         }
     }
 
