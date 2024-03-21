@@ -20,15 +20,11 @@ fun main() {
 
 class DisseminationFunctionSimulation(
     val bandwidthParams: List<Bandwidth> = listOf(
-//        Bandwidth(1000)
         10.mbitsPerSecond,
         25.mbitsPerSecond,
         50.mbitsPerSecond,
         100.mbitsPerSecond,
-//        200.mbitsPerSecond,
         500.mbitsPerSecond,
-//        1024.mbitsPerSecond,
-//        (5 * 1024).mbitsPerSecond,
     ),
     val latencyParams: List<Duration> = listOf(
         0.milliseconds,
@@ -39,8 +35,6 @@ class DisseminationFunctionSimulation(
         50.milliseconds,
         100.milliseconds,
         200.milliseconds,
-//        500.milliseconds,
-//        1000.milliseconds,
     ),
 
     val msgPartCountParams: List<Int> = listOf(
@@ -63,19 +57,14 @@ class DisseminationFunctionSimulation(
         1024 * 1024,
     ),
     val messageSizeParams: List<Long> = listOf(
-//        10 * 4
         1024 * 1024
     ),
     val nodeCountParams: List<Int> = listOf(
         10000
-//        100,
-//        500,
-//        1000
     ),
 
 
     val paramsSet: List<SimParams> =
-//        listOf(testParams)
         cartesianProduct(
             nodeCountParams,
             messageSizeParams,
