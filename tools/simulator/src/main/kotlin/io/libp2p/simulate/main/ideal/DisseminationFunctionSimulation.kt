@@ -3,41 +3,42 @@ package io.libp2p.simulate.main.ideal
 import com.google.common.collect.Comparators.max
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.main.SimulationRunner
-import io.libp2p.simulate.main.erasure.ErasureSimulationRunner
 import io.libp2p.simulate.mbitsPerSecond
 import io.libp2p.simulate.stats.ResultPrinter
 import io.libp2p.simulate.util.cartesianProduct
-import io.libp2p.simulate.util.smartRound
-import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.DurationUnit
 
 fun main() {
+    val t = 10.mbitsPerSecond.getTransmitTime(1024 * 1024)
+    println("Time: $t")
     DisseminationFunctionSimulation().runAllAndPrintResults()
 }
 
 class DisseminationFunctionSimulation(
     val bandwidthParams: List<Bandwidth> = listOf(
 //        Bandwidth(1000)
-//        10.mbitsPerSecond,
+        10.mbitsPerSecond,
         25.mbitsPerSecond,
-//        50.mbitsPerSecond,
-//        100.mbitsPerSecond,
+        50.mbitsPerSecond,
+        100.mbitsPerSecond,
 //        200.mbitsPerSecond,
-//        500.mbitsPerSecond,
+        500.mbitsPerSecond,
 //        1024.mbitsPerSecond,
 //        (5 * 1024).mbitsPerSecond,
     ),
     val latencyParams: List<Duration> = listOf(
-//        0.milliseconds,
-//        1.milliseconds,
-//        5.milliseconds,
-//        10.milliseconds * 3,
-//        25.milliseconds,
+        0.milliseconds,
+        1.milliseconds,
+        5.milliseconds,
+        10.milliseconds,
+        25.milliseconds,
         50.milliseconds,
-//        100.milliseconds,
-//        200.milliseconds,
+        100.milliseconds,
+        200.milliseconds,
 //        500.milliseconds,
 //        1000.milliseconds,
     ),
@@ -59,6 +60,7 @@ class DisseminationFunctionSimulation(
         8 * 1024,
         16 * 1024,
         256 * 1024,
+        1024 * 1024,
     ),
     val messageSizeParams: List<Long> = listOf(
 //        10 * 4
@@ -95,7 +97,6 @@ class DisseminationFunctionSimulation(
     data class Result(
         val dissemT: Long,
         val allActiveT: Long,
-        val allActiveSent: Double
     )
 
     fun runAll(): List<Result> =
@@ -108,6 +109,8 @@ class DisseminationFunctionSimulation(
             .runAll(paramsSet)
 
     fun run(params: SimParams): Result {
+        fun Duration.roundMilliseconds() = this.toDouble(DurationUnit.MILLISECONDS).roundToLong()
+
         val disseminationFunc = DisseminationFunction(
             params.bandwidth,
             params.latency,
@@ -128,8 +131,7 @@ class DisseminationFunctionSimulation(
             disseminationFunc.targetTotalDeliver.toDouble(),
             initialStep = 1.seconds
         )
-        val allActiveSent = disseminationFunc.totalSentFunc(allActiveT) * 100 / disseminationFunc.targetTotalDeliver
-        return Result(max(dissemT, allActiveT).inWholeMilliseconds, allActiveT.inWholeMilliseconds, allActiveSent)
+        return Result(max(dissemT, allActiveT).roundMilliseconds(), allActiveT.roundMilliseconds())
     }
 
     private fun printResults(res: Map<SimParams, Result>) {
