@@ -35,6 +35,9 @@ class DisseminationFunctionSimulation(
         50.milliseconds,
         100.milliseconds,
         200.milliseconds,
+        500.milliseconds,
+        1000.milliseconds,
+        2000.milliseconds,
     ),
 
     val msgPartCountParams: List<Int> = listOf(
