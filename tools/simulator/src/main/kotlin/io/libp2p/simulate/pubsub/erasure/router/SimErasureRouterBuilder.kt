@@ -9,6 +9,7 @@ import io.libp2p.pubsub.erasure.router.AbstractMessagePeerHandler
 import io.libp2p.pubsub.erasure.router.MessagePeerHandlerFactory
 import io.libp2p.pubsub.erasure.router.SimpleMessagePeerHandler
 import io.libp2p.pubsub.erasure.router.strategy.AckSendStrategy
+import io.libp2p.pubsub.erasure.router.strategy.SampleSelectionStrategy
 import io.libp2p.pubsub.erasure.router.strategy.SampleSendStrategy
 import io.libp2p.pubsub.gossip.CurrentTimeSupplier
 import io.libp2p.simulate.pubsub.SimPubsubRouterBuilder
@@ -25,10 +26,13 @@ class SimErasureRouterBuilder : SimPubsubRouterBuilder {
 
     lateinit var ackSendStrategy: (SampledMessage) -> AckSendStrategy
     lateinit var sampleSendStrategy: (SampledMessage) -> SampleSendStrategy
+    lateinit var sampleSelectionStrategyFact: (SampledMessage) -> SampleSelectionStrategy
     lateinit var simErasureCoder: SimErasureCoder
 
     override fun build(): ErasureRouter {
-        val simMessageRouterFactory = SimMessageRouterFactory(random, ackSendStrategy, sampleSendStrategy)
+        val simMessageRouterFactory =
+            SimMessageRouterFactory(random, ackSendStrategy, sampleSendStrategy, sampleSelectionStrategyFact)
+
         return SimErasureRouter(
             scheduledAsyncExecutor,
             simErasureCoder,

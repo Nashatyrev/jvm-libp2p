@@ -3,6 +3,7 @@ package io.libp2p.simulate.main.erasure
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.pubsub.erasure.message.SampledMessage
 import io.libp2p.pubsub.erasure.router.strategy.AckSendStrategy
+import io.libp2p.pubsub.erasure.router.strategy.SampleSelectionStrategy
 import io.libp2p.pubsub.erasure.router.strategy.SampleSendStrategy
 import io.libp2p.simulate.Bandwidth
 import io.libp2p.simulate.RandomDistribution
@@ -97,6 +98,7 @@ class ErasureSimulationRunner(
     class SampleAckSendConfig(
         val sampleSendStrategy: (SampledMessage) -> SampleSendStrategy,
         val ackSendStrategy: (SampledMessage) -> AckSendStrategy,
+        val sampleSelectionStrategy: (SampledMessage) -> SampleSelectionStrategy,
         val descr: String
     ) {
         override fun equals(other: Any?)= descr == (other as SampleAckSendConfig).descr
@@ -108,7 +110,8 @@ class ErasureSimulationRunner(
             SampleAckSendConfig(
                 sampleSendStrategy = { SampleSendStrategy.cWndStrategy(cWndSize) },
                 ackSendStrategy = AckSendStrategy.Companion::allInboundAndWhenComplete,
-                "aiwc/wnd($cWndSize)"
+                sampleSelectionStrategy = { SampleSelectionStrategy.createBalancedStrategy() },
+                "aiwc/wnd($cWndSize)/bal"
             )
         }
 
@@ -167,6 +170,7 @@ class ErasureSimulationRunner(
         latency = params.latency,
         sampleSendStrategy = params.sendConfig.sampleSendStrategy,
         ackSendStrategy = params.sendConfig.ackSendStrategy,
+        sampleSelectionStrategy = params.sendConfig.sampleSelectionStrategy,
         simErasureCoder = SimErasureCoder(
             sampleSize = params.sampleSize,
             extensionFactor = params.extensionFactor,

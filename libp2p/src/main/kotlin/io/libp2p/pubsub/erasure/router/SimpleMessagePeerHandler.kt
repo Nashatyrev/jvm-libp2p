@@ -12,16 +12,18 @@ import io.libp2p.pubsub.erasure.message.SourceMessage
 import io.libp2p.pubsub.erasure.message.isComplete
 import io.libp2p.pubsub.erasure.message.plusAssign
 import io.libp2p.pubsub.erasure.router.strategy.AckSendStrategy
+import io.libp2p.pubsub.erasure.router.strategy.SampleSelectionStrategy
 import io.libp2p.pubsub.erasure.router.strategy.SampleSendStrategy
 import java.util.Random
 
-class SimpleMessagePeerHandler(
+open class SimpleMessagePeerHandler(
     message: MutableSampledMessage,
     peer: PeerId,
     sender: ErasureSender,
     random: Random,
     private val ackSendStrategy: AckSendStrategy,
-    private val sampleSendStrategy: SampleSendStrategy
+    private val sampleSendStrategy: SampleSendStrategy,
+    private val sampleSelectionStrategy: SampleSelectionStrategy
 ) :
     AbstractMessagePeerHandler(message, peer, sender, random) {
 
@@ -50,11 +52,15 @@ class SimpleMessagePeerHandler(
         return if (candidates.isEmpty()) {
             null
         } else {
-            val sample = candidates[random.nextInt(candidates.size)]
+            val sample = sampleSelectionStrategy.selectSampleFromCandidates(peer, candidates)
             sentSampleIndices += sample.sampleIndex
             sample
         }
     }
+
+    open protected fun selectSampleFromCandidates(candidates: List<ErasureSample>): ErasureSample =
+        candidates[random.nextInt(candidates.size)]
+
 
     private fun sendNextSample(): Boolean {
         return when {

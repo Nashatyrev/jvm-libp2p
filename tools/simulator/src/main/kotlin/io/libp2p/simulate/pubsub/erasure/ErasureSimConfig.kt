@@ -5,6 +5,7 @@ import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.pubsub.PubsubProtocol
 import io.libp2p.pubsub.erasure.message.SampledMessage
 import io.libp2p.pubsub.erasure.router.strategy.AckSendStrategy
+import io.libp2p.pubsub.erasure.router.strategy.SampleSelectionStrategy
 import io.libp2p.pubsub.erasure.router.strategy.SampleSendStrategy
 import io.libp2p.simulate.*
 import io.libp2p.simulate.delay.bandwidth.AccurateBandwidthTracker
@@ -47,6 +48,7 @@ data class ErasureSimConfig(
 
     val ackSendStrategy: (SampledMessage) -> AckSendStrategy,
     val sampleSendStrategy: (SampledMessage) -> SampleSendStrategy,
+    val sampleSelectionStrategy: (SampledMessage) -> SampleSelectionStrategy,
     val simErasureCoder: SimErasureCoder
 ) : SimPubsubConfig
 

@@ -27,6 +27,7 @@ class ErasureSimNetwork(
         simConfig as ErasureSimConfig
         routerBuilder.sampleSendStrategy = simConfig.sampleSendStrategy
         routerBuilder.ackSendStrategy = simConfig.ackSendStrategy
+        routerBuilder.sampleSelectionStrategyFact = simConfig.sampleSelectionStrategy
         routerBuilder.simErasureCoder = simConfig.simErasureCoder
         return ErasureSimPeer(simPeerId, random, routerBuilder)
     }
