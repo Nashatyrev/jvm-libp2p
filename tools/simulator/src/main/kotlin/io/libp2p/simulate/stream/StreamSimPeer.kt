@@ -16,14 +16,19 @@ import io.libp2p.simulate.util.GeneralSizeEstimator
 import io.libp2p.simulate.util.MsgSizeEstimator
 import io.netty.handler.logging.LogLevel
 import java.security.SecureRandom
-import java.util.Random
+import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.atomic.AtomicInteger
 
 abstract class StreamSimPeer<TProtocolController>(
     val isSemiDuplex: Boolean = false,
     val streamProtocol: ProtocolId
-) : AbstractSimPeer(), StreamHandler<TProtocolController> {
+) : SimPeer, StreamHandler<TProtocolController> {
+
+    override val simPeerId = counter.getAndIncrement()
+
+    override val connections: MutableList<SimConnection> = Collections.synchronizedList(ArrayList())
 
     override var inboundBandwidth: BandwidthDelayer = BandwidthDelayer.UNLIM_BANDWIDTH
     override var outboundBandwidth: BandwidthDelayer = BandwidthDelayer.UNLIM_BANDWIDTH
@@ -52,7 +57,20 @@ abstract class StreamSimPeer<TProtocolController>(
     var msgSizeEstimator: MsgSizeEstimator = GeneralSizeEstimator
     var wireLogs: LogLevel? = null
 
-    override fun connectImpl(other: SimPeer): CompletableFuture<SimConnection> {
+    override fun connect(other: SimPeer): CompletableFuture<SimConnection> {
+        return connectImpl(other).thenApply { conn ->
+            val otherAbs = other as? StreamSimPeer<*>
+            connections += conn
+            otherAbs?.connections?.add(conn)
+            conn.closed.thenAccept {
+                connections -= conn
+                otherAbs?.connections?.remove(conn)
+            }
+            conn
+        }
+    }
+
+    private fun connectImpl(other: SimPeer): CompletableFuture<SimConnection> {
         other as StreamSimPeer<*>
 
         val conn = StreamSimConnection(this, other)
@@ -69,4 +87,17 @@ abstract class StreamSimPeer<TProtocolController>(
                 protocolController.complete(it)
                 it
             }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as SimPeer
+        return name == other.name
+    }
+
+    override fun hashCode(): Int = name.hashCode()
+
+    companion object {
+        val counter = AtomicInteger()
+    }
 }
