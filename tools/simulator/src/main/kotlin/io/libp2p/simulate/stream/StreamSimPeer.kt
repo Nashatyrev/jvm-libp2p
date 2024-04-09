@@ -26,7 +26,7 @@ abstract class StreamSimPeer<TProtocolController>(
     val streamProtocol: ProtocolId
 ) : SimPeer, StreamHandler<TProtocolController> {
 
-    override val simPeerId = counter.getAndIncrement()
+    override val simPeerId: SimPeerId = counter.getAndIncrement()
 
     override val connections: MutableList<SimConnection> = Collections.synchronizedList(ArrayList())
 
