@@ -33,11 +33,14 @@ fun main() {
 
 @Suppress("UNUSED_VARIABLE")
 class BlobDecouplingSimulation(
-    val testMessageCount: Int = 10,
+    val testMessageCount: Int = 1,
     val floodPublish: Boolean = false,
 
     val peerCountParams: List<Int> =
-        listOf(30),
+        listOf(
+            4
+//            30
+        ),
 
     val sendingPeerBandwidth: Bandwidth = 10.mbitsPerSecond,
     val bandwidthsParams: List<RandomDistribution<Bandwidth>> =
@@ -57,10 +60,10 @@ class BlobDecouplingSimulation(
     ),
     val latencyParams: List<LatencyDistribution> =
         listOf(
-            LatencyDistribution.createUniformConst(5.milliseconds, 50.milliseconds)
+//            LatencyDistribution.createUniformConst(5.milliseconds, 50.milliseconds)
 //            LatencyDistribution.createConst(10.milliseconds),
 //            LatencyDistribution.createConst(50.milliseconds),
-//            LatencyDistribution.createConst(100.milliseconds),
+            LatencyDistribution.createConst(100.milliseconds),
 //            LatencyDistribution.createConst(150.milliseconds),
 //            LatencyDistribution.createConst(200.milliseconds),
 //            LatencyDistribution.createUniformConst(10.milliseconds, 20.milliseconds),
@@ -92,7 +95,13 @@ class BlobDecouplingSimulation(
         ),
 
     val blockConfigs: List<BlockConfig> = listOf(
-        BlockConfig.ofKilobytes(128, 128, 3)
+//        BlockConfig.ofKilobytes(5 * 128, 128, 0)
+//        BlockConfig.ofKilobytes(128, 128, 3)
+        BlockConfig.ofKilobytes(64, 64, 9),
+//        BlockConfig.ofKilobytes(64, 64, 9),
+//        BlockConfig.ofKilobytes(32, 32, 19),
+//        BlockConfig.ofKilobytes(16, 16, 39),
+//        BlockConfig.ofKilobytes(8, 8, 79)
     ),
 
     val chokeMessageParams: List<MessageChoke> = listOf(
@@ -103,7 +112,8 @@ class BlobDecouplingSimulation(
 
     val nodeCountParams: List<Int> =
 //        listOf(200/*, 100, 500, 1000*/),
-        listOf(1000),
+//        listOf(1000),
+        listOf(100),
     val randomSeedParams: List<Long> =
 //        (1L..8L).toList(),
         listOf(1L),
@@ -194,8 +204,8 @@ class BlobDecouplingSimulation(
 
     fun runAndPrint() {
         val results = SimulationRunner<SimParams, RunResult1>(
-            threadCount = 1,
-            printLocalLogging = true,
+//            threadCount = 1,
+//            printLocalLogging = true,
             runner = { params, logger ->
                 run(params, logger)
             })

@@ -27,40 +27,53 @@ import io.libp2p.simulate.stats.collect.pubsub.SimulationResult
 import io.libp2p.simulate.topology.RandomNPeers
 import io.libp2p.simulate.util.cartesianProduct
 import io.libp2p.simulate.util.smartRound
+import io.libp2p.simulate.util.toMap
+import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 
 fun main() {
     ErasureSimulationRunner().runAllAndPrintResults()
 }
 
+
 class ErasureSimulationRunner(
     val logger: (String) -> Unit = ::println,
     val simulatorThreadCount: Int = 8,
     val publishMessageCount: Int = 1,
     val messageSizes: PubsubMessageSizes = trickyMessageBodyGenerator.createGenericPubsubMessageSizes(),
+    val randomSeed: Long = 0L,
 
     nodeCountParams: List<Int> = listOf(
-        100,
+//        100,
         1000
     ),
     peerCountPrams: List<Int> = listOf(
 //        2,
-        3,
+//        3,
         4,
-        5,
-        7,
-        10,
-        15,
-        20
+//        5,
+//        7,
+//        10,
+//        15,
+//        20
     ),
     messageSizeParams: List<Int> = listOf(
         5 * 128 * 1024
     ),
     sampleSizeParams: List<Int> = listOf(
-        8 * 1024
+        8 * 1024,
+//        16 * 1024,
+//        32 * 1024,
+//        64 * 1024,
+//        5 * 128 * 1024
     ),
     extensionFactorParams: List<Int> = listOf(
-        40,
+//        1,
+//        2,
+//        4,
+        8,
+//        16,
+//        32,
     ),
     sampleExtraSizeParams: List<Int> = listOf(
         0
@@ -101,19 +114,33 @@ class ErasureSimulationRunner(
         val sampleSelectionStrategy: (SampledMessage) -> SampleSelectionStrategy,
         val descr: String
     ) {
-        override fun equals(other: Any?)= descr == (other as SampleAckSendConfig).descr
+        override fun equals(other: Any?) = descr == (other as SampleAckSendConfig).descr
         override fun hashCode() = descr.hashCode()
         override fun toString() = descr
     }
-    val sendStrategyParams = cWndSizeParams
-        .map { cWndSize ->
-            SampleAckSendConfig(
-                sampleSendStrategy = { SampleSendStrategy.cWndStrategy(cWndSize) },
-                ackSendStrategy = AckSendStrategy.Companion::allInboundAndWhenComplete,
-                sampleSelectionStrategy = { SampleSelectionStrategy.createBalancedStrategy() },
-                "aiwc/wnd($cWndSize)/bal"
-            )
-        }
+
+//        val globalSampleSelectionStrategy = SampleSelectionStrategy.createBalancedStrategy(Random(randomSeed))
+    val sendStrategyParams =
+        listOf(
+            cWndSizeParams
+                .map { cWndSize ->
+                    SampleAckSendConfig(
+                        sampleSendStrategy = { SampleSendStrategy.cWndStrategy(cWndSize) },
+                        ackSendStrategy = AckSendStrategy.Companion::allInboundAndWhenComplete,
+                        sampleSelectionStrategy = { SampleSelectionStrategy.createRandomStrategy(Random(randomSeed)) },
+                        "aiwc/wnd($cWndSize)/rnd"
+                    )
+                },
+            cWndSizeParams
+                .map { cWndSize ->
+                    SampleAckSendConfig(
+                        sampleSendStrategy = { SampleSendStrategy.cWndStrategy(cWndSize) },
+                        ackSendStrategy = AckSendStrategy.Companion::allInboundAndWhenComplete,
+                        sampleSelectionStrategy = { SampleSelectionStrategy.createBalancedStrategy(Random(randomSeed)) },
+                        "aiwc/wnd($cWndSize)/bal"
+                    )
+                },
+        ).flatten()
 
     data class SimParams(
         val nodeCount: Int,
@@ -165,7 +192,7 @@ class ErasureSimulationRunner(
         ).generate(0, params.nodeCount),
         bandwidthTrackerFactory =
 //                BandwidthTrackerFactory.fromLambda(::AccurateBandwidthTracker),
-                QDiscBandwidthTracker.createFactory { FairQDisk(it) },
+        QDiscBandwidthTracker.createFactory { FairQDisk(it) },
         topology = RandomNPeers(params.peerCount),
         latency = params.latency,
         sampleSendStrategy = params.sendConfig.sampleSendStrategy,
@@ -216,7 +243,7 @@ class ErasureSimulationRunner(
         }
         val pubsubMessageResult = simulation.messageCollector.gatherResult()
         val simResult = SimulationResult(pubsubMessageResult, simulation.apiMessageDeliveries)
-//        printExtraInfo1(params, simulation)
+//        printExtraInfo2(params, simulation)
         val messageDelays = simulation.apiMessageDeliveries.map { it.receiveTime - it.message.sentTime }
         return RunResult(simResult)
     }
@@ -241,6 +268,26 @@ class ErasureSimulationRunner(
 //            val receivedMessages = res.peerReceivedMessages[peer]!!
 //            println("$peer: inbound sample count: " + receivedMessages.erasureSampleMessages.size)
 //        }
+    }
+
+    fun printExtraInfo2(params: SimParams, simulation: ErasureSimulation) {
+        val result = simulation.messageCollector.gatherResult()
+        val samplesByIndex = result.erasureSampleMessages
+            .groupBy { it.origMsg.message.sampleIndex }
+            .entries
+            .sortedBy { (sampleIndex, samples) ->
+                samples.minOf { it.origMsg.sendTime }
+            }
+            .toMap()
+        val sampleIndexCount = samplesByIndex.mapValues { (_, v) -> v.size }
+        sampleIndexCount.forEach { (k, v) ->
+            println("Sample $k: $v")
+        }
+
+        val publisherSamples = result.peerSentMessages[result.allPeersById[0]]!!.erasureSampleMessages
+        publisherSamples.forEach {
+            println(it)
+        }
     }
 
     fun runAll(): List<RunResult> =
