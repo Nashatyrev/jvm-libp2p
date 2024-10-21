@@ -46,6 +46,7 @@ import kotlin.collections.slice
 import kotlin.collections.take
 import kotlin.collections.toMap
 import kotlin.collections.withDefault
+import kotlin.time.Duration.Companion.milliseconds
 
 class GossipV1_1Tests : GossipTestsBase() {
 
@@ -183,7 +184,7 @@ class GossipV1_1Tests : GossipTestsBase() {
         test.fuzz.timeController.addTime(1.seconds)
         test.mockRouter.waitForMessage {
             it.hasControl() &&
-                it.control.graftCount == 1 && it.control.getGraft(0).topicID == "topic2"
+                    it.control.graftCount == 1 && it.control.getGraft(0).topicID == "topic2"
         }
 
         // Still no GRAFT should be sent
@@ -199,7 +200,7 @@ class GossipV1_1Tests : GossipTestsBase() {
         test.fuzz.timeController.addTime(10.seconds)
         test.mockRouter.waitForMessage {
             it.hasControl() &&
-                it.control.graftCount > 0 && it.control.getGraft(0).topicID == "topic1"
+                    it.control.graftCount > 0 && it.control.getGraft(0).topicID == "topic1"
         }
         test.mockRouter.inboundMessages.clear()
     }
@@ -426,7 +427,7 @@ class GossipV1_1Tests : GossipTestsBase() {
 
         test.mockRouter.waitForMessage {
             it.hasControl() &&
-                it.control.graftCount > 0 && it.control.getGraft(0).topicID == "topic1"
+                    it.control.graftCount > 0 && it.control.getGraft(0).topicID == "topic1"
         }
         test.mockRouter.inboundMessages.clear()
 
@@ -471,7 +472,7 @@ class GossipV1_1Tests : GossipTestsBase() {
             if (i < test.gossipRouter.params.maxIHaveMessages) {
                 test.mockRouter.waitForMessage {
                     it.hasControl() && it.control.iwantCount > 0 &&
-                        it.control.getIwant(0).getMessageIDs(0) == msgId
+                            it.control.getIwant(0).getMessageIDs(0) == msgId
                 }
             }
         }
@@ -1111,7 +1112,7 @@ class GossipV1_1Tests : GossipTestsBase() {
             1,
             test.mockRouter.inboundMessages.count {
                 it.hasControl() && it.control.pruneCount == 1 &&
-                    it.control.getPrune(0).peersCount == test.gossipRouter.params.maxPeersSentInPruneMsg
+                        it.control.getPrune(0).peersCount == test.gossipRouter.params.maxPeersSentInPruneMsg
             }
         )
     }
@@ -1264,6 +1265,37 @@ class GossipV1_1Tests : GossipTestsBase() {
 
         assertTrue(peersReceivedMessage.size == params.D)
         assertTrue(peersReceivedMessage.containsAll(goodScoredPeers))
+    }
+
+    @Test
+    fun `mesh message delivery score should account messages published by local peer`() {
+        val params = GossipParams()
+
+        val topic = "topic1"
+        val topicScoreParamsWithEnabledMeshDeliveryScore = GossipTopicScoreParams(
+            topicWeight = 1.0,
+            meshMessageDeliveriesWeight = -1.0,
+            meshMessageDeliveriesThreshold = 10.0,
+            meshMessageDeliveryWindow = 12.seconds,
+            meshMessageDeliveriesActivation = 1.millis
+        )
+
+        val gossipScoreParams = GossipScoreParams(
+            topicsScoreParams = GossipTopicsScoreParams(
+                topicParamsMap = mapOf(topic to topicScoreParamsWithEnabledMeshDeliveryScore)
+            )
+        )
+
+        val test = TwoRoutersTest(coreParams = params, scoreParams = gossipScoreParams)
+
+        test.mockRouter.subscribe(topic)
+        test.gossipRouter.subscribe(topic)
+
+        // 2 heartbeats - the topic should be GRAFTed
+        test.fuzz.timeController.addTime(2.seconds)
+
+        test.fuzz
+
     }
 
     private fun createPruneMessage(topic: String, pxPeersCount: Int = 0): Rpc.RPC {
