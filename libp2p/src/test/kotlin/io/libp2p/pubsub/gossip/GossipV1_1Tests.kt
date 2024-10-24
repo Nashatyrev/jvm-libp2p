@@ -8,6 +8,7 @@ import io.libp2p.core.PeerId
 import io.libp2p.core.pubsub.*
 import io.libp2p.etc.types.*
 import io.libp2p.pubsub.MockRouter
+import io.libp2p.pubsub.createMessage
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandler
@@ -1273,26 +1274,47 @@ class GossipV1_1Tests : GossipTestsBase() {
 
         val topic = "topic1"
         val topicScoreParamsWithEnabledMeshDeliveryScore = GossipTopicScoreParams(
-            topicWeight = 1.0,
-            meshMessageDeliveriesWeight = -1.0,
-            meshMessageDeliveriesThreshold = 10.0,
-            meshMessageDeliveryWindow = 12.seconds,
-            meshMessageDeliveriesActivation = 1.millis
+            topicWeight = 0.5,
+            meshMessageDeliveriesWeight = -0.73,
+            meshMessageDeliveriesThreshold = 17.0, //0.48,
+            meshMessageDeliveriesCap = 69.0,
+            meshMessageDeliveryWindow = 2.seconds,
+            meshMessageDeliveriesDecay = 0.93,
+            meshMessageDeliveriesActivation = 16.seconds
         )
 
         val gossipScoreParams = GossipScoreParams(
+            peerScoreParams = GossipPeerScoreParams(
+                decayInterval = 8.seconds
+            ),
             topicsScoreParams = GossipTopicsScoreParams(
                 topicParamsMap = mapOf(topic to topicScoreParamsWithEnabledMeshDeliveryScore)
-            )
+            ),
+
         )
 
         val test = TwoRoutersTest(coreParams = params, scoreParams = gossipScoreParams)
+
+        test.fuzz.timeController.addTime(1.seconds)
 
         test.mockRouter.subscribe(topic)
         test.gossipRouter.subscribe(topic)
 
         // 2 heartbeats - the topic should be GRAFTed
         test.fuzz.timeController.addTime(2.seconds)
+
+        for (i in 0..100) {
+            val message = newMessage(topic, i.toLong(), "Hello-$i".toByteArray())
+            //test.gossipRouter.publish(message)
+            test.mockRouter.sendToSingle(
+                Rpc.RPC.newBuilder().addPublish(message.protobufMessage).build()
+            )
+            test.fuzz.timeController.addTime(2.seconds)
+
+            val score = test.gossipRouter.score.score(test.router2.peerId)
+
+            println("$i: score = $score")
+        }
 
         test.fuzz
 

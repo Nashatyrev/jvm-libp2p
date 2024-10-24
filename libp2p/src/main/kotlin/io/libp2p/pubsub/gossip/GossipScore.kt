@@ -41,6 +41,13 @@ class DefaultGossipScore(
         }
     }
 
+    data class TopicScoreSnapshot(
+        val timestamp: Long,
+        val joinedMeshTimestamp: Long,
+
+
+    )
+
     inner class TopicScores(val topic: Topic) {
         private val params: GossipTopicScoreParams
             get() = topicParams[topic]
@@ -288,9 +295,15 @@ class DefaultGossipScore(
     override fun notifyUnseenValidMessage(peerId: PeerId, msg: PubsubMessage) {
         validationTime[msg] = curTimeMillis()
         msg.topics
-            .onEach { getTopicScores(peerId, it).firstMessageDeliveries++ }
-            .filter { isInMesh(peerId, it) }
-            .onEach { getTopicScores(peerId, it).meshMessageDeliveries++ }
+            .onEach {
+                getTopicScores(peerId, it).firstMessageDeliveries++
+            }
+            .filter {
+                isInMesh(peerId, it)
+            }
+            .onEach {
+                getTopicScores(peerId, it).meshMessageDeliveries++
+            }
     }
 
     override fun notifyMeshed(peerId: PeerId, topic: Topic) {
