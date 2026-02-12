@@ -36,6 +36,10 @@ class FloodRouter(executor: ScheduledExecutorService = Executors.newSingleThread
         // NOP
     }
 
+    override fun processExtensions(msg: Rpc.RPC, receivedFrom: PeerHandler) {
+        // NOP
+    }
+
     private fun broadcast(msg: PubsubMessage, receivedFrom: PeerHandler?): CompletableFuture<Unit> {
         val sentFutures = peersForBroadcast(msg)
             .filter { it != receivedFrom }
