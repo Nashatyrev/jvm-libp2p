@@ -167,6 +167,9 @@ interface GossipRpcPartsQueue : RpcPartsQueue {
      * Gossip 1.1 variant
      */
     fun addPrune(topic: Topic, backoffSeconds: Long, backoffPeers: List<PeerId>)
+
+    // TODO Need to check if we should handle when control extension and extension messages could be separated by split  (https://github.com/libp2p/jvm-libp2p/issues/440)
+    fun addControlExtensions(ctrlMessage: Rpc.ControlExtensions)
 }
 
 /**
@@ -230,6 +233,12 @@ open class DefaultGossipRpcPartsQueue(
         }
     }
 
+    protected data class ControlExtensionPart(val ctrlExtension: Rpc.ControlExtensions) : AbstractPart {
+        override fun appendToBuilder(builder: Rpc.RPC.Builder) {
+            builder.controlBuilder.setExtensions(ctrlExtension)
+        }
+    }
+
     override fun addIHave(messageId: MessageId, topic: Topic) {
         addPart(IHavePart(messageId, topic))
     }
@@ -248,6 +257,10 @@ open class DefaultGossipRpcPartsQueue(
 
     override fun addPrune(topic: Topic, backoffSeconds: Long, backoffPeers: List<PeerId>) {
         addPart(PrunePart(topic, backoffSeconds, backoffPeers))
+    }
+
+    override fun addControlExtensions(ctrlMessage: Rpc.ControlExtensions) {
+        addPart(ControlExtensionPart(ctrlMessage))
     }
 
     override fun popMerged(): Rpc.RPC? {
