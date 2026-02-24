@@ -34,7 +34,7 @@ import io.netty.channel.epoll.Epoll
 import io.netty.channel.epoll.EpollDatagramChannel
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.nio.NioDatagramChannel
-import io.netty.handler.codec.quic.*
+import io.netty.incubator.codec.quic.*
 import io.netty.handler.ssl.ClientAuth
 import org.slf4j.LoggerFactory
 import java.net.InetSocketAddress

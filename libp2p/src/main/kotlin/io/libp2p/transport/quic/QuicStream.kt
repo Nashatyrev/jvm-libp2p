@@ -3,7 +3,7 @@ package io.libp2p.transport.quic
 import io.libp2p.core.Connection
 import io.libp2p.etc.types.toVoidCompletableFuture
 import io.libp2p.transport.implementation.StreamOverNetty
-import io.netty.handler.codec.quic.QuicStreamChannel
+import io.netty.incubator.codec.quic.QuicStreamChannel
 import java.util.concurrent.CompletableFuture
 
 class QuicStream(
