@@ -44,10 +44,22 @@ import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
-class QuicTransport(
+class QuicTransport @JvmOverloads constructor(
     private val localKey: PrivKey,
     private val certAlgorithm: String,
-    private val protocols: List<ProtocolBinding<*>>
+    private val protocols: List<ProtocolBinding<*>>,
+    private val bindClientParent: (Bootstrap, ChannelHandler) -> CompletableFuture<Channel> = { bootstrap, handler ->
+        bootstrap.clone()
+            .handler(handler)
+            .bind(0)
+            .toCompletableFuture()
+    },
+    private val bindServerParent: (Bootstrap, SocketAddress, ChannelHandler) -> CompletableFuture<Channel> = { bootstrap, bindAddress, handler ->
+        bootstrap.clone()
+            .handler(handler)
+            .bind(bindAddress)
+            .toCompletableFuture()
+    }
 ) : NettyTransport {
 
     private val logger = LoggerFactory.getLogger(QuicTransport::class.java)
@@ -149,28 +161,22 @@ class QuicTransport(
 
         val channelHandler = serverTransportBuilder(connHandler, preHandler)
 
-        val listener = server.clone()
-            .handler(
-                nettyInitializer {
-                    registerChannel(it.channel)
-                    it.addLastLocal(channelHandler)
-                }
-            )
-
-        val bindComplete = listener.bind(fromMultiaddr(addr))
-
-        bindComplete.also {
+        return bindServerParent(
+            server,
+            fromMultiaddr(addr),
+            nettyInitializer {
+                registerChannel(it.channel)
+                it.addLastLocal(channelHandler)
+            }
+        ).thenApply { listenerChannel ->
             synchronized(this@QuicTransport) {
-                listeners += addr to it.channel()
-                it.channel().closeFuture().addListener {
+                listeners += addr to listenerChannel
+                listenerChannel.closeFuture().addListener {
                     synchronized(this@QuicTransport) {
                         listeners -= addr
                     }
                 }
             }
-        }
-
-        return bindComplete.toVoidCompletableFuture().thenApply {
             logger.info("Quic server listening on {}", addr)
         }
     }
@@ -199,10 +205,7 @@ class QuicTransport(
             .initialMaxStreamDataBidirectionalLocal(1 shl 18)
             .build()
 
-        return client.clone()
-            .handler(requestsHandler)
-            .bind(0)
-            .toCompletableFuture()
+        return bindClientParent(client, requestsHandler)
             .thenCompose {
                 QuicChannel.newBootstrap(it)
                     .streamOption(ChannelOption.ALLOCATOR, allocator)
