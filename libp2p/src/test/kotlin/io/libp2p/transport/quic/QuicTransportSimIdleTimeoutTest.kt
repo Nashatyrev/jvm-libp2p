@@ -3,13 +3,19 @@ package io.libp2p.transport.quic
 import io.libp2p.core.Connection
 import io.libp2p.core.ConnectionHandler
 import io.libp2p.core.PeerId
+import io.libp2p.core.Stream
 import io.libp2p.core.crypto.KeyType
 import io.libp2p.core.crypto.generateKeyPair
 import io.libp2p.core.multiformats.Multiaddr
+import io.libp2p.core.multistream.ProtocolBinding
 import io.netty.bootstrap.Bootstrap
+import io.netty.buffer.ByteBuf
+import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
 import io.netty.channel.ChannelHandler
+import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelId
+import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.channel.embedded.EmbeddedChannel
 import io.netty.channel.socket.DatagramPacket
 import io.netty.util.ReferenceCountUtil
@@ -28,19 +34,41 @@ class QuicTransportSimIdleTimeoutTest {
         val serverKey = generateKeyPair(KeyType.ED25519).first
         val clientKey = generateKeyPair(KeyType.ED25519).first
         val serverPeerId = PeerId.fromPubKey(serverKey.publicKey())
+        val receivedByServer = CompletableFuture<ByteArray>()
+        val testProtocol = ProtocolBinding.createSimple<Unit>("/test/sim/1.0.0") { ch ->
+            val stream = ch as Stream
+            if (!stream.isInitiator) {
+                stream.pushHandler(
+                    object : ChannelInboundHandlerAdapter() {
+                        override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
+                            try {
+                                if (msg is ByteBuf && !receivedByServer.isDone) {
+                                    val bytes = ByteArray(msg.readableBytes())
+                                    msg.getBytes(msg.readerIndex(), bytes)
+                                    receivedByServer.complete(bytes)
+                                }
+                            } finally {
+                                ReferenceCountUtil.release(msg)
+                            }
+                        }
+                    }
+                )
+            }
+            CompletableFuture.completedFuture(Unit)
+        }
 
         val network = EmbeddedDatagramNetwork()
         val serverTransport = QuicTransport(
             serverKey,
             "ECDSA",
-            emptyList(),
+            listOf(testProtocol),
             network::bindClientParent,
             network::bindServerParent
         )
         val clientTransport = QuicTransport(
             clientKey,
             "ECDSA",
-            emptyList(),
+            listOf(testProtocol),
             network::bindClientParent,
             network::bindServerParent
         )
@@ -58,6 +86,17 @@ class QuicTransportSimIdleTimeoutTest {
 
             val clientConn = dialFuture.get(1, TimeUnit.SECONDS)
             val serverConn = serverConnFuture.get(1, TimeUnit.SECONDS)
+
+            val streamPromise = clientConn.muxerSession().createStream(testProtocol)
+            network.runUntil({ streamPromise.stream.isDone && streamPromise.controller.isDone }, Duration.ofSeconds(5))
+            val stream = streamPromise.stream.get(1, TimeUnit.SECONDS)
+            streamPromise.controller.get(1, TimeUnit.SECONDS)
+
+            stream.writeAndFlush(Unpooled.wrappedBuffer(byteArrayOf(1)))
+            network.runSteps(200)
+            network.runUntil({ receivedByServer.isDone }, Duration.ofSeconds(5))
+            val received = receivedByServer.get(1, TimeUnit.SECONDS)
+            assertTrue(received.contentEquals(byteArrayOf(1)), "Expected server to receive the sent packet")
 
             var elapsedSeconds = 0
             while (elapsedSeconds < 180 &&
