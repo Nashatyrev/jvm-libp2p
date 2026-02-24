@@ -5,15 +5,19 @@ import io.libp2p.core.ConnectionHandler
 import io.libp2p.core.PeerId
 import io.libp2p.core.Stream
 import io.libp2p.core.crypto.KeyType
+import io.libp2p.core.crypto.PrivKey
 import io.libp2p.core.crypto.generateKeyPair
+import io.libp2p.core.dsl.HostBuilder
 import io.libp2p.core.multiformats.Multiaddr
 import io.libp2p.core.multistream.ProtocolBinding
+import io.libp2p.core.transport.Transport
+import io.libp2p.protocol.PingBinding
+import io.libp2p.protocol.PingController
+import io.libp2p.protocol.PingProtocol
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.ByteBuf
-import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
 import io.netty.channel.ChannelHandler
-import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelId
 import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.channel.embedded.EmbeddedChannel
@@ -26,6 +30,7 @@ import java.net.SocketAddress
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.function.BiFunction
 
 class QuicTransportSimIdleTimeoutTest {
 
@@ -35,40 +40,21 @@ class QuicTransportSimIdleTimeoutTest {
         val clientKey = generateKeyPair(KeyType.ED25519).first
         val serverPeerId = PeerId.fromPubKey(serverKey.publicKey())
         val receivedByServer = CompletableFuture<ByteArray>()
-        val testProtocol = ProtocolBinding.createSimple<Unit>("/test/sim/1.0.0") { ch ->
-            val stream = ch as Stream
-            if (!stream.isInitiator) {
-                stream.pushHandler(
-                    object : ChannelInboundHandlerAdapter() {
-                        override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
-                            try {
-                                if (msg is ByteBuf && !receivedByServer.isDone) {
-                                    val bytes = ByteArray(msg.readableBytes())
-                                    msg.getBytes(msg.readerIndex(), bytes)
-                                    receivedByServer.complete(bytes)
-                                }
-                            } finally {
-                                ReferenceCountUtil.release(msg)
-                            }
-                        }
-                    }
-                )
-            }
-            CompletableFuture.completedFuture(Unit)
-        }
+        val pingProtocol = pingProtocol(receivedByServer)
+        val pingBinding = PingBinding(pingProtocol)
 
         val network = EmbeddedDatagramNetwork()
         val serverTransport = QuicTransport(
             serverKey,
             "ECDSA",
-            listOf(testProtocol),
+            listOf(pingBinding),
             network::bindClientParent,
             network::bindServerParent
         )
         val clientTransport = QuicTransport(
             clientKey,
             "ECDSA",
-            listOf(testProtocol),
+            listOf(pingBinding),
             network::bindClientParent,
             network::bindServerParent
         )
@@ -87,16 +73,15 @@ class QuicTransportSimIdleTimeoutTest {
             val clientConn = dialFuture.get(1, TimeUnit.SECONDS)
             val serverConn = serverConnFuture.get(1, TimeUnit.SECONDS)
 
-            val streamPromise = clientConn.muxerSession().createStream(testProtocol)
+            val streamPromise = clientConn.muxerSession().createStream(pingBinding)
             network.runUntil({ streamPromise.stream.isDone && streamPromise.controller.isDone }, Duration.ofSeconds(5))
-            val stream = streamPromise.stream.get(1, TimeUnit.SECONDS)
-            streamPromise.controller.get(1, TimeUnit.SECONDS)
-
-            stream.writeAndFlush(Unpooled.wrappedBuffer(byteArrayOf(1)))
+            streamPromise.stream.get(1, TimeUnit.SECONDS)
+            val pingController = streamPromise.controller.get(1, TimeUnit.SECONDS) as PingController
+            pingController.ping()
             network.runSteps(200)
             network.runUntil({ receivedByServer.isDone }, Duration.ofSeconds(5))
             val received = receivedByServer.get(1, TimeUnit.SECONDS)
-            assertTrue(received.contentEquals(byteArrayOf(1)), "Expected server to receive the sent packet")
+            assertTrue(received.isNotEmpty(), "Expected server to receive ping payload")
 
             var elapsedSeconds = 0
             while (elapsedSeconds < 180 &&
@@ -114,6 +99,123 @@ class QuicTransportSimIdleTimeoutTest {
             serverTransport.close().get(5, TimeUnit.SECONDS)
         }
     }
+
+    @Test
+    fun `host builder based quic peers exchange packet and close on idle timeout`() {
+        println("=== TEST START: host builder based quic peers exchange packet and close on idle timeout ===")
+        val receivedByServer = CompletableFuture<ByteArray>()
+        val pingBinding = PingBinding(pingProtocol(receivedByServer))
+        val network = EmbeddedDatagramNetwork()
+        val serverConnFuture = CompletableFuture<Connection>()
+        val transportFactory = BiFunction<PrivKey, List<ProtocolBinding<*>>, Transport> { key, protocols ->
+            QuicTransport(
+                key,
+                "ECDSA",
+                protocols,
+                network::bindClientParent,
+                network::bindServerParent
+            )
+        }
+
+        val serverHost = HostBuilder(HostBuilder.DefaultMode.None)
+            .keyType(KeyType.ED25519)
+            .secureTransport(transportFactory)
+            .protocol(pingBinding)
+            .listen("/ip4/127.0.0.1/udp/41021/quic-v1")
+            .builderModifier { b ->
+                b.connectionHandlers.add(ConnectionHandler { serverConnFuture.complete(it) })
+            }
+            .build()
+
+        val clientHost = HostBuilder(HostBuilder.DefaultMode.None)
+            .keyType(KeyType.ED25519)
+            .secureTransport(transportFactory)
+            .protocol(pingBinding)
+            .build()
+
+        try {
+            println("Starting server and client hosts")
+            val serverStart = serverHost.start()
+            val clientStart = clientHost.start()
+            network.runUntil({ serverStart.isDone && clientStart.isDone }, Duration.ofSeconds(5))
+            serverStart.get(1, TimeUnit.SECONDS)
+            clientStart.get(1, TimeUnit.SECONDS)
+            println("Hosts started: clientPeer=${clientHost.peerId} serverPeer=${serverHost.peerId}")
+
+            println("Connecting client to server over QUIC multiaddr")
+            val connectFuture = clientHost.network.connect(
+                serverHost.peerId,
+                Multiaddr("/ip4/127.0.0.1/udp/41021/quic-v1")
+            )
+            network.runUntil({ connectFuture.isDone && serverConnFuture.isDone }, Duration.ofSeconds(5))
+            val clientConn = connectFuture.get(1, TimeUnit.SECONDS)
+            val serverConn = serverConnFuture.get(1, TimeUnit.SECONDS)
+            println("Connected: clientLocal=${clientConn.localAddress()} clientRemote=${clientConn.remoteAddress()}")
+            println("Connected: serverLocal=${serverConn.localAddress()} serverRemote=${serverConn.remoteAddress()}")
+
+            println("Creating stream via muxerSession().createStream(...)")
+            val streamPromise = clientConn.muxerSession().createStream(pingBinding)
+            network.runUntil({ streamPromise.stream.isDone && streamPromise.controller.isDone }, Duration.ofSeconds(5))
+            val stream = streamPromise.stream.get(1, TimeUnit.SECONDS)
+            val pingController = streamPromise.controller.get(1, TimeUnit.SECONDS) as PingController
+            println("Stream created: initiator=${stream.isInitiator}, protocol=/ipfs/ping/1.0.0")
+
+            println("Sending single ping packet over stream")
+            pingController.ping()
+            network.runSteps(200)
+            network.runUntil({ receivedByServer.isDone }, Duration.ofSeconds(5))
+            val received = receivedByServer.get(1, TimeUnit.SECONDS)
+            println("Server received packet bytes=${received.contentToString()}")
+            assertTrue(received.isNotEmpty(), "Expected server to receive ping payload")
+
+            println("Advancing simulated time until idle timeout closes both connections")
+            var elapsedSeconds = 0
+            while (elapsedSeconds < 180 &&
+                (!clientConn.closeFuture().isDone || !serverConn.closeFuture().isDone)
+            ) {
+                network.advanceTimeBy(10, TimeUnit.SECONDS)
+                network.runSteps(300)
+                elapsedSeconds += 10
+                println(
+                    "t=${elapsedSeconds}s " +
+                        "clientClosed=${clientConn.closeFuture().isDone} " +
+                        "serverClosed=${serverConn.closeFuture().isDone}"
+                )
+            }
+
+            println(
+                "Final close status after simulated t=${elapsedSeconds}s: " +
+                    "client=${clientConn.closeFuture().isDone}, server=${serverConn.closeFuture().isDone}"
+            )
+            assertTrue(clientConn.closeFuture().isDone, "Client connection should close after idle timeout")
+            assertTrue(serverConn.closeFuture().isDone, "Server connection should close after idle timeout")
+        } finally {
+            println("Stopping hosts")
+            clientHost.stop().get(5, TimeUnit.SECONDS)
+            println("Client stopped")
+            serverHost.stop().get(5, TimeUnit.SECONDS)
+            println("Server stopped")
+            println("=== TEST END: host builder based quic peers exchange packet and close on idle timeout ===")
+        }
+    }
+
+    private fun pingProtocol(receivedByServer: CompletableFuture<ByteArray>): PingProtocol =
+        object : PingProtocol() {
+            override fun onStartResponder(stream: Stream): CompletableFuture<PingController> {
+                val handler = object : PingResponder() {
+                    override fun onMessage(stream: Stream, msg: ByteBuf) {
+                        if (!receivedByServer.isDone) {
+                            val bytes = ByteArray(msg.readableBytes())
+                            msg.getBytes(msg.readerIndex(), bytes)
+                            receivedByServer.complete(bytes)
+                        }
+                        super.onMessage(stream, msg)
+                    }
+                }
+                stream.pushHandler(handler)
+                return CompletableFuture.completedFuture(handler)
+            }
+        }
 
     private class EmbeddedDatagramNetwork {
         private lateinit var serverParent: EmbeddedChannel
