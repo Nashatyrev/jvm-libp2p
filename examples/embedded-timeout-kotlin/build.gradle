@@ -1,0 +1,53 @@
+repositories {
+  mavenLocal()
+  mavenCentral()
+}
+
+def quicVersion = "0.0.76.Final-SNAPSHOT"
+
+def nativeClassifier = {
+  def os = System.getProperty("os.name").toLowerCase()
+  def archRaw = System.getProperty("os.arch").toLowerCase()
+  def arch
+  switch (archRaw) {
+    case "aarch64":
+    case "arm64":
+      arch = "aarch_64"
+      break
+    case "x86_64":
+    case "amd64":
+      arch = "x86_64"
+      break
+    default:
+      arch = archRaw
+      break
+  }
+
+  def osPart
+  if (os.contains("mac") || os.contains("darwin")) {
+    osPart = "osx"
+  } else if (os.contains("linux")) {
+    osPart = "linux"
+  } else if (os.contains("win")) {
+    osPart = "windows"
+  } else {
+    throw new GradleException("Unsupported OS for this sample: ${os}")
+  }
+  return "${osPart}-${arch}"
+}
+
+dependencies {
+  testImplementation "io.netty.incubator:netty-incubator-codec-classes-quic:${quicVersion}"
+  testImplementation "io.netty.incubator:netty-incubator-codec-native-quic:${quicVersion}"
+  testRuntimeOnly "io.netty.incubator:netty-incubator-codec-native-quic:${quicVersion}:${nativeClassifier()}"
+}
+
+tasks.named('test') {
+  useJUnitPlatform()
+}
+
+tasks.named('compileTestKotlin') {
+  kotlinOptions {
+    allWarningsAsErrors = false
+  }
+}
