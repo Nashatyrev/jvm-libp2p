@@ -1,5 +1,8 @@
 package io.libp2p.quicsim.network
 
+/**
+ * Time-driven simulation engine over a fixed [SimNetwork] topology.
+ */
 interface SimNetworkEngine {
 
     /**
@@ -7,6 +10,7 @@ interface SimNetworkEngine {
      */
     val currentTimeMillis: Long
 
+    /** Topology handled by this engine. */
     val network: SimNetwork
 
     /**
@@ -24,6 +28,7 @@ interface SimNetworkEngine {
      *   returns all packets delivered exactly at `t`.
      * - If no packet is delivered in (`currentTimeMillis`, `maxMillis`], engine stops at [maxMillis]
      *   and returns an empty packet list.
+     * - After return, [currentTimeMillis] is the stop time (either `t` or [maxMillis]).
      */
     fun advanceUntilDeliveryOr(maxMillis: Long): List<SimPacket>
 }

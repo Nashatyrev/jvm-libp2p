@@ -1,12 +1,25 @@
 package io.libp2p.quicsim.network
 
+/**
+ * Time-driven queue discipline attached to one directed link.
+ *
+ * Implementations own internal queue state and internal simulated clock.
+ */
 interface SimQueueDiscipline {
 
+    /**
+     * Result of packet enqueue attempt.
+     */
     enum class EnqueueDecision {
+        /** Packet accepted into queue state. */
         QUEUED,
+        /** Packet dropped during enqueue (for example queue full/AQM policy). */
         DROPPED
     }
 
+    /**
+     * Current internal simulated time of this queue (millis).
+     */
     val currentTimeMillis: Long
 
     /**
