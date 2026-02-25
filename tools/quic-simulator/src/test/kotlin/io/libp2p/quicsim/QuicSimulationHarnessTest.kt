@@ -6,6 +6,7 @@ import io.libp2p.core.multiformats.Multiaddr
 import io.libp2p.core.multistream.ProtocolBinding
 import io.libp2p.protocol.Ping
 import io.libp2p.protocol.PingController
+import io.libp2p.quicsim.bandwidth.FqCodelBandwidthPolicy
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandlerContext
@@ -20,6 +21,50 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class QuicSimulationHarnessTest {
+
+    @Test
+    fun `fq-codel policy supports basic quic ping flow`() {
+        println("=== TEST START: fq-codel policy supports basic quic ping flow ===")
+        val harness = QuicSimulationHarness(bandwidthPolicy = FqCodelBandwidthPolicy())
+        val pingBinding = Ping()
+        val serverListenAddr = Multiaddr("/ip4/127.0.0.1/udp/41100/quic-v1")
+        val serverConnFuture = CompletableFuture<Connection>()
+
+        val server = harness.createNode(
+            listenAddress = serverListenAddr,
+            bandwidth = NodeBandwidth(inboundBytesPerSecond = 1_250_000, outboundBytesPerSecond = 1_250_000),
+            protocols = listOf(pingBinding),
+            onIncomingConnection = serverConnFuture::complete
+        )
+        val client = harness.createNode(
+            bandwidth = NodeBandwidth(inboundBytesPerSecond = 1_250_000, outboundBytesPerSecond = 1_250_000),
+            protocols = listOf(pingBinding)
+        )
+
+        try {
+            server.start()
+            client.start()
+            val clientConn = client.connect(server, serverListenAddr)
+            harness.runUntil({ serverConnFuture.isDone })
+            val serverConn = serverConnFuture.get(1, TimeUnit.SECONDS)
+
+            val streamPromise = clientConn.muxerSession().createStream(pingBinding)
+            harness.runUntil({ streamPromise.stream.isDone && streamPromise.controller.isDone })
+            val pingController = streamPromise.controller.get(1, TimeUnit.SECONDS) as PingController
+
+            val pingFuture = pingController.ping()
+            harness.runUntil({ pingFuture.isDone }, timeout = Duration.ofSeconds(15))
+            val rttMs = pingFuture.get(1, TimeUnit.SECONDS)
+            println("FQ-CoDel ping completed rttMs=$rttMs")
+            assertTrue(rttMs >= 0, "Expected ping to complete with FQ-CoDel policy")
+
+            assertFalse(clientConn.closeFuture().isDone && serverConn.closeFuture().isDone, "Connections should remain open")
+        } finally {
+            client.stop()
+            server.stop()
+            println("=== TEST END ===")
+        }
+    }
 
     @Test
     fun `two simulated nodes exchange ping and disconnect on idle timeout`() {

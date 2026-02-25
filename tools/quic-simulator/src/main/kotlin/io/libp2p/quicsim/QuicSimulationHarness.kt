@@ -13,6 +13,8 @@ import io.libp2p.core.transport.Transport
 import io.libp2p.protocol.PingBinding
 import io.libp2p.protocol.PingProtocol
 import io.libp2p.transport.quic.QuicTransport
+import io.libp2p.quicsim.bandwidth.BandwidthPolicy
+import io.libp2p.quicsim.bandwidth.TokenBucketBandwidthPolicy
 import java.time.Duration
 import java.util.concurrent.TimeUnit
 import java.util.function.BiFunction

@@ -1,51 +1,9 @@
-package io.libp2p.quicsim
+package io.libp2p.quicsim.bandwidth
 
+import io.libp2p.quicsim.NodeBandwidth
 import java.net.InetSocketAddress
 import kotlin.math.max
 import kotlin.math.min
-
-/**
- * Pluggable policy for bandwidth admission in [SimulatedDatagramNetwork].
- *
- * The network delegates all bandwidth decisions to this interface. Implementations decide
- * whether a queued datagram may be delivered at the current simulated time.
- *
- * Units:
- * - bandwidth is expressed in bytes per second
- * - `nowMillis` is the simulator wall-clock in milliseconds
- * - `bytes` is datagram payload size in bytes
- *
- * Lifecycle:
- * 1. [onBind] is called when a simulated UDP parent channel is created.
- * 2. [onTimeAdvanced] is called whenever the simulator clock is advanced.
- * 3. [tryConsume] is called for queued datagrams before delivery.
- * 4. [onUnbind] is called when a channel is closed/unbound.
- */
-interface BandwidthPolicy {
-    /**
-     * Registers a node address in the policy with its initial bandwidth configuration.
-     */
-    fun onBind(address: InetSocketAddress, initialBandwidth: NodeBandwidth, nowMillis: Long)
-
-    /**
-     * Removes all policy state associated with a node address.
-     */
-    fun onUnbind(address: InetSocketAddress)
-
-    /**
-     * Notifies policy that simulator time has moved forward.
-     *
-     * Implementations may refill token buckets or apply other time-based logic.
-     */
-    fun onTimeAdvanced(nowMillis: Long)
-
-    /**
-     * Returns `true` if a datagram can be delivered and consumes corresponding budget.
-     *
-     * The call models one directional transfer from [sender] to [recipient].
-     */
-    fun tryConsume(sender: InetSocketAddress, recipient: InetSocketAddress, bytes: Int, nowMillis: Long): Boolean
-}
 
 /**
  * Default [BandwidthPolicy] based on per-node inbound/outbound token buckets.
@@ -80,21 +38,27 @@ class TokenBucketBandwidthPolicy : BandwidthPolicy {
         statesByAddress.values.forEach { refillTokens(it, nowMillis) }
     }
 
-    override fun tryConsume(sender: InetSocketAddress, recipient: InetSocketAddress, bytes: Int, nowMillis: Long): Boolean {
-        val senderState = statesByAddress[sender] ?: return false
-        val recipientState = statesByAddress[recipient] ?: return false
+    override fun decide(
+        sender: InetSocketAddress,
+        recipient: InetSocketAddress,
+        bytes: Int,
+        enqueueTimeMillis: Long,
+        nowMillis: Long
+    ): BandwidthDecision {
+        val senderState = statesByAddress[sender] ?: return BandwidthDecision.DROP
+        val recipientState = statesByAddress[recipient] ?: return BandwidthDecision.DROP
         refillTokens(senderState, nowMillis)
         refillTokens(recipientState, nowMillis)
 
         if (!hasEnoughTokens(senderState.outboundTokens, senderState.outboundBytesPerSecond, bytes) ||
             !hasEnoughTokens(recipientState.inboundTokens, recipientState.inboundBytesPerSecond, bytes)
         ) {
-            return false
+            return BandwidthDecision.HOLD
         }
 
         senderState.outboundTokens = consumeTokens(senderState.outboundTokens, senderState.outboundBytesPerSecond, bytes)
         recipientState.inboundTokens = consumeTokens(recipientState.inboundTokens, recipientState.inboundBytesPerSecond, bytes)
-        return true
+        return BandwidthDecision.ALLOW
     }
 
     private fun createState(bandwidth: NodeBandwidth, nowMillis: Long) = ChannelState(

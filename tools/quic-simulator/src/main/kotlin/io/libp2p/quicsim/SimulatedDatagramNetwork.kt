@@ -1,5 +1,8 @@
 package io.libp2p.quicsim
 
+import io.libp2p.quicsim.bandwidth.BandwidthDecision
+import io.libp2p.quicsim.bandwidth.BandwidthPolicy
+import io.libp2p.quicsim.bandwidth.TokenBucketBandwidthPolicy
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.ByteBuf
 import io.netty.channel.Channel
@@ -22,7 +25,8 @@ class SimulatedDatagramNetwork(
     private data class QueuedDatagram(
         val recipient: InetSocketAddress,
         val sender: InetSocketAddress,
-        val payload: ByteBuf
+        val payload: ByteBuf,
+        val enqueueTimeMillis: Long
     )
 
     private val channelsByAddress = linkedMapOf<InetSocketAddress, EmbeddedChannel>()
@@ -118,7 +122,8 @@ class SimulatedDatagramNetwork(
                             QueuedDatagram(
                                 recipient = recipient,
                                 sender = sender,
-                                payload = payload
+                                payload = payload,
+                                enqueueTimeMillis = simulatedMillis
                             )
                         )
                     }
@@ -146,13 +151,30 @@ class SimulatedDatagramNetwork(
             }
 
             val payloadBytes = queued.payload.readableBytes()
-            if (!bandwidthPolicy.tryConsume(queued.sender, queued.recipient, payloadBytes, simulatedMillis)) {
-                queuedDatagrams.addLast(queued)
-                return@repeat
-            }
+            when (
+                bandwidthPolicy.decide(
+                    queued.sender,
+                    queued.recipient,
+                    payloadBytes,
+                    queued.enqueueTimeMillis,
+                    simulatedMillis
+                )
+            ) {
+                BandwidthDecision.HOLD -> {
+                    queuedDatagrams.addLast(queued)
+                    return@repeat
+                }
 
-            destination.writeInbound(DatagramPacket(queued.payload, queued.recipient, queued.sender))
-            deliveredAny = true
+                BandwidthDecision.DROP -> {
+                    ReferenceCountUtil.safeRelease(queued.payload)
+                    return@repeat
+                }
+
+                BandwidthDecision.ALLOW -> {
+                    destination.writeInbound(DatagramPacket(queued.payload, queued.recipient, queued.sender))
+                    deliveredAny = true
+                }
+            }
         }
         return deliveredAny
     }
