@@ -1,7 +1,7 @@
 package io.libp2p.quicsim
 
 import io.netty.bootstrap.Bootstrap
-import io.netty.buffer.Unpooled
+import io.netty.buffer.ByteBuf
 import io.netty.channel.Channel
 import io.netty.channel.ChannelHandler
 import io.netty.channel.ChannelId
@@ -32,7 +32,7 @@ class SimulatedDatagramNetwork {
     private data class QueuedDatagram(
         val recipient: InetSocketAddress,
         val sender: InetSocketAddress,
-        val payload: ByteArray
+        val payload: ByteBuf
     )
 
     private val channelsByAddress = linkedMapOf<InetSocketAddress, EmbeddedChannel>()
@@ -141,8 +141,7 @@ class SimulatedDatagramNetwork {
                     val recipient = msg.recipient() ?: (fromChannel.remoteAddress() as? InetSocketAddress)
                     val sender = msg.sender() ?: localAddress
                     if (recipient != null && channelsByAddress.containsKey(recipient) && msg.content().refCnt() > 0) {
-                        val payload = ByteArray(msg.content().readableBytes())
-                        msg.content().getBytes(msg.content().readerIndex(), payload)
+                        val payload = msg.content().retain()
                         queuedDatagrams.addLast(
                             QueuedDatagram(
                                 recipient = recipient,
@@ -171,25 +170,27 @@ class SimulatedDatagramNetwork {
             val destination = channelsByAddress[queued.recipient]
 
             if (senderState == null || recipientState == null || destination == null) {
+                ReferenceCountUtil.safeRelease(queued.payload)
                 return@repeat
             }
 
             refillTokens(senderState)
             refillTokens(recipientState)
 
-            if (!hasEnoughTokens(senderState.outboundTokens, senderState.outboundBytesPerSecond, queued.payload.size) ||
-                !hasEnoughTokens(recipientState.inboundTokens, recipientState.inboundBytesPerSecond, queued.payload.size)
+            val payloadBytes = queued.payload.readableBytes()
+            if (!hasEnoughTokens(senderState.outboundTokens, senderState.outboundBytesPerSecond, payloadBytes) ||
+                !hasEnoughTokens(recipientState.inboundTokens, recipientState.inboundBytesPerSecond, payloadBytes)
             ) {
                 queuedDatagrams.addLast(queued)
                 return@repeat
             }
 
             senderState.outboundTokens =
-                consumeTokens(senderState.outboundTokens, senderState.outboundBytesPerSecond, queued.payload.size)
+                consumeTokens(senderState.outboundTokens, senderState.outboundBytesPerSecond, payloadBytes)
             recipientState.inboundTokens =
-                consumeTokens(recipientState.inboundTokens, recipientState.inboundBytesPerSecond, queued.payload.size)
+                consumeTokens(recipientState.inboundTokens, recipientState.inboundBytesPerSecond, payloadBytes)
 
-            destination.writeInbound(DatagramPacket(Unpooled.wrappedBuffer(queued.payload), queued.recipient, queued.sender))
+            destination.writeInbound(DatagramPacket(queued.payload, queued.recipient, queued.sender))
             deliveredAny = true
         }
         return deliveredAny
