@@ -6,7 +6,8 @@ import java.util.ArrayDeque
 import kotlin.math.ceil
 
 class FifoSimQueueDiscipline(
-    private val bandwidthBytesPerSecond: Long
+    private val bandwidthBytesPerSecond: Long,
+    private val transmissionMode: TransmissionMode = TransmissionMode.SERIALIZED
 ) : SimQueueDiscipline {
     init {
         require(bandwidthBytesPerSecond > 0) { "bandwidthBytesPerSecond must be > 0" }
@@ -43,7 +44,11 @@ class FifoSimQueueDiscipline(
 
         val queued = queue.first()
         val transmitStart = maxOf(nextDequeueAvailableMillis, queued.enqueueAtMillis)
-        val dequeueTime = transmitStart + serializationMillis(queued.packet.bytes)
+        val serviceMillis = serializationMillis(queued.packet.bytes)
+        val dequeueTime = when (transmissionMode) {
+            TransmissionMode.SERIALIZED -> transmitStart + serviceMillis
+            TransmissionMode.SHAPED_IMMEDIATE -> transmitStart
+        }
         if (dequeueTime > maxMillis) {
             currentTimeMillis = maxMillis
             return emptyList()
@@ -51,7 +56,7 @@ class FifoSimQueueDiscipline(
 
         currentTimeMillis = dequeueTime
         queue.removeFirst()
-        nextDequeueAvailableMillis = dequeueTime
+        nextDequeueAvailableMillis = transmitStart + serviceMillis
         return listOf(queued.packet)
     }
 
