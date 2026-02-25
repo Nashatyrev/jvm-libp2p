@@ -21,15 +21,18 @@ import java.util.concurrent.TimeUnit
 class SimulatedDatagramNetwork(
     private val bandwidthPolicy: BandwidthPolicy = TokenBucketBandwidthPolicy()
 ) {
+    private data class LinkId(val sender: InetSocketAddress, val recipient: InetSocketAddress)
 
     private data class QueuedDatagram(
         val recipient: InetSocketAddress,
         val sender: InetSocketAddress,
         val payload: ByteBuf,
-        val enqueueTimeMillis: Long
+        val enqueueTimeMillis: Long,
+        val readyAtMillis: Long
     )
 
     private val channelsByAddress = linkedMapOf<InetSocketAddress, EmbeddedChannel>()
+    private val linkLatencyMillis = linkedMapOf<LinkId, Long>()
     private val queuedDatagrams = ArrayDeque<QueuedDatagram>()
     private var nextEphemeralPort = 43000
     private var simulatedMillis = 0L
@@ -101,6 +104,11 @@ class SimulatedDatagramNetwork(
         channelsByAddress.values.forEach { it.advanceTimeBy(amount, unit) }
     }
 
+    fun setLinkLatency(sender: InetSocketAddress, recipient: InetSocketAddress, latency: Duration) {
+        require(!latency.isNegative) { "Latency must be non-negative" }
+        linkLatencyMillis[LinkId(sender, recipient)] = latency.toMillis()
+    }
+
     private fun pumpPackets() {
         var deliveredAny: Boolean
         do {
@@ -118,12 +126,14 @@ class SimulatedDatagramNetwork(
                     val sender = msg.sender() ?: localAddress
                     if (recipient != null && channelsByAddress.containsKey(recipient) && msg.content().refCnt() > 0) {
                         val payload = msg.content().retain()
+                        val latency = linkLatencyMillis[LinkId(sender, recipient)] ?: 0L
                         queuedDatagrams.addLast(
                             QueuedDatagram(
                                 recipient = recipient,
                                 sender = sender,
                                 payload = payload,
-                                enqueueTimeMillis = simulatedMillis
+                                enqueueTimeMillis = simulatedMillis,
+                                readyAtMillis = simulatedMillis + latency
                             )
                         )
                     }
@@ -147,6 +157,11 @@ class SimulatedDatagramNetwork(
 
             if (!senderExists || destination == null) {
                 ReferenceCountUtil.safeRelease(queued.payload)
+                return@repeat
+            }
+
+            if (simulatedMillis < queued.readyAtMillis) {
+                queuedDatagrams.addLast(queued)
                 return@repeat
             }
 

@@ -15,7 +15,9 @@ import io.libp2p.protocol.PingProtocol
 import io.libp2p.transport.quic.QuicTransport
 import io.libp2p.quicsim.bandwidth.BandwidthPolicy
 import io.libp2p.quicsim.bandwidth.TokenBucketBandwidthPolicy
+import java.net.InetSocketAddress
 import java.time.Duration
+import java.util.Collections
 import java.util.concurrent.TimeUnit
 import java.util.function.BiFunction
 
@@ -31,13 +33,24 @@ class QuicSimulationHarness(
         protocols: List<ProtocolBinding<*>> = listOf(PingBinding(PingProtocol().also { it.curTime = time::nowMillis })),
         onIncomingConnection: ((Connection) -> Unit)? = null
     ): QuicSimNode {
+        val boundAddresses = Collections.synchronizedSet(linkedSetOf<InetSocketAddress>())
         val transportFactory = BiFunction<PrivKey, List<ProtocolBinding<*>>, Transport> { key, configuredProtocols ->
             QuicTransport(
                 key,
                 "ECDSA",
                 configuredProtocols,
-                { bootstrap, handler -> network.bindClientParent(bandwidth, bootstrap, handler) },
-                { bootstrap, bindAddress, handler -> network.bindServerParent(bandwidth, bootstrap, bindAddress, handler) }
+                { bootstrap, handler ->
+                    network.bindClientParent(bandwidth, bootstrap, handler).thenApply { channel ->
+                        (channel.localAddress() as? InetSocketAddress)?.let { boundAddresses += it }
+                        channel
+                    }
+                },
+                { bootstrap, bindAddress, handler ->
+                    network.bindServerParent(bandwidth, bootstrap, bindAddress, handler).thenApply { channel ->
+                        (channel.localAddress() as? InetSocketAddress)?.let { boundAddresses += it }
+                        channel
+                    }
+                }
             )
         }
 
@@ -53,7 +66,7 @@ class QuicSimulationHarness(
             }
         }
 
-        return QuicSimNode(host = builder.build(), harness = this)
+        return QuicSimNode(host = builder.build(), harness = this, boundAddresses = boundAddresses)
     }
 
     fun runUntil(done: () -> Boolean, timeout: Duration = Duration.ofSeconds(5)) {
@@ -72,11 +85,23 @@ class QuicSimulationHarness(
             network.runSteps(postAdvanceSteps)
         }
     }
+
+    fun setLinkLatency(from: QuicSimNode, to: QuicSimNode, latency: Duration, bidirectional: Boolean = false) {
+        from.boundAddressesSnapshot().forEach { fromAddress ->
+            to.boundAddressesSnapshot().forEach { toAddress ->
+                network.setLinkLatency(fromAddress, toAddress, latency)
+                if (bidirectional) {
+                    network.setLinkLatency(toAddress, fromAddress, latency)
+                }
+            }
+        }
+    }
 }
 
 class QuicSimNode internal constructor(
     val host: Host,
-    private val harness: QuicSimulationHarness
+    private val harness: QuicSimulationHarness,
+    private val boundAddresses: MutableSet<InetSocketAddress>
 ) {
     fun start(timeout: Duration = Duration.ofSeconds(5)) {
         val started = host.start()
@@ -94,6 +119,8 @@ class QuicSimNode internal constructor(
         harness.runUntil({ connectFuture.isDone }, timeout)
         return connectFuture.get(timeout.toMillis(), TimeUnit.MILLISECONDS)
     }
+
+    internal fun boundAddressesSnapshot(): List<InetSocketAddress> = synchronized(boundAddresses) { boundAddresses.toList() }
 
     companion object {
         fun randomKey(): PrivKey = generateKeyPair(KeyType.ED25519).first

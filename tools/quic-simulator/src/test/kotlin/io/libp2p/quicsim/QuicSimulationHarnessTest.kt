@@ -67,6 +67,50 @@ class QuicSimulationHarnessTest {
     }
 
     @Test
+    fun `per-link latency delays ping until simulated time advances`() {
+        println("=== TEST START: per-link latency delays ping until simulated time advances ===")
+        val harness = QuicSimulationHarness()
+        val pingBinding = Ping()
+        val serverListenAddr = Multiaddr("/ip4/127.0.0.1/udp/41103/quic-v1")
+
+        val server = harness.createNode(listenAddress = serverListenAddr, protocols = listOf(pingBinding))
+        val client = harness.createNode(protocols = listOf(pingBinding))
+
+        try {
+            server.start()
+            client.start()
+            val clientConn = client.connect(server, serverListenAddr)
+
+            val streamPromise = clientConn.muxerSession().createStream(pingBinding)
+            harness.runUntil({ streamPromise.stream.isDone && streamPromise.controller.isDone })
+            val pingController = streamPromise.controller.get(1, TimeUnit.SECONDS) as PingController
+
+            val oneWayLatency = Duration.ofMillis(150)
+            harness.setLinkLatency(client, server, oneWayLatency, bidirectional = true)
+            println("Configured bidirectional per-link latency: ${oneWayLatency.toMillis()} ms")
+
+            val pingFuture = pingController.ping()
+            harness.runSteps(500)
+            println("Before time advance: pingDone=${pingFuture.isDone}")
+            assertFalse(pingFuture.isDone, "Ping should not complete before simulated time advancement")
+
+            harness.advanceTimeBy(Duration.ofMillis(150), postAdvanceSteps = 500)
+            println("After +150ms: pingDone=${pingFuture.isDone}")
+            assertFalse(pingFuture.isDone, "Ping should still wait for return path latency")
+
+            harness.advanceTimeBy(Duration.ofMillis(200), postAdvanceSteps = 500)
+            harness.runUntil({ pingFuture.isDone }, timeout = Duration.ofSeconds(5))
+            val rttMs = pingFuture.get(1, TimeUnit.SECONDS)
+            println("After +350ms total: pingDone=${pingFuture.isDone} rttMs=$rttMs")
+            assertTrue(pingFuture.isDone, "Ping should complete after enough simulated latency time")
+        } finally {
+            client.stop()
+            server.stop()
+            println("=== TEST END ===")
+        }
+    }
+
+    @Test
     fun `two simulated nodes exchange ping and disconnect on idle timeout`() {
         println("=== TEST START: two simulated nodes exchange ping and disconnect on idle timeout ===")
         val harness = QuicSimulationHarness()
