@@ -20,12 +20,12 @@ class BasicSimNetworkEngineTest {
 
         val bw = 1_000L
         val links = listOf(
-            SimLink(node1, router, bw, Duration.ofMillis(10), qdisc = FifoSimQueueDiscipline()),
-            SimLink(router, node1, bw, Duration.ofMillis(10), qdisc = FifoSimQueueDiscipline()),
-            SimLink(node2, router, bw, Duration.ofMillis(20), qdisc = FifoSimQueueDiscipline()),
-            SimLink(router, node2, bw, Duration.ofMillis(20), qdisc = FifoSimQueueDiscipline()),
-            SimLink(node3, router, bw, Duration.ofMillis(30), qdisc = FifoSimQueueDiscipline()),
-            SimLink(router, node3, bw, Duration.ofMillis(30), qdisc = FifoSimQueueDiscipline())
+            SimLink(node1, router, Duration.ofMillis(10), qdisc = FifoSimQueueDiscipline(bw)),
+            SimLink(router, node1, Duration.ofMillis(10), qdisc = FifoSimQueueDiscipline(bw)),
+            SimLink(node2, router, Duration.ofMillis(20), qdisc = FifoSimQueueDiscipline(bw)),
+            SimLink(router, node2, Duration.ofMillis(20), qdisc = FifoSimQueueDiscipline(bw)),
+            SimLink(node3, router, Duration.ofMillis(30), qdisc = FifoSimQueueDiscipline(bw)),
+            SimLink(router, node3, Duration.ofMillis(30), qdisc = FifoSimQueueDiscipline(bw))
         )
 
         val network = BasicSimNetwork(nodes = listOf(node1, node2, node3, router), links = links)

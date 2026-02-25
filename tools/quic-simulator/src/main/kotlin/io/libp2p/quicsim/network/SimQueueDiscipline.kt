@@ -23,6 +23,11 @@ interface SimQueueDiscipline {
     val currentTimeMillis: Long
 
     /**
+     * Whether there are queued packets pending dequeue.
+     */
+    val hasPendingPackets: Boolean
+
+    /**
      * Enqueues packet at [currentTimeMillis].
      */
     fun enqueue(packet: SimPacket): EnqueueDecision

@@ -7,15 +7,12 @@ import io.libp2p.quicsim.network.SimPacket
 import java.util.ArrayDeque
 import java.util.PriorityQueue
 import java.util.Random
-import kotlin.math.ceil
 
 class BasicSimNetworkEngine(
     override val network: SimNetwork,
     random: Random = Random(1)
 ) : SimNetworkEngine {
-
     private data class LinkState(
-        var nextTransmitFreeMillis: Long = 0,
         var readyEventScheduled: Boolean = false
     )
 
@@ -104,6 +101,11 @@ class BasicSimNetworkEngine(
         val linkIndex = network.links.indexOf(nextLink)
         if (linkIndex < 0) return
 
+        // Keep queue internal time aligned with engine time before enqueueing into an idle queue.
+        if (!nextLink.qdisc.hasPendingPackets && nextLink.qdisc.currentTimeMillis < currentTimeMillis) {
+            nextLink.qdisc.advanceUntilDequeueOr(currentTimeMillis)
+        }
+
         val enqueueDecision = nextLink.qdisc.enqueue(event.packet)
         if (enqueueDecision != io.libp2p.quicsim.network.SimQueueDiscipline.EnqueueDecision.QUEUED) {
             return
@@ -119,15 +121,14 @@ class BasicSimNetworkEngine(
 
         val dequeued = link.qdisc.advanceUntilDequeueOr(currentTimeMillis)
         if (dequeued.isEmpty()) {
+            if (link.qdisc.hasPendingPackets) {
+                scheduleLinkReadyIfNeeded(event.linkIndex, currentTimeMillis + 1)
+            }
             return
         }
 
         for (packet in dequeued) {
-            val start = maxOf(currentTimeMillis, state.nextTransmitFreeMillis)
-            val txMillis = serializationMillis(packet.bytes, link)
-            val finishTransmit = start + txMillis
-            state.nextTransmitFreeMillis = finishTransmit
-            val arrivalTime = finishTransmit + link.latency.toMillis()
+            val arrivalTime = currentTimeMillis + link.latency.toMillis()
 
             if (link.lossProbability > 0.0 && rng.nextDouble() < link.lossProbability) {
                 continue
@@ -135,7 +136,9 @@ class BasicSimNetworkEngine(
             enqueueEvent(NodeIngressEvent(arrivalTime, link.to.id, packet), arrivalTime)
         }
 
-        scheduleLinkReadyIfNeeded(event.linkIndex, state.nextTransmitFreeMillis)
+        if (link.qdisc.hasPendingPackets) {
+            scheduleLinkReadyIfNeeded(event.linkIndex, currentTimeMillis + 1)
+        }
     }
 
     private fun scheduleLinkReadyIfNeeded(linkIndex: Int, time: Long) {
@@ -147,10 +150,6 @@ class BasicSimNetworkEngine(
 
     private fun enqueueEvent(event: Event, time: Long) {
         eventQueue += QueuedEvent(time, sequence++, event)
-    }
-
-    private fun serializationMillis(bytes: Int, link: SimLink): Long {
-        return ceil(bytes.toDouble() * 1000.0 / link.bandwidthBytesPerSecond.toDouble()).toLong().coerceAtLeast(1)
     }
 
     private fun findNextLink(fromNodeId: String, dstNodeId: String): SimLink? {

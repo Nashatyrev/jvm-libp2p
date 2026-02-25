@@ -15,8 +15,6 @@ data class SimLink(
     val from: SimNode,
     /** Receiver side of this directed link. */
     val to: SimNode,
-    /** Link transmission rate in bytes per second. */
-    val bandwidthBytesPerSecond: Long,
     /** One-way propagation latency. */
     val latency: Duration,
     /** Independent packet drop probability in range [0.0, 1.0]. */
