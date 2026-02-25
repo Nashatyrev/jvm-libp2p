@@ -134,15 +134,13 @@ class QuicSimulationHarnessTest {
         println("Creating nodes. bandwidth=$bandwidth payloadBytes=$expectedBytes")
         val server = harness.createNode(
             listenAddress = serverListenAddr,
+            bandwidth = bandwidth,
             protocols = listOf(largeMessageProtocol)
         )
         val client = harness.createNode(
+            bandwidth = bandwidth,
             protocols = listOf(largeMessageProtocol)
         )
-
-        println("Applying constrained per-node bandwidth: $bandwidth")
-        client.setBandwidth(bandwidth)
-        server.setBandwidth(bandwidth)
 
         try {
             server.start()

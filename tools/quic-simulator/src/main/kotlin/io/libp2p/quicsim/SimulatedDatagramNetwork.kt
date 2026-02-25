@@ -14,20 +14,10 @@ import java.time.Duration
 import java.util.ArrayDeque
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
-import kotlin.math.max
-import kotlin.math.min
 
-class SimulatedDatagramNetwork {
-
-    private data class ChannelState(
-        val inboundBytesPerSecond: Long,
-        val outboundBytesPerSecond: Long,
-        val inboundCapacity: Double,
-        val outboundCapacity: Double,
-        var inboundTokens: Double,
-        var outboundTokens: Double,
-        var lastRefillMillis: Long
-    )
+class SimulatedDatagramNetwork(
+    private val bandwidthPolicy: BandwidthPolicy = TokenBucketBandwidthPolicy()
+) {
 
     private data class QueuedDatagram(
         val recipient: InetSocketAddress,
@@ -36,7 +26,6 @@ class SimulatedDatagramNetwork {
     )
 
     private val channelsByAddress = linkedMapOf<InetSocketAddress, EmbeddedChannel>()
-    private val statesByAddress = linkedMapOf<InetSocketAddress, ChannelState>()
     private val queuedDatagrams = ArrayDeque<QueuedDatagram>()
     private var nextEphemeralPort = 43000
     private var simulatedMillis = 0L
@@ -75,16 +64,12 @@ class SimulatedDatagramNetwork {
     ): CompletableFuture<Channel> {
         val channel = SimDatagramChannel("sim-${address.port}", address, handler)
         channelsByAddress[address] = channel
-        statesByAddress[address] = ChannelState(
-            inboundBytesPerSecond = bandwidth.inboundBytesPerSecond,
-            outboundBytesPerSecond = bandwidth.outboundBytesPerSecond,
-            inboundCapacity = capacityFor(bandwidth.inboundBytesPerSecond),
-            outboundCapacity = capacityFor(bandwidth.outboundBytesPerSecond),
-            inboundTokens = initialTokensFor(bandwidth.inboundBytesPerSecond),
-            outboundTokens = initialTokensFor(bandwidth.outboundBytesPerSecond),
-            lastRefillMillis = simulatedMillis
-        )
+        bandwidthPolicy.onBind(address, bandwidth, simulatedMillis)
         channel.bind(address).syncUninterruptibly()
+        channel.closeFuture().addListener {
+            channelsByAddress.remove(address)
+            bandwidthPolicy.onUnbind(address)
+        }
         return CompletableFuture.completedFuture(channel)
     }
 
@@ -108,21 +93,8 @@ class SimulatedDatagramNetwork {
 
     fun advanceTimeBy(amount: Long, unit: TimeUnit) {
         simulatedMillis += unit.toMillis(amount)
+        bandwidthPolicy.onTimeAdvanced(simulatedMillis)
         channelsByAddress.values.forEach { it.advanceTimeBy(amount, unit) }
-    }
-
-    fun updateBandwidth(address: InetSocketAddress, bandwidth: NodeBandwidth) {
-        val existingState = statesByAddress[address]
-            ?: throw IllegalArgumentException("No simulated datagram channel bound to address $address")
-        statesByAddress[address] = existingState.copy(
-            inboundBytesPerSecond = bandwidth.inboundBytesPerSecond,
-            outboundBytesPerSecond = bandwidth.outboundBytesPerSecond,
-            inboundCapacity = capacityFor(bandwidth.inboundBytesPerSecond),
-            outboundCapacity = capacityFor(bandwidth.outboundBytesPerSecond),
-            inboundTokens = initialTokensFor(bandwidth.inboundBytesPerSecond),
-            outboundTokens = initialTokensFor(bandwidth.outboundBytesPerSecond),
-            lastRefillMillis = simulatedMillis
-        )
     }
 
     private fun pumpPackets() {
@@ -165,80 +137,24 @@ class SimulatedDatagramNetwork {
         val queueSize = queuedDatagrams.size
         repeat(queueSize) {
             val queued = queuedDatagrams.removeFirst()
-            val senderState = statesByAddress[queued.sender]
-            val recipientState = statesByAddress[queued.recipient]
+            val senderExists = channelsByAddress.containsKey(queued.sender)
             val destination = channelsByAddress[queued.recipient]
 
-            if (senderState == null || recipientState == null || destination == null) {
+            if (!senderExists || destination == null) {
                 ReferenceCountUtil.safeRelease(queued.payload)
                 return@repeat
             }
 
-            refillTokens(senderState)
-            refillTokens(recipientState)
-
             val payloadBytes = queued.payload.readableBytes()
-            if (!hasEnoughTokens(senderState.outboundTokens, senderState.outboundBytesPerSecond, payloadBytes) ||
-                !hasEnoughTokens(recipientState.inboundTokens, recipientState.inboundBytesPerSecond, payloadBytes)
-            ) {
+            if (!bandwidthPolicy.tryConsume(queued.sender, queued.recipient, payloadBytes, simulatedMillis)) {
                 queuedDatagrams.addLast(queued)
                 return@repeat
             }
-
-            senderState.outboundTokens =
-                consumeTokens(senderState.outboundTokens, senderState.outboundBytesPerSecond, payloadBytes)
-            recipientState.inboundTokens =
-                consumeTokens(recipientState.inboundTokens, recipientState.inboundBytesPerSecond, payloadBytes)
 
             destination.writeInbound(DatagramPacket(queued.payload, queued.recipient, queued.sender))
             deliveredAny = true
         }
         return deliveredAny
-    }
-
-    private fun refillTokens(state: ChannelState) {
-        val elapsedMillis = simulatedMillis - state.lastRefillMillis
-        if (elapsedMillis <= 0) return
-
-        state.inboundTokens = refillTokenBucket(
-            tokens = state.inboundTokens,
-            bytesPerSecond = state.inboundBytesPerSecond,
-            capacity = state.inboundCapacity,
-            elapsedMillis = elapsedMillis
-        )
-        state.outboundTokens = refillTokenBucket(
-            tokens = state.outboundTokens,
-            bytesPerSecond = state.outboundBytesPerSecond,
-            capacity = state.outboundCapacity,
-            elapsedMillis = elapsedMillis
-        )
-        state.lastRefillMillis = simulatedMillis
-    }
-
-    private fun refillTokenBucket(tokens: Double, bytesPerSecond: Long, capacity: Double, elapsedMillis: Long): Double {
-        if (bytesPerSecond == Long.MAX_VALUE) return Double.POSITIVE_INFINITY
-        val replenished = tokens + bytesPerSecond.toDouble() * elapsedMillis.toDouble() / 1000.0
-        return min(capacity, replenished)
-    }
-
-    private fun hasEnoughTokens(tokens: Double, bytesPerSecond: Long, bytes: Int): Boolean {
-        if (bytesPerSecond == Long.MAX_VALUE) return true
-        return tokens + 1e-9 >= bytes
-    }
-
-    private fun consumeTokens(tokens: Double, bytesPerSecond: Long, bytes: Int): Double {
-        if (bytesPerSecond == Long.MAX_VALUE) return Double.POSITIVE_INFINITY
-        return max(0.0, tokens - bytes.toDouble())
-    }
-
-    private fun capacityFor(bytesPerSecond: Long): Double {
-        if (bytesPerSecond == Long.MAX_VALUE) return Double.POSITIVE_INFINITY
-        return max(bytesPerSecond.toDouble(), 65535.0)
-    }
-
-    private fun initialTokensFor(bytesPerSecond: Long): Double {
-        if (bytesPerSecond == Long.MAX_VALUE) return Double.POSITIVE_INFINITY
-        return bytesPerSecond.toDouble()
     }
 
     private class SimDatagramChannel(
