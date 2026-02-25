@@ -13,6 +13,7 @@ import io.libp2p.core.transport.Transport
 import io.libp2p.protocol.PingBinding
 import io.libp2p.protocol.PingProtocol
 import io.libp2p.transport.quic.QuicTransport
+import java.net.InetSocketAddress
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -24,16 +25,30 @@ class QuicSimulationHarness {
 
     fun createNode(
         listenAddress: Multiaddr? = null,
+        bandwidth: SimulatedDatagramNetwork.NodeBandwidth = SimulatedDatagramNetwork.NodeBandwidth.UNLIMITED,
         protocols: List<ProtocolBinding<*>> = listOf(PingBinding(PingProtocol().also { it.curTime = time::nowMillis })),
         onIncomingConnection: ((Connection) -> Unit)? = null
     ): QuicSimNode {
+        val boundAddresses = linkedSetOf<InetSocketAddress>()
+        var currentBandwidth = bandwidth
+
         val transportFactory = BiFunction<PrivKey, List<ProtocolBinding<*>>, Transport> { key, configuredProtocols ->
             QuicTransport(
                 key,
                 "ECDSA",
                 configuredProtocols,
-                network::bindClientParent,
-                network::bindServerParent
+                { bootstrap, handler ->
+                    network.bindClientParent(currentBandwidth, bootstrap, handler).thenApply { channel ->
+                        (channel.localAddress() as? InetSocketAddress)?.let { boundAddresses += it }
+                        channel
+                    }
+                },
+                { bootstrap, bindAddress, handler ->
+                    network.bindServerParent(currentBandwidth, bootstrap, bindAddress, handler).thenApply { channel ->
+                        (channel.localAddress() as? InetSocketAddress)?.let { boundAddresses += it }
+                        channel
+                    }
+                }
             )
         }
 
@@ -49,7 +64,14 @@ class QuicSimulationHarness {
             }
         }
 
-        return QuicSimNode(builder.build(), this)
+        return QuicSimNode(
+            host = builder.build(),
+            harness = this,
+            updateBandwidth = { updated ->
+                currentBandwidth = updated
+                boundAddresses.forEach { network.updateBandwidth(it, updated) }
+            }
+        )
     }
 
     fun runUntil(done: () -> Boolean, timeout: Duration = Duration.ofSeconds(5)) {
@@ -72,7 +94,8 @@ class QuicSimulationHarness {
 
 class QuicSimNode internal constructor(
     val host: Host,
-    private val harness: QuicSimulationHarness
+    private val harness: QuicSimulationHarness,
+    private val updateBandwidth: (SimulatedDatagramNetwork.NodeBandwidth) -> Unit
 ) {
     fun start(timeout: Duration = Duration.ofSeconds(5)) {
         val started = host.start()
@@ -82,7 +105,6 @@ class QuicSimNode internal constructor(
 
     fun stop(timeout: Duration = Duration.ofSeconds(5)) {
         val stopped = host.stop()
-        harness.runUntil({ stopped.isDone }, timeout)
         stopped.get(timeout.toMillis(), TimeUnit.MILLISECONDS)
     }
 
@@ -90,6 +112,10 @@ class QuicSimNode internal constructor(
         val connectFuture = host.network.connect(remote.host.peerId, remoteAddress)
         harness.runUntil({ connectFuture.isDone }, timeout)
         return connectFuture.get(timeout.toMillis(), TimeUnit.MILLISECONDS)
+    }
+
+    fun setBandwidth(bandwidth: SimulatedDatagramNetwork.NodeBandwidth) {
+        updateBandwidth(bandwidth)
     }
 
     companion object {
