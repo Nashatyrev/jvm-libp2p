@@ -125,7 +125,7 @@ class QuicSimulationHarnessTest {
             }
             CompletableFuture.completedFuture(Unit)
         }
-        val bandwidth = SimulatedDatagramNetwork.NodeBandwidth(
+        val bandwidth = NodeBandwidth(
             inboundBytesPerSecond = 1_250_000,
             outboundBytesPerSecond = 1_250_000
         )

@@ -19,20 +19,6 @@ import kotlin.math.min
 
 class SimulatedDatagramNetwork {
 
-    data class NodeBandwidth(
-        val inboundBytesPerSecond: Long = Long.MAX_VALUE,
-        val outboundBytesPerSecond: Long = Long.MAX_VALUE
-    ) {
-        init {
-            require(inboundBytesPerSecond > 0) { "inboundBytesPerSecond must be > 0" }
-            require(outboundBytesPerSecond > 0) { "outboundBytesPerSecond must be > 0" }
-        }
-
-        companion object {
-            val UNLIMITED = NodeBandwidth()
-        }
-    }
-
     private data class ChannelState(
         val inboundBytesPerSecond: Long,
         val outboundBytesPerSecond: Long,

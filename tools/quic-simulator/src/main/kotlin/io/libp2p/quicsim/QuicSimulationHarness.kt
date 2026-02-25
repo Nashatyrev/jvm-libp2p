@@ -15,7 +15,6 @@ import io.libp2p.protocol.PingProtocol
 import io.libp2p.transport.quic.QuicTransport
 import java.net.InetSocketAddress
 import java.time.Duration
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.function.BiFunction
 
@@ -25,7 +24,7 @@ class QuicSimulationHarness {
 
     fun createNode(
         listenAddress: Multiaddr? = null,
-        bandwidth: SimulatedDatagramNetwork.NodeBandwidth = SimulatedDatagramNetwork.NodeBandwidth.UNLIMITED,
+        bandwidth: NodeBandwidth = NodeBandwidth.UNLIMITED,
         protocols: List<ProtocolBinding<*>> = listOf(PingBinding(PingProtocol().also { it.curTime = time::nowMillis })),
         onIncomingConnection: ((Connection) -> Unit)? = null
     ): QuicSimNode {
@@ -95,7 +94,7 @@ class QuicSimulationHarness {
 class QuicSimNode internal constructor(
     val host: Host,
     private val harness: QuicSimulationHarness,
-    private val updateBandwidth: (SimulatedDatagramNetwork.NodeBandwidth) -> Unit
+    private val updateBandwidth: (NodeBandwidth) -> Unit
 ) {
     fun start(timeout: Duration = Duration.ofSeconds(5)) {
         val started = host.start()
@@ -114,7 +113,7 @@ class QuicSimNode internal constructor(
         return connectFuture.get(timeout.toMillis(), TimeUnit.MILLISECONDS)
     }
 
-    fun setBandwidth(bandwidth: SimulatedDatagramNetwork.NodeBandwidth) {
+    fun setBandwidth(bandwidth: NodeBandwidth) {
         updateBandwidth(bandwidth)
     }
 
