@@ -1,0 +1,17 @@
+package io.libp2p.quicsim.host
+
+import io.libp2p.core.dsl.BuilderJ
+import io.libp2p.core.multistream.ProtocolBinding
+
+interface NodeProgram {
+
+    val simNodeId: SimNodeId
+
+    fun createProtocols(context: SimContext): List<ProtocolBinding<*>>
+
+    fun modifyBuilder(context: SimContext, builder: BuilderJ) {}
+
+    fun start(simContext: SimContext, networkContext: NetworkContext)
+
+    fun isComplete(): Boolean
+}
