@@ -198,7 +198,7 @@ class QuicTransport @JvmOverloads constructor(
         val requestsHandler = QuicClientCodecBuilder()
             .sslEngineProvider { q -> sslContext.newEngine(q.alloc()) }
             .maxIdleTimeout(60000, TimeUnit.MILLISECONDS)
-            .sslTaskExecutor(workerGroup)
+            .sslTaskExecutor(null) // IMMEDIATE Executor
             .initialMaxData(1 shl 20)
             .initialMaxStreamsBidirectional(64)
             .initialMaxStreamDataBidirectionalRemote(1 shl 18)
@@ -308,7 +308,7 @@ class QuicTransport @JvmOverloads constructor(
         return QuicServerCodecBuilder()
             .sslEngineProvider { q -> sslContext.newEngine(q.alloc()) }
             .maxIdleTimeout(60000, TimeUnit.MILLISECONDS)
-            .sslTaskExecutor(workerGroup)
+            .sslTaskExecutor(null) // IMMEDIATE Executor
             .tokenHandler(NoTokenHandler())
             .handler(
                 nettyInitializer {
