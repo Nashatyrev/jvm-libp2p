@@ -36,16 +36,16 @@ class QuicSimulationHarness(
         val boundAddresses = Collections.synchronizedSet(linkedSetOf<InetSocketAddress>())
         val transportFactory = BiFunction<PrivKey, List<ProtocolBinding<*>>, Transport> { key, configuredProtocols ->
             QuicTransport(
-                key,
-                "ECDSA",
-                configuredProtocols,
-                { bootstrap, handler ->
+                localKey = key,
+                certAlgorithm = "ECDSA",
+                protocols = configuredProtocols,
+                bindClientParent = { bootstrap, handler ->
                     network.bindClientParent(bandwidth, bootstrap, handler).thenApply { channel ->
                         (channel.localAddress() as? InetSocketAddress)?.let { boundAddresses += it }
                         channel
                     }
                 },
-                { bootstrap, bindAddress, handler ->
+                bindServerParent = { bootstrap, bindAddress, handler ->
                     network.bindServerParent(bandwidth, bootstrap, bindAddress, handler).thenApply { channel ->
                         (channel.localAddress() as? InetSocketAddress)?.let { boundAddresses += it }
                         channel

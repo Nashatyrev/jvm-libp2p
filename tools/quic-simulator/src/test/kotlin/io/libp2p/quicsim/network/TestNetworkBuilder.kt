@@ -2,14 +2,13 @@ package io.libp2p.quicsim.network
 
 import io.libp2p.quicsim.network.impl.BasicSimNetwork
 import io.libp2p.quicsim.network.impl.BasicSimNetworkEngine
-import io.libp2p.quicsim.network.impl.BasicSimNode
 import java.time.Duration
 
 class TestNetworkBuilder {
-    private val nodes = linkedMapOf<String, BasicSimNode>()
+    private val nodes = linkedMapOf<String, SimNode>()
     private val links = mutableListOf<SimLink>()
 
-    fun node(id: String): BasicSimNode = nodes.getOrPut(id) { BasicSimNode(id) }
+    fun node(id: String): SimNode = nodes.getOrPut(id) { SimNode(id) }
 
     fun link(
         from: SimNode,
@@ -47,10 +46,10 @@ class TestNetworkBuilder {
 }
 
 data class ThreeNodeRouterFixture(
-    val node1: BasicSimNode,
-    val node2: BasicSimNode,
-    val node3: BasicSimNode,
-    val router: BasicSimNode,
+    val node1: SimNode,
+    val node2: SimNode,
+    val node3: SimNode,
+    val router: SimNode,
     val network: BasicSimNetwork,
     val engine: BasicSimNetworkEngine
 )
