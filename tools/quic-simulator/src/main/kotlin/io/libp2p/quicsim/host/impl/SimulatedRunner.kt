@@ -13,6 +13,8 @@ import io.libp2p.quicsim.core.SimCoreNet
 import io.libp2p.quicsim.core.SimCoreNode
 import io.libp2p.quicsim.core.SimCorePacket
 import io.libp2p.quicsim.core.schedule.DeterministicScheduler
+import io.libp2p.quicsim.core.schedule.MonotonicTimer
+import io.libp2p.quicsim.core.schedule.TimePoint
 import io.libp2p.quicsim.host.NetworkContext
 import io.libp2p.quicsim.host.NodeFactory
 import io.libp2p.quicsim.host.NodeProgram
@@ -52,6 +54,19 @@ class SimulatedRunner(
     val nodeIdToNetworkNodeId: (SimNodeId) -> String = { "node-$it" },
     val maxSimulatedRunDuration: Duration = 1.minutes,
 ) {
+    private data class EngineTimePoint(val millis: Long) : TimePoint {
+        override fun minus(other: TimePoint): Duration {
+            require(other is EngineTimePoint) {
+                "Unsupported TimePoint implementation: ${other::class.qualifiedName}"
+            }
+            return (millis - other.millis).milliseconds
+        }
+    }
+
+    private inner class EngineMonotonicTimer : MonotonicTimer {
+        override fun time(): TimePoint = EngineTimePoint(networkEngine.currentTimeMillis)
+    }
+
     private data class BoundChannel(
         val ownerNodeId: SimNodeId,
         val channel: SimDatagramChannel
@@ -280,6 +295,7 @@ class SimulatedRunner(
     private lateinit var embeddedNodes: List<EmbeddedNode>
     private lateinit var orchestrator: Orchestrator
     private val channelsByPortGlobal = linkedMapOf<Int, BoundChannel>()
+    private val engineTimer: MonotonicTimer = EngineMonotonicTimer()
     private var runRealStartMillis: Long = 0
     private var simulatedElapsed: Duration = ZERO
 
@@ -296,7 +312,7 @@ class SimulatedRunner(
         }
 
         simContexts = embeddedNodes.map {
-            SimContext(it.scheduler, it.scheduler)
+            SimContext(it.scheduler, engineTimer)
         }
 
         hosts = embeddedNodes.indices.map { idx ->
@@ -349,7 +365,7 @@ class SimulatedRunner(
 
     fun run() {
         runRealStartMillis = System.currentTimeMillis()
-        simulatedElapsed = ZERO
+        syncSimulatedElapsedFromNetwork()
         fun log(msg: String) {
             val realElapsedMillis = System.currentTimeMillis() - runRealStartMillis
             val simElapsedMillis = simulatedElapsed.inWholeMilliseconds
@@ -367,6 +383,7 @@ class SimulatedRunner(
         var ticks = 0
         while (true) {
             orchestrator.pumpPackets()
+            syncSimulatedElapsedFromNetwork()
             val completeCount = nodePrograms.count { it.isComplete() }
             if (completeCount == nodePrograms.size) {
                 break
@@ -397,6 +414,7 @@ class SimulatedRunner(
             }
 
             orchestrator.pumpPackets()
+            syncSimulatedElapsedFromNetwork()
             val nextDelay = orchestrator.nextTaskDuration()
             if (nextDelay == null) {
                 break
@@ -411,7 +429,11 @@ class SimulatedRunner(
 
     private fun advanceSimulationBy(step: Duration) {
         orchestrator.advanceAndExecuteAll(step)
-        simulatedElapsed += step
+        syncSimulatedElapsedFromNetwork()
+    }
+
+    private fun syncSimulatedElapsedFromNetwork() {
+        simulatedElapsed = networkEngine.currentTimeMillis.milliseconds
     }
 
     private fun ensureWithinTimeLimit(completedCount: Int = nodePrograms.count { it.isComplete() }) {

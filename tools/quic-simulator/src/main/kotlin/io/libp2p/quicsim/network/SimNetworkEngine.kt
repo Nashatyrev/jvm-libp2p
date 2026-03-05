@@ -7,6 +7,9 @@ import io.libp2p.quicsim.core.PacketProcessor
  */
 interface SimNetworkEngine : PacketProcessor<SimPacket> {
 
+    /** Current internal simulated time of the engine (millis). */
+    val currentTimeMillis: Long
+
     /** Topology handled by this engine. */
     val network: SimNetwork
 }

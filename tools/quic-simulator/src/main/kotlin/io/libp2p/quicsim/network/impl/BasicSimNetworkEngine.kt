@@ -34,7 +34,7 @@ class BasicSimNetworkEngine(
         val linkIndex: Int
     ) : Event
 
-    var currentTimeMillis: Long = 0
+    override var currentTimeMillis: Long = 0
         private set
 
     private var sequence = 0L
