@@ -51,7 +51,6 @@ class SimulatedRunnerTest {
     }
 
     @Test
-    @Timeout(30)
     fun `simulated runner completes 5-node ring with sample gossip`() {
         val nodeCount = 5
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()

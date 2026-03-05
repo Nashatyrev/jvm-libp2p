@@ -39,6 +39,7 @@ import java.util.function.BiFunction
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.ZERO
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -49,6 +50,7 @@ class SimulatedRunner(
     val listenIP: String = "127.0.0.1",
     val listenPortStartRange: Int = 17000,
     val nodeIdToNetworkNodeId: (SimNodeId) -> String = { "node-$it" },
+    val maxSimulatedRunDuration: Duration = 1.minutes,
 ) {
     private data class BoundChannel(
         val ownerNodeId: SimNodeId,
@@ -278,6 +280,8 @@ class SimulatedRunner(
     private lateinit var embeddedNodes: List<EmbeddedNode>
     private lateinit var orchestrator: Orchestrator
     private val channelsByPortGlobal = linkedMapOf<Int, BoundChannel>()
+    private var runRealStartMillis: Long = 0
+    private var simulatedElapsed: Duration = ZERO
 
     fun createHosts() {
         nodePrograms = (0 until nodeCount).map(nodeFactory::createNode)
@@ -344,8 +348,13 @@ class SimulatedRunner(
     }
 
     fun run() {
-        val startedAt = System.currentTimeMillis()
-        fun log(msg: String) = println("[+${System.currentTimeMillis() - startedAt}ms] $msg")
+        runRealStartMillis = System.currentTimeMillis()
+        simulatedElapsed = ZERO
+        fun log(msg: String) {
+            val realElapsedMillis = System.currentTimeMillis() - runRealStartMillis
+            val simElapsedMillis = simulatedElapsed.inWholeMilliseconds
+            println("[r+${realElapsedMillis}ms s+${simElapsedMillis}ms] $msg")
+        }
 
         log("Creating hosts...")
         createHosts()
@@ -362,16 +371,17 @@ class SimulatedRunner(
             if (completeCount == nodePrograms.size) {
                 break
             }
+            ensureWithinTimeLimit(completeCount)
 
             val nextDelay = orchestrator.nextTaskDuration()
             if (nextDelay == null) {
                 throw IllegalStateException("Simulation stalled: no pending tasks but only $completeCount/${nodePrograms.size} programs completed")
             }
             val step = if (nextDelay == ZERO) 1.milliseconds else nextDelay
-            orchestrator.advanceAndExecuteAll(step)
+            advanceSimulationBy(step)
 
             ticks++
-            if (ticks % 100 == 0) {
+            if (ticks % 10000 == 0) {
                 log("$completeCount of ${nodePrograms.size} completed")
             }
         }
@@ -392,9 +402,25 @@ class SimulatedRunner(
                 break
             }
             val step = if (nextDelay == ZERO) 1.milliseconds else nextDelay
-            orchestrator.advanceAndExecuteAll(step)
+            advanceSimulationBy(step)
             elapsed += step
+            ensureWithinTimeLimit()
         }
         check(done()) { "Condition was not reached in simulated protocol loop" }
+    }
+
+    private fun advanceSimulationBy(step: Duration) {
+        orchestrator.advanceAndExecuteAll(step)
+        simulatedElapsed += step
+    }
+
+    private fun ensureWithinTimeLimit(completedCount: Int = nodePrograms.count { it.isComplete() }) {
+        if (simulatedElapsed > maxSimulatedRunDuration) {
+            throw IllegalStateException(
+                "Simulation exceeded limit: simulated=${simulatedElapsed.inWholeMilliseconds}ms " +
+                    "limit=${maxSimulatedRunDuration.inWholeMilliseconds}ms " +
+                    "completed=$completedCount/${nodePrograms.size}"
+            )
+        }
     }
 }

@@ -50,7 +50,13 @@ class SampleGossipNodeProgram(
     private var eventsListenerInstalled = false
 
     override fun onAllConnected(simContext: SimContext, networkContext: NetworkContext) {
-        fun log(msg: String) = println("[${System.currentTimeMillis()}ms] node=$simNodeId $msg")
+        val realStartMillis = System.currentTimeMillis()
+        val simStartTime = simContext.timer.time()
+        fun log(msg: String) {
+            val realElapsedMillis = System.currentTimeMillis() - realStartMillis
+            val simElapsedMillis = (simContext.timer.time() - simStartTime).inWholeMilliseconds
+            println("[r+${realElapsedMillis}ms s+${simElapsedMillis}ms] node=$simNodeId $msg")
+        }
         expectedNodeIds = networkContext.allNodes.keys - simNodeId
         log("expected senders: $expectedNodeIds")
         installRouterEventLogger(::log)
