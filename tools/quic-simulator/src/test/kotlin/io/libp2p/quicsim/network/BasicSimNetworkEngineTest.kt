@@ -1,14 +1,15 @@
 package io.libp2p.quicsim.network
 
+import io.libp2p.quicsim.network.impl.BasicSimNetworkEngine
 import io.libp2p.quicsim.network.impl.FifoSimQueueDiscipline
 import io.libp2p.quicsim.network.impl.FqCodelSimQueueDiscipline
 import io.libp2p.quicsim.network.impl.TransmissionMode
-import io.libp2p.quicsim.network.impl.BasicSimNetworkEngine
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 class BasicSimNetworkEngineTest {
 
@@ -26,8 +27,7 @@ class BasicSimNetworkEngineTest {
             dstNodeId = fixture.node2.id
         )
 
-        fixture.engine.injectPacket(packet)
-        val delivered = fixture.engine.advanceUntilDeliveryOr(10_000)
+        val delivered = fixture.engine.deliver(listOf(packet))
 
         assertEquals(1, delivered.size)
         assertEquals(packet.id, delivered.first().id)
@@ -38,7 +38,8 @@ class BasicSimNetworkEngineTest {
         // total = 2030ms
         assertEquals(2_030L, fixture.engine.currentTimeMillis)
 
-        val noMore = fixture.engine.advanceUntilDeliveryOr(10_000)
+        fixture.engine.advanceAndExecuteAll((10_000L - fixture.engine.currentTimeMillis).milliseconds)
+        val noMore = fixture.engine.deliver(emptyList())
         assertTrue(noMore.isEmpty())
         assertEquals(10_000L, fixture.engine.currentTimeMillis)
     }
@@ -57,8 +58,7 @@ class BasicSimNetworkEngineTest {
             dstNodeId = fixture.node2.id
         )
 
-        fixture.engine.injectPacket(packet)
-        val delivered = fixture.engine.advanceUntilDeliveryOr(10_000)
+        val delivered = fixture.engine.deliver(listOf(packet))
 
         assertEquals(1, delivered.size)
         assertEquals(packet.id, delivered.first().id)
@@ -69,7 +69,8 @@ class BasicSimNetworkEngineTest {
         // total = 2030ms
         assertEquals(2_030L, fixture.engine.currentTimeMillis)
 
-        val noMore = fixture.engine.advanceUntilDeliveryOr(10_000)
+        fixture.engine.advanceAndExecuteAll((10_000L - fixture.engine.currentTimeMillis).milliseconds)
+        val noMore = fixture.engine.deliver(emptyList())
         assertTrue(noMore.isEmpty())
         assertEquals(10_000L, fixture.engine.currentTimeMillis)
     }
@@ -93,8 +94,7 @@ class BasicSimNetworkEngineTest {
             dstNodeId = fixture.node2.id
         )
 
-        fixture.engine.injectPacket(packet)
-        val delivered = fixture.engine.advanceUntilDeliveryOr(10_000)
+        val delivered = fixture.engine.deliver(listOf(packet))
 
         assertEquals(1, delivered.size)
         assertEquals(packet.id, delivered.first().id)
@@ -118,15 +118,16 @@ class BasicSimNetworkEngineTest {
             SimPacket(id = 2, bytes = 1_000, srcNodeId = fixture.node1.id, dstNodeId = fixture.node2.id),
             SimPacket(id = 3, bytes = 1_000, srcNodeId = fixture.node1.id, dstNodeId = fixture.node2.id)
         )
-        packets.forEach { fixture.engine.injectPacket(it) }
 
         val deliveredIds = mutableListOf<Long>()
         val deliveredTimes = mutableListOf<Long>()
+
+        var delivered = fixture.engine.deliver(packets)
         while (deliveredIds.size < packets.size) {
-            val delivered = fixture.engine.advanceUntilDeliveryOr(10_000)
             assertTrue(delivered.isNotEmpty(), "Expected pending packets to eventually be delivered")
             deliveredIds += delivered.map { it.id }
             repeat(delivered.size) { deliveredTimes += fixture.engine.currentTimeMillis }
+            delivered = fixture.engine.deliver(emptyList())
         }
 
         assertEquals(listOf(1L, 2L, 3L), deliveredIds)
@@ -153,14 +154,12 @@ class BasicSimNetworkEngineTest {
             srcNodeId = fixture.node3.id,
             dstNodeId = fixture.node2.id
         )
-        fixture.engine.injectPacket(packetFromNode1)
-        fixture.engine.injectPacket(packetFromNode3)
 
-        val firstDelivery = fixture.engine.advanceUntilDeliveryOr(10_000)
+        val firstDelivery = fixture.engine.deliver(listOf(packetFromNode1, packetFromNode3))
         assertEquals(listOf(packetFromNode1.id), firstDelivery.map { it.id })
         assertEquals(2_030L, fixture.engine.currentTimeMillis)
 
-        val secondDelivery = fixture.engine.advanceUntilDeliveryOr(10_000)
+        val secondDelivery = fixture.engine.deliver(emptyList())
         assertEquals(listOf(packetFromNode3.id), secondDelivery.map { it.id })
         assertEquals(3_030L, fixture.engine.currentTimeMillis)
     }
@@ -184,20 +183,18 @@ class BasicSimNetworkEngineTest {
             srcNodeId = fixture.node1.id,
             dstNodeId = fixture.node3.id
         )
-        fixture.engine.injectPacket(toNode2)
-        fixture.engine.injectPacket(toNode3)
 
-        val firstDelivery = fixture.engine.advanceUntilDeliveryOr(10_000)
+        val firstDelivery = fixture.engine.deliver(listOf(toNode2, toNode3))
         assertEquals(listOf(toNode2.id), firstDelivery.map { it.id })
         assertEquals(2_030L, fixture.engine.currentTimeMillis)
 
-        val secondDelivery = fixture.engine.advanceUntilDeliveryOr(10_000)
+        val secondDelivery = fixture.engine.deliver(emptyList())
         assertEquals(listOf(toNode3.id), secondDelivery.map { it.id })
         assertEquals(3_040L, fixture.engine.currentTimeMillis)
     }
 
     @Test
-    fun `advanceUntilDeliveryOr rejects non-monotonic max time`() {
+    fun `advanceAndExecuteAll rejects negative duration`() {
         val fixture = buildThreeNodeRouterFixture(
             qdiscFactory = { FifoSimQueueDiscipline(1_000L) }
         )
@@ -208,33 +205,37 @@ class BasicSimNetworkEngineTest {
             srcNodeId = fixture.node1.id,
             dstNodeId = fixture.node2.id
         )
-        fixture.engine.injectPacket(packet)
-        fixture.engine.advanceUntilDeliveryOr(1_000)
+        fixture.engine.deliver(listOf(packet))
+        fixture.engine.advanceAndExecuteAll(1_000.milliseconds)
 
         assertThrows(IllegalArgumentException::class.java) {
-            fixture.engine.advanceUntilDeliveryOr(999)
+            fixture.engine.advanceAndExecuteAll((-1).milliseconds)
         }
     }
 
     @Test
-    fun `packet with no route is dropped and engine advances to requested time`() {
+    fun `packet with no route is dropped and engine has no deliveries`() {
         val builder = TestNetworkBuilder()
         val node1 = builder.node("node-1")
         val isolatedNode = builder.node("node-2")
         val network = builder.build()
         val engine = BasicSimNetworkEngine(network)
 
-        engine.injectPacket(
-            SimPacket(
-                id = 1,
-                bytes = 1_000,
-                srcNodeId = node1.id,
-                dstNodeId = isolatedNode.id
+        val delivered = engine.deliver(
+            listOf(
+                SimPacket(
+                    id = 1,
+                    bytes = 1_000,
+                    srcNodeId = node1.id,
+                    dstNodeId = isolatedNode.id
+                )
             )
         )
 
-        val delivered = engine.advanceUntilDeliveryOr(5_000)
         assertTrue(delivered.isEmpty())
+        assertEquals(0L, engine.currentTimeMillis)
+
+        engine.advanceAndExecuteAll(5_000.milliseconds)
         assertEquals(5_000L, engine.currentTimeMillis)
     }
 
@@ -261,8 +262,7 @@ class BasicSimNetworkEngineTest {
             dstNodeId = node2.id
         )
 
-        engine.injectPacket(packet)
-        val delivered = engine.advanceUntilDeliveryOr(10_000)
+        val delivered = engine.deliver(listOf(packet))
 
         assertEquals(listOf(packet.id), delivered.map { it.id })
         assertEquals(node2.id, delivered.first().dstNodeId)

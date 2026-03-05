@@ -4,9 +4,12 @@ import io.libp2p.quicsim.network.SimLink
 import io.libp2p.quicsim.network.SimNetwork
 import io.libp2p.quicsim.network.SimNetworkEngine
 import io.libp2p.quicsim.network.SimPacket
+import io.libp2p.quicsim.network.SimQueueDiscipline
 import java.util.ArrayDeque
 import java.util.PriorityQueue
 import java.util.Random
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 class BasicSimNetworkEngine(
     override val network: SimNetwork,
@@ -31,7 +34,7 @@ class BasicSimNetworkEngine(
         val linkIndex: Int
     ) : Event
 
-    override var currentTimeMillis: Long = 0
+    var currentTimeMillis: Long = 0
         private set
 
     private var sequence = 0L
@@ -42,6 +45,7 @@ class BasicSimNetworkEngine(
     private val linksFromNode = network.links.groupBy { it.from.id }
 
     private val eventQueue = PriorityQueue(compareBy<QueuedEvent> { it.time }.thenBy { it.sequence })
+    private val pendingDelivered = ArrayDeque<SimPacket>()
 
     private data class QueuedEvent(
         val time: Long,
@@ -49,11 +53,39 @@ class BasicSimNetworkEngine(
         val event: Event
     )
 
-    override fun injectPacket(packet: SimPacket) {
+    override fun deliver(inboundData: List<SimPacket>): List<SimPacket> {
+        inboundData.forEach { injectPacket(it) }
+
+        val ready = ArrayList<SimPacket>(pendingDelivered.size)
+        while (pendingDelivered.isNotEmpty()) {
+            ready += pendingDelivered.removeFirst()
+        }
+
+        ready += processEventsUpTo(currentTimeMillis, stopAtFirstDeliveryTime = false)
+        if (ready.isNotEmpty()) {
+            return ready
+        }
+
+        return processUntilFirstDelivery()
+    }
+
+    override fun advanceAndExecuteAll(advanceDuration: Duration) {
+        require(!advanceDuration.isNegative()) { "advanceDuration must be non-negative" }
+        val targetTime = currentTimeMillis + advanceDuration.inWholeMilliseconds
+        pendingDelivered += processEventsUpTo(targetTime, stopAtFirstDeliveryTime = false)
+    }
+
+    override fun nextTaskDuration(): Duration? {
+        val next = eventQueue.peek() ?: return null
+        val untilNext = (next.time - currentTimeMillis).coerceAtLeast(0)
+        return untilNext.milliseconds
+    }
+
+    private fun injectPacket(packet: SimPacket) {
         enqueueEvent(NodeIngressEvent(currentTimeMillis, packet.srcNodeId, packet), currentTimeMillis)
     }
 
-    override fun advanceUntilDeliveryOr(maxMillis: Long): List<SimPacket> {
+    private fun processEventsUpTo(maxMillis: Long, stopAtFirstDeliveryTime: Boolean): List<SimPacket> {
         require(maxMillis >= currentTimeMillis) {
             "maxMillis must be >= currentTimeMillis"
         }
@@ -78,6 +110,9 @@ class BasicSimNetworkEngine(
                         delivered += e.packet
                         if (deliveryTime == null) {
                             deliveryTime = queued.time
+                            if (!stopAtFirstDeliveryTime) {
+                                deliveryTime = null
+                            }
                         }
                     } else {
                         forwardPacket(e)
@@ -90,9 +125,42 @@ class BasicSimNetworkEngine(
             }
         }
 
-        if (deliveryTime == null) {
+        if (deliveryTime == null || !stopAtFirstDeliveryTime) {
             currentTimeMillis = maxMillis
         }
+        return delivered.toList()
+    }
+
+    private fun processUntilFirstDelivery(): List<SimPacket> {
+        val delivered = ArrayDeque<SimPacket>()
+        var deliveryTime: Long? = null
+
+        while (true) {
+            val next = eventQueue.peek() ?: break
+            if (deliveryTime != null && next.time > deliveryTime) {
+                break
+            }
+
+            val queued = eventQueue.poll()
+            currentTimeMillis = queued.time
+            when (val e = queued.event) {
+                is NodeIngressEvent -> {
+                    if (e.nodeId == e.packet.dstNodeId) {
+                        delivered += e.packet
+                        if (deliveryTime == null) {
+                            deliveryTime = queued.time
+                        }
+                    } else {
+                        forwardPacket(e)
+                    }
+                }
+
+                is LinkReadyEvent -> {
+                    onLinkReady(e)
+                }
+            }
+        }
+
         return delivered.toList()
     }
 
@@ -107,7 +175,7 @@ class BasicSimNetworkEngine(
         }
 
         val enqueueDecision = nextLink.qdisc.enqueue(event.packet)
-        if (enqueueDecision != io.libp2p.quicsim.network.SimQueueDiscipline.EnqueueDecision.QUEUED) {
+        if (enqueueDecision != SimQueueDiscipline.EnqueueDecision.QUEUED) {
             return
         }
 
