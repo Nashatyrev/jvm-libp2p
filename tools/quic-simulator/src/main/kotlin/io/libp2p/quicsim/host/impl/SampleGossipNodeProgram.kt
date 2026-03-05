@@ -1,8 +1,12 @@
 package io.libp2p.quicsim.host.impl
 
+import io.libp2p.core.PeerId
+import io.libp2p.core.multiformats.Multiaddr
 import io.libp2p.core.pubsub.Topic
-import io.libp2p.core.pubsub.Subscriber
+import io.libp2p.core.pubsub.ValidationResult
+import io.libp2p.pubsub.PubsubMessage
 import io.libp2p.pubsub.gossip.GossipParams
+import io.libp2p.pubsub.gossip.GossipRouterEventListener
 import io.libp2p.pubsub.gossip.GossipScoreParams
 import io.libp2p.quicsim.host.NetworkContext
 import io.libp2p.quicsim.host.SimContext
@@ -10,11 +14,13 @@ import io.libp2p.quicsim.host.SimNodeId
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import java.nio.charset.StandardCharsets
+import java.util.Optional
 import java.util.Random
 import java.util.concurrent.ConcurrentHashMap
+import java.util.function.Consumer
+import kotlin.collections.plusAssign
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 
 class SampleGossipNodeProgram(
     simNodeId: SimNodeId,
@@ -40,13 +46,16 @@ class SampleGossipNodeProgram(
     private var publishSucceeded = false
     @Volatile
     private var lastPublishError: String? = null
+    @Volatile
+    private var eventsListenerInstalled = false
 
     override fun onAllConnected(simContext: SimContext, networkContext: NetworkContext) {
         fun log(msg: String) = println("[${System.currentTimeMillis()}ms] node=$simNodeId $msg")
         expectedNodeIds = networkContext.allNodes.keys - simNodeId
         log("expected senders: $expectedNodeIds")
+        installRouterEventLogger(::log)
 
-        messageApi.subscribe(Subscriber { msg ->
+        messageApi.subscribe(Consumer { msg ->
             parseSenderNodeId(msg.data)?.let { receivedNodeIds += it }
         }, testTopic)
         log("subscribed to ${testTopic.topic}")
@@ -77,9 +86,69 @@ class SampleGossipNodeProgram(
     fun debugState(): String {
         val received = receivedNodeIds.toSortedSet().toList()
         val missing = (expectedNodeIds - receivedNodeIds).toSortedSet().toList()
+        val meshPeers = gossipRouter.mesh[testTopic.topic]
+            ?.map { it.peerId.toBase58().take(12) }
+            ?.sorted()
+            ?: emptyList()
+        val fanoutPeers = gossipRouter.fanout[testTopic.topic]
+            ?.map { it.peerId.toBase58().take(12) }
+            ?.sorted()
+            ?: emptyList()
         return "scheduled=$publishScheduled attempted=$publishAttempted " +
             "publishSucceeded=$publishSucceeded lastPublishError=${lastPublishError ?: "-"} " +
+            "meshPeers=$meshPeers fanoutPeers=$fanoutPeers " +
             "expected=$expectedNodeIds received=$received missing=$missing complete=${isComplete()}"
+    }
+
+    private fun installRouterEventLogger(log: (String) -> Unit) {
+        if (eventsListenerInstalled) return
+        eventsListenerInstalled = true
+        gossipRouter.eventBroadcaster.listeners += object : GossipRouterEventListener {
+            override fun notifyDisconnected(peerId: PeerId) {
+                log("router disconnected peer=${peerId.toBase58().take(12)}")
+            }
+
+            override fun notifyConnected(peerId: PeerId, peerAddress: Multiaddr) {
+                log("router connected peer=${peerId.toBase58().take(12)} addr=$peerAddress")
+            }
+
+            override fun notifyUnseenMessage(peerId: PeerId, msg: PubsubMessage) {
+                log("router unseen from=${peerId.toBase58().take(12)} msgId=${msg.messageId} topics=${msg.topics}")
+            }
+
+            override fun notifySeenMessage(
+                peerId: PeerId,
+                msg: PubsubMessage,
+                validationResult: Optional<ValidationResult>
+            ) {
+                log("router seen from=${peerId.toBase58().take(12)} msgId=${msg.messageId} result=$validationResult")
+            }
+
+            override fun notifyUnseenInvalidMessage(peerId: PeerId, msg: PubsubMessage) {
+                log("router unseen INVALID from=${peerId.toBase58().take(12)} msgId=${msg.messageId}")
+            }
+
+            override fun notifyUnseenValidMessage(peerId: PeerId, msg: PubsubMessage) {
+                log("router unseen VALID from=${peerId.toBase58().take(12)} msgId=${msg.messageId} topics=${msg.topics}")
+            }
+
+            override fun notifyMeshed(peerId: PeerId, topic: String) {
+                if (topic == testTopic.topic) {
+                    log("router MESHED peer=${peerId.toBase58().take(12)} topic=$topic")
+                }
+            }
+
+            override fun notifyPruned(peerId: PeerId, topic: String) {
+                if (topic == testTopic.topic) {
+                    log("router PRUNED peer=${peerId.toBase58().take(12)} topic=$topic")
+                }
+            }
+
+            override fun notifyRouterMisbehavior(peerId: PeerId, count: Int) {
+                log("router MISBEHAVIOR peer=${peerId.toBase58().take(12)} count=$count")
+            }
+        }
+        log("router event listener installed")
     }
 
     private fun createPayload(): ByteArray {
