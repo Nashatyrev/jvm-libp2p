@@ -1,6 +1,5 @@
-package io.libp2p.quicsim.host.impl
+package io.libp2p.quicsim.host.impl.sim
 
-import io.libp2p.core.ConnectionHandler
 import io.libp2p.core.Host
 import io.libp2p.core.crypto.KeyType
 import io.libp2p.core.crypto.PrivKey
@@ -23,14 +22,12 @@ import io.libp2p.quicsim.host.SimContext
 import io.libp2p.quicsim.host.SimNodeId
 import io.libp2p.quicsim.network.SimNetworkEngine
 import io.libp2p.quicsim.network.SimPacket
-import io.libp2p.transport.quic.DatagramChannelFactory
 import io.libp2p.transport.quic.QuicTransport
+import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import io.netty.channel.AddressedEnvelope
 import io.netty.channel.Channel
 import io.netty.channel.ChannelHandler
-import io.netty.channel.ChannelId
-import io.netty.channel.embedded.EmbeddedChannel
 import io.netty.channel.socket.DatagramPacket
 import io.netty.util.ReferenceCountUtil
 import java.net.InetSocketAddress
@@ -39,8 +36,8 @@ import java.util.ArrayDeque
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.function.BiFunction
+import kotlin.collections.plusAssign
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.ZERO
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.nanoseconds
@@ -48,13 +45,14 @@ import kotlin.time.Duration.Companion.seconds
 
 class SimulatedRunner(
     val nodeFactory: NodeFactory,
-    val nodeCount: Int,
     val networkEngine: SimNetworkEngine,
     val listenIP: String = "127.0.0.1",
     val listenPortStartRange: Int = 17000,
     val nodeIdToNetworkNodeId: (SimNodeId) -> String = { "node-$it" },
     val maxSimulatedRunDuration: Duration = 1.minutes,
 ) {
+    val nodeCount: Int = networkEngine.network.nodes.size
+
     private data class EngineTimePoint(val millis: Long) : TimePoint {
         override fun minus(other: TimePoint): Duration {
             require(other is EngineTimePoint) {
@@ -68,39 +66,7 @@ class SimulatedRunner(
         override fun time(): TimePoint = EngineTimePoint(networkEngine.currentTimeMillis)
     }
 
-    private data class BoundChannel(
-        val ownerNodeId: SimNodeId,
-        val channel: SimDatagramChannel
-    )
-
-    private data class DatagramEnvelope(
-        val sender: InetSocketAddress,
-        val recipient: InetSocketAddress,
-        val bytes: ByteArray
-    )
-
-    private data class UdpCorePacket(
-        val srcNodeId: String,
-        val dstNodeId: String,
-        val envelope: DatagramEnvelope
-    ) : SimCorePacket
-
-    private class SimDatagramChannel(
-        id: String,
-        private val local: InetSocketAddress,
-        handler: ChannelHandler
-    ) : EmbeddedChannel(SimChannelId(id), handler) {
-        override fun localAddress(): InetSocketAddress = local
-        override fun remoteAddress(): InetSocketAddress? = null
-    }
-
-    private class SimChannelId(private val id: String) : ChannelId {
-        override fun asShortText(): String = id
-        override fun asLongText(): String = id
-        override fun compareTo(other: ChannelId): Int = asLongText().compareTo(other.asLongText())
-    }
-
-    private inner class EmbeddedNode(
+    inner class EmbeddedNode(
         val nodeId: SimNodeId,
         val networkNodeId: String,
         val scheduler: DeterministicScheduler
@@ -213,7 +179,7 @@ class SimulatedRunner(
 
                         is AddressedEnvelope<*, *> -> {
                             val envelopeRecipient = msg.recipient() as? InetSocketAddress
-                            val content = msg.content() as? io.netty.buffer.ByteBuf
+                            val content = msg.content() as? ByteBuf
                             if (envelopeRecipient == null || content == null) {
                                 ReferenceCountUtil.release(msg)
                                 continue
@@ -286,20 +252,6 @@ class SimulatedRunner(
         override fun nextTaskDuration(): Duration? = networkEngine.nextTaskDuration()
     }
 
-    private inner class EmbeddedNodeDatagramChannelFactory(
-        private val node: EmbeddedNode
-    ) : DatagramChannelFactory {
-        override fun createClientChannel(handler: ChannelHandler): CompletableFuture<Channel> =
-            node.bindClientParent(handler)
-
-        override fun createServerChannel(
-            bindAddress: SocketAddress,
-            handler: ChannelHandler
-        ): CompletableFuture<Channel> = node.bindServerParent(bindAddress, handler)
-
-        override fun shutdown(): CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit)
-    }
-
     lateinit var nodePrograms: List<NodeProgram>
     lateinit var hosts: List<Host>
     lateinit var simContexts: List<SimContext>
@@ -310,7 +262,7 @@ class SimulatedRunner(
     private val channelsByPortGlobal = linkedMapOf<Int, BoundChannel>()
     private val engineTimer: MonotonicTimer = EngineMonotonicTimer()
     private var runRealStartMillis: Long = 0
-    private var simulatedElapsed: Duration = ZERO
+    private var simulatedElapsed: Duration = Duration.Companion.ZERO
 
     fun createHosts() {
         nodePrograms = (0 until nodeCount).map(nodeFactory::createNode)
@@ -406,7 +358,7 @@ class SimulatedRunner(
             if (nextDelay == null) {
                 throw IllegalStateException("Simulation stalled: no pending tasks but only $completeCount/${nodePrograms.size} programs completed")
             }
-            val step = if (nextDelay == ZERO) 1.milliseconds else nextDelay
+            val step = if (nextDelay == Duration.Companion.ZERO) 1.milliseconds else nextDelay
             advanceSimulationBy(step)
 
             ticks++
@@ -419,7 +371,7 @@ class SimulatedRunner(
     }
 
     private fun runUntil(done: () -> Boolean, timeout: Duration) {
-        var elapsed = ZERO
+        var elapsed = Duration.Companion.ZERO
         while (!done()) {
             if (elapsed > timeout) {
                 throw IllegalStateException("Condition not reached in simulated loop within $timeout")
@@ -431,7 +383,7 @@ class SimulatedRunner(
             if (nextDelay == null) {
                 break
             }
-            val step = if (nextDelay == ZERO) 1.milliseconds else nextDelay
+            val step = if (nextDelay == Duration.Companion.ZERO) 1.milliseconds else nextDelay
             advanceSimulationBy(step)
             elapsed += step
             ensureWithinTimeLimit()

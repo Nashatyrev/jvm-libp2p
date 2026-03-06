@@ -18,6 +18,7 @@ import io.libp2p.quicsim.network.impl.FifoSimQueueDiscipline
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.protocol.ProtocolHandler
 import io.libp2p.protocol.ProtocolMessageHandler
+import io.libp2p.quicsim.host.impl.sim.SimulatedRunner
 import io.netty.buffer.ByteBuf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -56,7 +57,6 @@ class SimulatedRunnerTest {
                     simNodeId = id
                 )
             },
-            nodeCount = 2,
             networkEngine = BasicSimNetworkEngine(network)
         )
 
@@ -97,7 +97,6 @@ class SimulatedRunnerTest {
                         initialPublishDelay = 1.seconds
                     ).also { nodePrograms += it }
             },
-            nodeCount = nodeCount,
             networkEngine = BasicSimNetworkEngine(networkBuilder.build())
         )
 
@@ -181,7 +180,6 @@ class SimulatedRunnerTest {
                         PassiveEchoNodeProgram(simNodeId = id)
                     }
             },
-            nodeCount = 2,
             networkEngine = BasicSimNetworkEngine(builder.build())
         )
 
