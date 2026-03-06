@@ -73,6 +73,7 @@ class SimulatedRunnerTest {
     @Test
     fun `simulated runner completes 5-node ring with sample gossip`() {
         val nodeCount = 5
+        val publisherCount = 5
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val networkBuilder = TestNetworkBuilder()
         val simNodes = (0 until nodeCount).map { networkBuilder.node("node-$it") }
@@ -80,7 +81,7 @@ class SimulatedRunnerTest {
         simNodes.indices.forEach { i ->
             val a = simNodes[i]
             val b = simNodes[(i + 1) % simNodes.size]
-            networkBuilder.bidirectional(a, b, Duration.ofMillis(1), qdiscFactory)
+            networkBuilder.bidirectional(a, b, Duration.ofMillis(10), qdiscFactory)
         }
 
         val runner = SimulatedRunner(
@@ -89,6 +90,7 @@ class SimulatedRunnerTest {
                     SampleGossipNodeProgram(
                         simNodeId = id,
                         connectToNodeIds = listOf((id + 1) % nodeCount),
+                        publishersCount = publisherCount,
                         params = GossipParams(),
                         randomSeed = id.toLong(),
                         messageSizeBytes = 1024,

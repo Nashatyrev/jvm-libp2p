@@ -23,6 +23,7 @@ class LocalRealRunnerTest {
                     SampleGossipNodeProgram(
                         simNodeId = id,
                         connectToNodeIds = listOf((id + 1) % nodeCount),
+                        publishersCount = nodeCount,
                         params = GossipParams(),
                         randomSeed = id.toLong(),
                         messageSizeBytes = 1024,
