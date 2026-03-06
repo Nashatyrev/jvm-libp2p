@@ -48,18 +48,7 @@ class QuicTransport @JvmOverloads constructor(
     private val localKey: PrivKey,
     private val certAlgorithm: String,
     private val protocols: List<ProtocolBinding<*>>,
-    private val bindClientParent: (Bootstrap, ChannelHandler) -> CompletableFuture<Channel> = { bootstrap, handler ->
-        bootstrap.clone()
-            .handler(handler)
-            .bind(0)
-            .toCompletableFuture()
-    },
-    private val bindServerParent: (Bootstrap, SocketAddress, ChannelHandler) -> CompletableFuture<Channel> = { bootstrap, bindAddress, handler ->
-        bootstrap.clone()
-            .handler(handler)
-            .bind(bindAddress)
-            .toCompletableFuture()
-    }
+    private val datagramChannelFactory: DatagramChannelFactory = DefaultDatagramChannelFactory()
 ) : NettyTransport {
 
     private val logger = LoggerFactory.getLogger(QuicTransport::class.java)
@@ -71,9 +60,6 @@ class QuicTransport @JvmOverloads constructor(
     private val listeners = mutableMapOf<Multiaddr, Channel>()
     private val channels = mutableListOf<Channel>()
 
-    private var workerGroup by lazyVar {
-        MultiThreadIoEventLoopGroup(NioIoHandler.newFactory())
-    }
     private var allocator by lazyVar { AdaptiveByteBufAllocator(true) }
     private var multistreamProtocol: MultistreamProtocol = MultistreamProtocolV1
     private var incomingMultistreamProtocol: MultistreamProtocol by lazyVar { multistreamProtocol }
@@ -94,29 +80,6 @@ class QuicTransport @JvmOverloads constructor(
             channel.attr(STREAM).set(stream)
             return stream
         }
-    }
-
-    private var client by lazyVar {
-        Bootstrap().group(workerGroup)
-            .channel(
-                if (Epoll.isAvailable()) {
-                    EpollDatagramChannel::class.java
-                } else {
-                    NioDatagramChannel::class.java
-                }
-            )
-            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeout.toMillis().toInt())
-    }
-
-    private var server by lazyVar {
-        Bootstrap().group(workerGroup)
-            .channel(
-                if (Epoll.isAvailable()) {
-                    EpollDatagramChannel::class.java
-                } else {
-                    NioDatagramChannel::class.java
-                }
-            )
     }
 
     override val activeListeners: Int
@@ -148,7 +111,7 @@ class QuicTransport @JvmOverloads constructor(
         val allClosed = CompletableFuture.allOf(*everythingThatNeedsToClose.toTypedArray())
 
         return allClosed.thenCompose {
-            workerGroup.shutdownGracefully().toVoidCompletableFuture()
+            datagramChannelFactory.shutdown()
         }
     }
 
@@ -161,10 +124,9 @@ class QuicTransport @JvmOverloads constructor(
 
         val channelHandler = serverTransportBuilder(connHandler, preHandler)
 
-        return bindServerParent(
-            server,
-            fromMultiaddr(addr),
-            nettyInitializer {
+        return datagramChannelFactory.createServerChannel(
+            bindAddress = fromMultiaddr(addr),
+            handler = nettyInitializer {
                 registerChannel(it.channel)
                 it.addLastLocal(channelHandler)
             }
@@ -205,7 +167,7 @@ class QuicTransport @JvmOverloads constructor(
             .initialMaxStreamDataBidirectionalLocal(1 shl 18)
             .build()
 
-        return bindClientParent(client, requestsHandler)
+        return datagramChannelFactory.createClientChannel(requestsHandler)
             .thenCompose {
                 QuicChannel.newBootstrap(it)
                     .streamOption(ChannelOption.ALLOCATOR, allocator)

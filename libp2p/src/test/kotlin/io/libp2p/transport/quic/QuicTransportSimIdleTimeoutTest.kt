@@ -14,7 +14,6 @@ import io.libp2p.core.transport.Transport
 import io.libp2p.protocol.PingBinding
 import io.libp2p.protocol.PingController
 import io.libp2p.protocol.PingProtocol
-import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.ByteBuf
 import io.netty.channel.Channel
 import io.netty.channel.ChannelHandler
@@ -48,15 +47,13 @@ class QuicTransportSimIdleTimeoutTest {
             serverKey,
             "ECDSA",
             listOf(pingBinding),
-            network::bindClientParent,
-            network::bindServerParent
+            datagramChannelFactory = network.newDatagramFactory("server")
         )
         val clientTransport = QuicTransport(
             clientKey,
             "ECDSA",
             listOf(pingBinding),
-            network::bindClientParent,
-            network::bindServerParent
+            datagramChannelFactory = network.newDatagramFactory("client")
         )
 
         try {
@@ -112,8 +109,7 @@ class QuicTransportSimIdleTimeoutTest {
                 key,
                 "ECDSA",
                 protocols,
-                network::bindClientParent,
-                network::bindServerParent
+                datagramChannelFactory = network.newDatagramFactory("host-${PeerId.fromPubKey(key.publicKey())}")
             )
         }
 
@@ -218,14 +214,13 @@ class QuicTransportSimIdleTimeoutTest {
         }
 
     private class EmbeddedDatagramNetwork {
-        private lateinit var serverParent: EmbeddedChannel
-        private lateinit var clientParent: EmbeddedChannel
+        private lateinit var serverParent: SimDatagramChannel
+        private lateinit var clientParent: SimDatagramChannel
         private lateinit var serverAddress: InetSocketAddress
         private lateinit var clientAddress: InetSocketAddress
         private var nextClientPort = 42000
 
         fun bindServerParent(
-            @Suppress("UNUSED_PARAMETER") bootstrap: Bootstrap,
             bindAddress: SocketAddress,
             handler: ChannelHandler
         ): CompletableFuture<Channel> {
@@ -236,13 +231,26 @@ class QuicTransportSimIdleTimeoutTest {
         }
 
         fun bindClientParent(
-            @Suppress("UNUSED_PARAMETER") bootstrap: Bootstrap,
             handler: ChannelHandler
         ): CompletableFuture<Channel> {
             clientAddress = InetSocketAddress("127.0.0.1", nextClientPort++)
             clientParent = SimDatagramChannel("sim-client", clientAddress, handler)
             clientParent.bind(clientAddress).syncUninterruptibly()
             return CompletableFuture.completedFuture(clientParent)
+        }
+
+        fun newDatagramFactory(name: String): DatagramChannelFactory = object : DatagramChannelFactory {
+            override fun createClientChannel(handler: ChannelHandler): CompletableFuture<Channel> =
+                bindClientParent(handler)
+
+            override fun createServerChannel(
+                bindAddress: SocketAddress,
+                handler: ChannelHandler
+            ): CompletableFuture<Channel> = bindServerParent(bindAddress, handler)
+
+            override fun shutdown() = CompletableFuture.completedFuture(Unit)
+
+            override fun toString(): String = "EmbeddedDatagramFactory($name)"
         }
 
         fun advanceTimeBy(amount: Long, unit: TimeUnit) {
@@ -306,8 +314,8 @@ class QuicTransportSimIdleTimeoutTest {
         private val local: InetSocketAddress,
         handler: ChannelHandler
     ) : EmbeddedChannel(SimChannelId(id), handler) {
-        override fun localAddress(): SocketAddress = local
-        override fun remoteAddress(): SocketAddress? = null
+        override fun localAddress(): InetSocketAddress = local
+        override fun remoteAddress(): InetSocketAddress? = null
     }
 
     private class SimChannelId(private val id: String) : ChannelId {

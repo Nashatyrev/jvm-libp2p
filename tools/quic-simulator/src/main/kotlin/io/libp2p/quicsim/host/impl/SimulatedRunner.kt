@@ -8,6 +8,7 @@ import io.libp2p.core.dsl.HostBuilder
 import io.libp2p.core.multiformats.Multiaddr
 import io.libp2p.core.multistream.ProtocolBinding
 import io.libp2p.core.transport.Transport
+import io.libp2p.etc.types.toCompletableFuture
 import io.libp2p.quicsim.core.Orchestrator
 import io.libp2p.quicsim.core.SimCoreNet
 import io.libp2p.quicsim.core.SimCoreNode
@@ -22,8 +23,8 @@ import io.libp2p.quicsim.host.SimContext
 import io.libp2p.quicsim.host.SimNodeId
 import io.libp2p.quicsim.network.SimNetworkEngine
 import io.libp2p.quicsim.network.SimPacket
+import io.libp2p.transport.quic.DatagramChannelFactory
 import io.libp2p.transport.quic.QuicTransport
-import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel.AddressedEnvelope
 import io.netty.channel.Channel
@@ -89,8 +90,8 @@ class SimulatedRunner(
         private val local: InetSocketAddress,
         handler: ChannelHandler
     ) : EmbeddedChannel(SimChannelId(id), handler) {
-        override fun localAddress(): SocketAddress = local
-        override fun remoteAddress(): SocketAddress? = null
+        override fun localAddress(): InetSocketAddress = local
+        override fun remoteAddress(): InetSocketAddress? = null
     }
 
     private class SimChannelId(private val id: String) : ChannelId {
@@ -105,33 +106,31 @@ class SimulatedRunner(
         val scheduler: DeterministicScheduler
     ) : SimCoreNode {
 
-        private var nextClientPort = 35000 + nodeId * 1_000
+        private var nextClientPort = 35000 + nodeId
         private val channelsByPort = linkedMapOf<Int, SimDatagramChannel>()
         private val pendingOutbound = ArrayDeque<UdpCorePacket>()
 
         val listenAddress = InetSocketAddress(listenIP, listenPortStartRange + nodeId)
 
         fun bindServerParent(
-            @Suppress("UNUSED_PARAMETER") bootstrap: Bootstrap,
             bindAddress: SocketAddress,
             handler: ChannelHandler
         ): CompletableFuture<Channel> {
             val local = bindAddress as InetSocketAddress
             val channel = SimDatagramChannel("sim-server-$nodeId-${local.port}", local, handler)
             registerChannel(local, channel)
-            channel.bind(local).syncUninterruptibly()
-            return CompletableFuture.completedFuture(channel)
+            val bindFuture = channel.bind(local)
+            return bindFuture.toCompletableFuture().thenApply { channel }
         }
 
         fun bindClientParent(
-            @Suppress("UNUSED_PARAMETER") bootstrap: Bootstrap,
             handler: ChannelHandler
         ): CompletableFuture<Channel> {
             val local = InetSocketAddress(listenIP, nextClientPort++)
             val channel = SimDatagramChannel("sim-client-$nodeId-${local.port}", local, handler)
             registerChannel(local, channel)
-            channel.bind(local).syncUninterruptibly()
-            return CompletableFuture.completedFuture(channel)
+            val bindFuture = channel.bind(local)
+            return bindFuture.toCompletableFuture().thenApply { channel }
         }
 
         override fun deliver(inboundData: List<SimCorePacket>): List<SimCorePacket> {
@@ -201,7 +200,7 @@ class SimulatedRunner(
             channelsByPort.values.forEach { channel ->
                 while (true) {
                     val msg = channel.readOutbound<Any>() ?: break
-                    val sender = channel.localAddress() as InetSocketAddress
+                    val sender = channel.localAddress()
                     val recipient: InetSocketAddress
                     val bytes: ByteArray
 
@@ -287,6 +286,20 @@ class SimulatedRunner(
         override fun nextTaskDuration(): Duration? = networkEngine.nextTaskDuration()
     }
 
+    private inner class EmbeddedNodeDatagramChannelFactory(
+        private val node: EmbeddedNode
+    ) : DatagramChannelFactory {
+        override fun createClientChannel(handler: ChannelHandler): CompletableFuture<Channel> =
+            node.bindClientParent(handler)
+
+        override fun createServerChannel(
+            bindAddress: SocketAddress,
+            handler: ChannelHandler
+        ): CompletableFuture<Channel> = node.bindServerParent(bindAddress, handler)
+
+        override fun shutdown(): CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit)
+    }
+
     lateinit var nodePrograms: List<NodeProgram>
     lateinit var hosts: List<Host>
     lateinit var simContexts: List<SimContext>
@@ -331,8 +344,7 @@ class SimulatedRunner(
                 key,
                 "ECDSA",
                 selectedProtocols,
-                node::bindClientParent,
-                node::bindServerParent
+                datagramChannelFactory = EmbeddedNodeDatagramChannelFactory(node)
             )
         }
 
