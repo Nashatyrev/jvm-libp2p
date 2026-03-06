@@ -27,7 +27,9 @@ class LocalRealRunnerTest {
                         params = GossipParams(),
                         randomSeed = id.toLong(),
                         messageSizeBytes = 1024,
-                        initialPublishDelay = 1.seconds
+                        // Keep publish strictly after initial gossip heartbeat/mesh formation.
+                        // At 1s delay this test is flaky because publishes can race mesh setup.
+                        initialPublishDelay = 2.seconds
                     ).also { nodePrograms += it }
             },
             nodeCount = nodeCount,
