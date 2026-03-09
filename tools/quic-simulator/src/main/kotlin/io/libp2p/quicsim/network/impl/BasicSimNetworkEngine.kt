@@ -60,13 +60,7 @@ class BasicSimNetworkEngine(
         while (pendingDelivered.isNotEmpty()) {
             ready += pendingDelivered.removeFirst()
         }
-
-        ready += processEventsUpTo(currentTimeMillis, stopAtFirstDeliveryTime = false)
-        if (ready.isNotEmpty()) {
-            return ready
-        }
-
-        return processUntilFirstDelivery()
+        return ready
     }
 
     override fun advanceAndExecuteAll(advanceDuration: Duration) {
@@ -128,39 +122,6 @@ class BasicSimNetworkEngine(
         if (deliveryTime == null || !stopAtFirstDeliveryTime) {
             currentTimeMillis = maxMillis
         }
-        return delivered.toList()
-    }
-
-    private fun processUntilFirstDelivery(): List<SimPacket> {
-        val delivered = ArrayDeque<SimPacket>()
-        var deliveryTime: Long? = null
-
-        while (true) {
-            val next = eventQueue.peek() ?: break
-            if (deliveryTime != null && next.time > deliveryTime) {
-                break
-            }
-
-            val queued = eventQueue.poll()
-            currentTimeMillis = queued.time
-            when (val e = queued.event) {
-                is NodeIngressEvent -> {
-                    if (e.nodeId == e.packet.dstNodeId) {
-                        delivered += e.packet
-                        if (deliveryTime == null) {
-                            deliveryTime = queued.time
-                        }
-                    } else {
-                        forwardPacket(e)
-                    }
-                }
-
-                is LinkReadyEvent -> {
-                    onLinkReady(e)
-                }
-            }
-        }
-
         return delivered.toList()
     }
 

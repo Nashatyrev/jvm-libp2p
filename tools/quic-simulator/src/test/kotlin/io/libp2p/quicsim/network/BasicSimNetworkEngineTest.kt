@@ -29,13 +29,17 @@ class BasicSimNetworkEngineTest {
 
         val delivered = fixture.engine.deliver(listOf(packet))
 
-        assertEquals(1, delivered.size)
-        assertEquals(packet.id, delivered.first().id)
-        assertEquals(fixture.node2.id, delivered.first().dstNodeId)
+        assertTrue(delivered.isEmpty())
+        assertEquals(0L, fixture.engine.currentTimeMillis)
 
         // hop1: 1000ms tx + 10ms latency = 1010ms
         // hop2: 1000ms tx + 20ms latency = 1020ms
         // total = 2030ms
+        fixture.engine.advanceAndExecuteAll(2_030.milliseconds)
+        val afterAdvance = fixture.engine.deliver(emptyList())
+        assertEquals(1, afterAdvance.size)
+        assertEquals(packet.id, afterAdvance.first().id)
+        assertEquals(fixture.node2.id, afterAdvance.first().dstNodeId)
         assertEquals(2_030L, fixture.engine.currentTimeMillis)
 
         fixture.engine.advanceAndExecuteAll((10_000L - fixture.engine.currentTimeMillis).milliseconds)
@@ -60,13 +64,17 @@ class BasicSimNetworkEngineTest {
 
         val delivered = fixture.engine.deliver(listOf(packet))
 
-        assertEquals(1, delivered.size)
-        assertEquals(packet.id, delivered.first().id)
-        assertEquals(fixture.node2.id, delivered.first().dstNodeId)
+        assertTrue(delivered.isEmpty())
+        assertEquals(0L, fixture.engine.currentTimeMillis)
 
         // hop1: 1000ms tx + 10ms latency = 1010ms
         // hop2: 1000ms tx + 20ms latency = 1020ms
         // total = 2030ms
+        fixture.engine.advanceAndExecuteAll(2_030.milliseconds)
+        val afterAdvance = fixture.engine.deliver(emptyList())
+        assertEquals(1, afterAdvance.size)
+        assertEquals(packet.id, afterAdvance.first().id)
+        assertEquals(fixture.node2.id, afterAdvance.first().dstNodeId)
         assertEquals(2_030L, fixture.engine.currentTimeMillis)
 
         fixture.engine.advanceAndExecuteAll((10_000L - fixture.engine.currentTimeMillis).milliseconds)
@@ -96,8 +104,11 @@ class BasicSimNetworkEngineTest {
 
         val delivered = fixture.engine.deliver(listOf(packet))
 
-        assertEquals(1, delivered.size)
-        assertEquals(packet.id, delivered.first().id)
+        assertTrue(delivered.isEmpty())
+        fixture.engine.advanceAndExecuteAll(30.milliseconds)
+        val afterAdvance = fixture.engine.deliver(emptyList())
+        assertEquals(1, afterAdvance.size)
+        assertEquals(packet.id, afterAdvance.first().id)
         assertEquals(30L, fixture.engine.currentTimeMillis)
     }
 
@@ -121,13 +132,22 @@ class BasicSimNetworkEngineTest {
 
         val deliveredIds = mutableListOf<Long>()
         val deliveredTimes = mutableListOf<Long>()
+        assertTrue(fixture.engine.deliver(packets).isEmpty())
 
-        var delivered = fixture.engine.deliver(packets)
-        while (deliveredIds.size < packets.size) {
-            assertTrue(delivered.isNotEmpty(), "Expected pending packets to eventually be delivered")
-            deliveredIds += delivered.map { it.id }
-            repeat(delivered.size) { deliveredTimes += fixture.engine.currentTimeMillis }
-            delivered = fixture.engine.deliver(emptyList())
+        fixture.engine.advanceAndExecuteAll(30.milliseconds)
+        fixture.engine.deliver(emptyList()).forEach {
+            deliveredIds += it.id
+            deliveredTimes += fixture.engine.currentTimeMillis
+        }
+        fixture.engine.advanceAndExecuteAll(1_000.milliseconds)
+        fixture.engine.deliver(emptyList()).forEach {
+            deliveredIds += it.id
+            deliveredTimes += fixture.engine.currentTimeMillis
+        }
+        fixture.engine.advanceAndExecuteAll(1_000.milliseconds)
+        fixture.engine.deliver(emptyList()).forEach {
+            deliveredIds += it.id
+            deliveredTimes += fixture.engine.currentTimeMillis
         }
 
         assertEquals(listOf(1L, 2L, 3L), deliveredIds)
@@ -155,10 +175,13 @@ class BasicSimNetworkEngineTest {
             dstNodeId = fixture.node2.id
         )
 
-        val firstDelivery = fixture.engine.deliver(listOf(packetFromNode1, packetFromNode3))
+        assertTrue(fixture.engine.deliver(listOf(packetFromNode1, packetFromNode3)).isEmpty())
+        fixture.engine.advanceAndExecuteAll(2_030.milliseconds)
+        val firstDelivery = fixture.engine.deliver(emptyList())
         assertEquals(listOf(packetFromNode1.id), firstDelivery.map { it.id })
         assertEquals(2_030L, fixture.engine.currentTimeMillis)
 
+        fixture.engine.advanceAndExecuteAll(1_000.milliseconds)
         val secondDelivery = fixture.engine.deliver(emptyList())
         assertEquals(listOf(packetFromNode3.id), secondDelivery.map { it.id })
         assertEquals(3_030L, fixture.engine.currentTimeMillis)
@@ -184,10 +207,13 @@ class BasicSimNetworkEngineTest {
             dstNodeId = fixture.node3.id
         )
 
-        val firstDelivery = fixture.engine.deliver(listOf(toNode2, toNode3))
+        assertTrue(fixture.engine.deliver(listOf(toNode2, toNode3)).isEmpty())
+        fixture.engine.advanceAndExecuteAll(2_030.milliseconds)
+        val firstDelivery = fixture.engine.deliver(emptyList())
         assertEquals(listOf(toNode2.id), firstDelivery.map { it.id })
         assertEquals(2_030L, fixture.engine.currentTimeMillis)
 
+        fixture.engine.advanceAndExecuteAll(1_010.milliseconds)
         val secondDelivery = fixture.engine.deliver(emptyList())
         assertEquals(listOf(toNode3.id), secondDelivery.map { it.id })
         assertEquals(3_040L, fixture.engine.currentTimeMillis)
@@ -262,8 +288,9 @@ class BasicSimNetworkEngineTest {
             dstNodeId = node2.id
         )
 
-        val delivered = engine.deliver(listOf(packet))
-
+        assertTrue(engine.deliver(listOf(packet)).isEmpty())
+        engine.advanceAndExecuteAll(3_015.milliseconds)
+        val delivered = engine.deliver(emptyList())
         assertEquals(listOf(packet.id), delivered.map { it.id })
         assertEquals(node2.id, delivered.first().dstNodeId)
         // 3 hops: (1000ms tx + 5ms latency) * 3 = 3015ms
