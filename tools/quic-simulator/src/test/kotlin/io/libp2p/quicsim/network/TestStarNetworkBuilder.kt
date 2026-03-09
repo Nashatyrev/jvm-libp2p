@@ -4,19 +4,20 @@ import io.libp2p.quicsim.network.impl.BasicSimNetwork
 import io.libp2p.quicsim.network.impl.BasicSimNetworkEngine
 import java.time.Duration
 
-class TestNetworkBuilder {
+class TestStarNetworkBuilder {
     private val nodes = linkedMapOf<String, SimNode>()
     private val links = mutableListOf<SimLink>()
+    val router = SimNode("router-0")
 
     fun node(id: String): SimNode = nodes.getOrPut(id) { SimNode(id) }
 
-    fun link(
+    private fun link(
         from: SimNode,
         to: SimNode,
         latency: Duration,
         qdisc: SimQueueDiscipline,
         lossProbability: Double = 0.0
-    ): TestNetworkBuilder {
+    ): TestStarNetworkBuilder {
         links += SimLink(
             from = from,
             to = to,
@@ -27,15 +28,23 @@ class TestNetworkBuilder {
         return this
     }
 
-    fun bidirectional(
-        a: SimNode,
-        b: SimNode,
+    fun linkToRouter(
+        node: SimNode,
         latency: Duration,
         qdiscFactory: () -> SimQueueDiscipline,
         lossProbability: Double = 0.0
-    ): TestNetworkBuilder {
-        link(a, b, latency, qdiscFactory(), lossProbability)
-        link(b, a, latency, qdiscFactory(), lossProbability)
+    ): TestStarNetworkBuilder {
+        link(node, router, latency, qdiscFactory(), lossProbability)
+        link(router, node, latency, qdiscFactory(), lossProbability)
+        return this
+    }
+
+    fun linkAllToRouter(
+        latency: Duration,
+        qdiscFactory: () -> SimQueueDiscipline,
+        lossProbability: Double = 0.0
+    ): TestStarNetworkBuilder {
+        nodes.values.forEach { linkToRouter(it, latency, qdiscFactory, lossProbability)  }
         return this
     }
 
@@ -60,23 +69,22 @@ fun buildThreeNodeRouterFixture(
     node3Latency: Duration = Duration.ofMillis(30),
     qdiscFactory: () -> SimQueueDiscipline
 ): ThreeNodeRouterFixture {
-    val builder = TestNetworkBuilder()
+    val builder = TestStarNetworkBuilder()
     val node1 = builder.node("node-1")
     val node2 = builder.node("node-2")
     val node3 = builder.node("node-3")
-    val router = builder.node("router-1")
 
-    builder
-        .bidirectional(node1, router, node1Latency, qdiscFactory)
-        .bidirectional(node2, router, node2Latency, qdiscFactory)
-        .bidirectional(node3, router, node3Latency, qdiscFactory)
+    builder.linkToRouter(node1, node1Latency, qdiscFactory)
+    builder.linkToRouter(node2, node2Latency, qdiscFactory)
+    builder.linkToRouter(node3, node3Latency, qdiscFactory)
 
     val network = builder.build()
+
     return ThreeNodeRouterFixture(
         node1 = node1,
         node2 = node2,
         node3 = node3,
-        router = router,
+        router = builder.router,
         network = network,
         engine = BasicSimNetworkEngine(network)
     )

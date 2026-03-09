@@ -16,7 +16,6 @@ import kotlin.time.Duration
 
 class EmbeddedNode(
     val nodeId: SimNodeId,
-    val networkNodeId: String,
     val ip: String,
     val scheduler: DeterministicScheduler
 ) : SimCoreNode<DatagramPacket> {

@@ -75,7 +75,7 @@ class SimulatedRunnerTest {
         simNodes.indices.forEach { i ->
             val a = simNodes[i]
             val b = simNodes[(i + 1) % simNodes.size]
-            networkBuilder.bidirectional(a, b, Duration.ofMillis(10), qdiscFactory)
+            networkBuilder.bidirectional(a, b, Duration.ofMillis(50), qdiscFactory)
         }
 
         val runner = SimulatedRunner(
@@ -87,8 +87,8 @@ class SimulatedRunnerTest {
                         publishersCount = publisherCount,
                         params = GossipParams(),
                         randomSeed = id.toLong(),
-                        messageSizeBytes = 1024,
-                        initialPublishDelay = 1.seconds
+                        messageSizeBytes = 128 * 1024,
+                        initialPublishDelay = 5.seconds
                     ).also { nodePrograms += it }
             },
             networkEngine = BasicSimNetworkEngine(networkBuilder.build())

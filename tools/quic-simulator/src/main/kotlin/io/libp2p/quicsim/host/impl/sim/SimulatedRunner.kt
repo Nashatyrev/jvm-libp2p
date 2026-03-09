@@ -26,7 +26,6 @@ class SimulatedRunner(
     val networkEngine: SimNetworkEngine,
     val ipManager: IPManager = IPManager.Default,
     val listenPortStartRange: Int = 17000,
-    val nodeIdToNetworkNodeId: (SimNodeId) -> String = { "node-$it" },
     val maxSimulatedRunDuration: Duration = 1.minutes,
 ) {
     val nodeCount: Int = networkEngine.network.nodes.size
@@ -52,7 +51,6 @@ class SimulatedRunner(
             val program = nodePrograms[i]
             EmbeddedNode(
                 nodeId = program.simNodeId,
-                networkNodeId = nodeIdToNetworkNodeId(program.simNodeId),
                 scheduler = nodeSchedulers[i],
                 ip = ipManager.getIP(program.simNodeId)
             )
