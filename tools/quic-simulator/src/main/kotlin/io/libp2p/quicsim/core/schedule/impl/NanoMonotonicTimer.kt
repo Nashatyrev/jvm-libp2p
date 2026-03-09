@@ -1,13 +1,19 @@
 package io.libp2p.quicsim.core.schedule.impl
 
+import com.google.common.base.Supplier
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
 import io.libp2p.quicsim.core.schedule.TimePoint
-import io.libp2p.quicsim.core.schedule.impl.NanoTimePoint
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.nanoseconds
 
-object CPUMonotonicTimer : MonotonicTimer {
-    override fun time(): TimePoint = NanoTimePoint(System.nanoTime())
+class NanoMonotonicTimer(
+    val nanoSupplier: () -> Long
+) : MonotonicTimer {
+    override fun time(): TimePoint = NanoTimePoint(nanoSupplier())
+
+    companion object {
+        val CPU = NanoMonotonicTimer(System::nanoTime)
+    }
 }
 
 data class NanoTimePoint(val nanos: Long) : TimePoint {

@@ -4,292 +4,85 @@ import io.libp2p.core.Host
 import io.libp2p.core.crypto.KeyType
 import io.libp2p.core.crypto.PrivKey
 import io.libp2p.core.dsl.HostBuilder
-import io.libp2p.core.multiformats.Multiaddr
 import io.libp2p.core.multistream.ProtocolBinding
 import io.libp2p.core.transport.Transport
-import io.libp2p.etc.types.toCompletableFuture
-import io.libp2p.quicsim.core.Orchestrator
-import io.libp2p.quicsim.core.SimCoreNet
-import io.libp2p.quicsim.core.SimCoreNode
-import io.libp2p.quicsim.core.SimCorePacket
 import io.libp2p.quicsim.core.schedule.DeterministicScheduler
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
-import io.libp2p.quicsim.core.schedule.TimePoint
 import io.libp2p.quicsim.host.NetworkContext
 import io.libp2p.quicsim.host.NodeFactory
 import io.libp2p.quicsim.host.NodeProgram
 import io.libp2p.quicsim.host.SimContext
 import io.libp2p.quicsim.host.SimNodeId
 import io.libp2p.quicsim.network.SimNetworkEngine
-import io.libp2p.quicsim.network.SimPacket
 import io.libp2p.transport.quic.QuicTransport
-import io.netty.buffer.ByteBuf
-import io.netty.buffer.Unpooled
-import io.netty.channel.AddressedEnvelope
-import io.netty.channel.Channel
-import io.netty.channel.ChannelHandler
-import io.netty.channel.socket.DatagramPacket
-import io.netty.util.ReferenceCountUtil
-import java.net.InetSocketAddress
-import java.net.SocketAddress
-import java.util.ArrayDeque
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.function.BiFunction
-import kotlin.collections.plusAssign
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.Duration.Companion.seconds
 
 class SimulatedRunner(
     val nodeFactory: NodeFactory,
     val networkEngine: SimNetworkEngine,
-    val listenIP: String = "127.0.0.1",
+    val ipManager: IPManager = IPManager.Default,
     val listenPortStartRange: Int = 17000,
     val nodeIdToNetworkNodeId: (SimNodeId) -> String = { "node-$it" },
     val maxSimulatedRunDuration: Duration = 1.minutes,
 ) {
     val nodeCount: Int = networkEngine.network.nodes.size
 
-    private data class EngineTimePoint(val millis: Long) : TimePoint {
-        override fun minus(other: TimePoint): Duration {
-            require(other is EngineTimePoint) {
-                "Unsupported TimePoint implementation: ${other::class.qualifiedName}"
-            }
-            return (millis - other.millis).milliseconds
-        }
-    }
+    lateinit var nodesStuff: List<NodeStuff>
+    lateinit var simTimer: MonotonicTimer
 
-    private inner class EngineMonotonicTimer : MonotonicTimer {
-        override fun time(): TimePoint = EngineTimePoint(networkEngine.currentTimeMillis)
-    }
+    data class NodeStuff(
+        val nodeProgram: NodeProgram,
+        val nodeScheduler: DeterministicScheduler,
+        val embeddedNode: EmbeddedNode,
+        val simContext: SimContext,
+        val networkContext: NetworkContext,
+        val host: Host
+    )
 
-    inner class EmbeddedNode(
-        val nodeId: SimNodeId,
-        val networkNodeId: String,
-        val scheduler: DeterministicScheduler
-    ) : SimCoreNode {
+    fun createNodesStuff(): List<NodeStuff> {
+        val nodePrograms = List(nodeCount, nodeFactory::createNode)
 
-        private var nextClientPort = 35000 + nodeId
-        private val channelsByPort = linkedMapOf<Int, SimDatagramChannel>()
-        private val pendingOutbound = ArrayDeque<UdpCorePacket>()
+        val nodeSchedulers = List(nodeCount) { DeterministicScheduler() }
 
-        val listenAddress = InetSocketAddress(listenIP, listenPortStartRange + nodeId)
-
-        fun bindServerParent(
-            bindAddress: SocketAddress,
-            handler: ChannelHandler
-        ): CompletableFuture<Channel> {
-            val local = bindAddress as InetSocketAddress
-            val channel = SimDatagramChannel("sim-server-$nodeId-${local.port}", local, handler)
-            registerChannel(local, channel)
-            val bindFuture = channel.bind(local)
-            return bindFuture.toCompletableFuture().thenApply { channel }
-        }
-
-        fun bindClientParent(
-            handler: ChannelHandler
-        ): CompletableFuture<Channel> {
-            val local = InetSocketAddress(listenIP, nextClientPort++)
-            val channel = SimDatagramChannel("sim-client-$nodeId-${local.port}", local, handler)
-            registerChannel(local, channel)
-            val bindFuture = channel.bind(local)
-            return bindFuture.toCompletableFuture().thenApply { channel }
-        }
-
-        override fun deliver(inboundData: List<SimCorePacket>): List<SimCorePacket> {
-            val inboundPackets = inboundData.mapNotNull { it as? UdpCorePacket }
-            for (packet in inboundPackets) {
-                val inboundChannel = channelsByPort[packet.envelope.recipient.port] ?: continue
-                inboundChannel.writeInbound(
-                    DatagramPacket(
-                        Unpooled.wrappedBuffer(packet.envelope.bytes),
-                        packet.envelope.recipient,
-                        packet.envelope.sender
-                    )
-                )
-            }
-            runEmbeddedTasksAtCurrentTime()
-            val outbound = ArrayList<SimCorePacket>(pendingOutbound.size)
-            while (pendingOutbound.isNotEmpty()) {
-                outbound += pendingOutbound.removeFirst()
-            }
-            return outbound
-        }
-
-        override fun advanceAndExecuteAll(advanceDuration: Duration) {
-            require(!advanceDuration.isNegative()) { "advanceDuration must be non-negative" }
-            scheduler.advanceAndExecuteAll(advanceDuration)
-            advanceChannelsBy(advanceDuration)
-            runEmbeddedTasksAtCurrentTime()
-        }
-
-        override fun nextTaskDuration(): Duration? {
-            val candidates = mutableListOf<Duration>()
-            scheduler.nextTaskDuration()?.also { candidates += it }
-            channelsByPort.values.forEach { channel ->
-                val nanos = channel.runScheduledPendingTasks()
-                if (nanos >= 0) {
-                    candidates += nanos.nanoseconds
-                }
-            }
-            return candidates.minOrNull()
-        }
-
-        private fun registerChannel(address: InetSocketAddress, channel: SimDatagramChannel) {
-            channelsByPort[address.port] = channel
-            channelsByPortGlobal[address.port] = BoundChannel(nodeId, channel)
-            channel.closeFuture().addListener {
-                channelsByPort.remove(address.port)
-                channelsByPortGlobal.remove(address.port)
-            }
-        }
-
-        private fun advanceChannelsBy(duration: Duration) {
-            val nanos = duration.inWholeNanoseconds
-            channelsByPort.values.forEach {
-                it.advanceTimeBy(nanos, TimeUnit.NANOSECONDS)
-            }
-        }
-
-        private fun runEmbeddedTasksAtCurrentTime() {
-            channelsByPort.values.forEach {
-                it.runPendingTasks()
-                it.runScheduledPendingTasks()
-            }
-            drainOutbound()
-        }
-
-        private fun drainOutbound() {
-            channelsByPort.values.forEach { channel ->
-                while (true) {
-                    val msg = channel.readOutbound<Any>() ?: break
-                    val sender = channel.localAddress()
-                    val recipient: InetSocketAddress
-                    val bytes: ByteArray
-
-                    when (msg) {
-                        is DatagramPacket -> {
-                            recipient = msg.recipient()
-                            bytes = ByteArray(msg.content().readableBytes())
-                            msg.content().getBytes(msg.content().readerIndex(), bytes)
-                        }
-
-                        is AddressedEnvelope<*, *> -> {
-                            val envelopeRecipient = msg.recipient() as? InetSocketAddress
-                            val content = msg.content() as? ByteBuf
-                            if (envelopeRecipient == null || content == null) {
-                                ReferenceCountUtil.release(msg)
-                                continue
-                            }
-                            recipient = envelopeRecipient
-                            bytes = ByteArray(content.readableBytes())
-                            content.getBytes(content.readerIndex(), bytes)
-                        }
-
-                        else -> {
-                            ReferenceCountUtil.release(msg)
-                            continue
-                        }
-                    }
-
-                    val dstNode = channelsByPortGlobal[recipient.port]?.ownerNodeId
-                    val dstNodeId = if (dstNode == null) {
-                        ReferenceCountUtil.release(msg)
-                        continue
-                    } else {
-                        nodeIdToNetworkNodeId(dstNode)
-                    }
-                    ReferenceCountUtil.release(msg)
-
-                    pendingOutbound += UdpCorePacket(
-                        srcNodeId = networkNodeId,
-                        dstNodeId = dstNodeId,
-                        envelope = DatagramEnvelope(sender, recipient, bytes)
-                    )
-                }
-            }
-        }
-    }
-
-    private inner class EngineCoreNet(
-        override val allNodes: List<EmbeddedNode>
-    ) : SimCoreNet {
-
-        private val nodesById = allNodes.associateBy { it.networkNodeId }
-        private var packetCounter = 0L
-
-        override fun deliver(inboundData: List<SimCorePacket>): List<SimCorePacket> {
-            val outbound = networkEngine.deliver(
-                inboundData
-                    .mapNotNull { it as? UdpCorePacket }
-                    .map {
-                        SimPacket(
-                            id = ++packetCounter,
-                            bytes = it.envelope.bytes.size,
-                            srcNodeId = it.srcNodeId,
-                            dstNodeId = it.dstNodeId,
-                            payloadRef = it
-                        )
-                    }
-            )
-            return outbound
-                .mapNotNull { it.payloadRef as? UdpCorePacket }
-        }
-
-        override fun getDestinationNode(packet: SimCorePacket): SimCoreNode {
-            val udpPacket = packet as UdpCorePacket
-            return nodesById[udpPacket.dstNodeId]
-                ?: throw IllegalStateException("Unknown destination node: ${udpPacket.dstNodeId}")
-        }
-
-        override fun advanceAndExecuteAll(advanceDuration: Duration) {
-            networkEngine.advanceAndExecuteAll(advanceDuration)
-        }
-
-        override fun nextTaskDuration(): Duration? = networkEngine.nextTaskDuration()
-    }
-
-    lateinit var nodePrograms: List<NodeProgram>
-    lateinit var hosts: List<Host>
-    lateinit var simContexts: List<SimContext>
-    lateinit var networkContexts: List<NetworkContext>
-
-    private lateinit var embeddedNodes: List<EmbeddedNode>
-    private lateinit var orchestrator: Orchestrator
-    private val channelsByPortGlobal = linkedMapOf<Int, BoundChannel>()
-    private val engineTimer: MonotonicTimer = EngineMonotonicTimer()
-    private var runRealStartMillis: Long = 0
-    private var simulatedElapsed: Duration = Duration.Companion.ZERO
-
-    fun createHosts() {
-        nodePrograms = (0 until nodeCount).map(nodeFactory::createNode)
-
-        embeddedNodes = nodePrograms.map { program ->
-            val scheduler = DeterministicScheduler()
+        val embeddedNodes = List(nodeCount) { i ->
+            val program = nodePrograms[i]
             EmbeddedNode(
                 nodeId = program.simNodeId,
                 networkNodeId = nodeIdToNetworkNodeId(program.simNodeId),
-                scheduler = scheduler
+                scheduler = nodeSchedulers[i],
+                ip = ipManager.getIP(program.simNodeId)
             )
         }
 
-        simContexts = embeddedNodes.map {
-            SimContext(it.scheduler, engineTimer)
+        val simContexts = List(nodeCount) {
+            SimContext(nodeSchedulers[it], nodeSchedulers[it])
         }
 
-        hosts = embeddedNodes.indices.map { idx ->
+        val hosts = List(nodeCount) { idx ->
             createHost(nodePrograms[idx], simContexts[idx], embeddedNodes[idx])
         }
 
-        orchestrator = Orchestrator(EngineCoreNet(embeddedNodes))
+        startHosts(hosts)
+
+        val allListenAddresses = hosts.indices.associateWith { idx ->
+            hosts[idx].listenAddresses().first()
+        }
+
+        val networkContexts = hosts.map { NetworkContext(it, allListenAddresses) }
+
+        return List(nodeCount) { i->
+            NodeStuff(nodePrograms[i], nodeSchedulers[i], embeddedNodes[i], simContexts[i], networkContexts[i], hosts[i])
+        }
     }
 
     private fun createHost(nodeProgram: NodeProgram, simContext: SimContext, node: EmbeddedNode): Host {
         val protocols = nodeProgram.createProtocols(simContext)
         val port = listenPortStartRange + nodeProgram.simNodeId
+        val listenIP = node.ip
 
         val transportFactory = BiFunction<PrivKey, List<ProtocolBinding<*>>, Transport> { key, selectedProtocols ->
             QuicTransport(
@@ -309,104 +102,73 @@ class SimulatedRunner(
             .build()
     }
 
-    fun startHosts() {
+    fun startHosts(hosts: List<Host>) {
         val startFutures = hosts.map { it.start() }
-        runUntil({ startFutures.all { it.isDone } }, 60.seconds)
         startFutures.forEach { it.get(1, TimeUnit.SECONDS) }
     }
 
-    fun startPrograms() {
-        val allListenAddresses = hosts.indices.associateWith { idx ->
-            hosts[idx].listenAddresses().firstOrNull()
-                ?: Multiaddr("/ip4/$listenIP/udp/${listenPortStartRange + idx}/quic-v1")
-        }
-        networkContexts = hosts.map { NetworkContext(it, allListenAddresses) }
-
-        nodePrograms.indices.forEach { i ->
-            nodePrograms[i].start(simContexts[i], networkContexts[i])
+    fun startPrograms(nodesStuff: List<NodeStuff>) {
+        nodesStuff.forEach { nodeStuff ->
+            nodeStuff.nodeProgram.start(nodeStuff.simContext, nodeStuff.networkContext)
         }
     }
 
     fun run() {
-        runRealStartMillis = System.currentTimeMillis()
-        syncSimulatedElapsedFromNetwork()
-        fun log(msg: String) {
-            val realElapsedMillis = System.currentTimeMillis() - runRealStartMillis
-            val simElapsedMillis = simulatedElapsed.inWholeMilliseconds
-            println("[r+${realElapsedMillis}ms s+${simElapsedMillis}ms] $msg")
-        }
-
-        log("Creating hosts...")
-        createHosts()
-        log("Starting hosts...")
-        startHosts()
-        log("Starting programs...")
-        startPrograms()
-        log("Running simulated event loop...")
-
-        var ticks = 0
-        while (true) {
-            orchestrator.pumpPackets()
-            syncSimulatedElapsedFromNetwork()
-            val completeCount = nodePrograms.count { it.isComplete() }
-            if (completeCount == nodePrograms.size) {
-                break
+        println("Creating hosts...")
+        nodesStuff = createNodesStuff()
+        val nodePrograms = nodesStuff.map { it.nodeProgram }
+        val embeddedNodes = nodesStuff.map { it.embeddedNode }
+        println("Creating sim network...")
+        val simCoreNet = SimCoreNetImpl(embeddedNodes)
+        val idAndIp =
+            embeddedNodes.map { node ->
+                SimPacketPump.IdMapEntry(networkEngine.network.nodes[node.nodeId].id, node.ip)
             }
-            ensureWithinTimeLimit(completeCount)
+        val simPacketPump = SimPacketPump(simCoreNet, networkEngine, idAndIp)
+        simTimer = simPacketPump.monotonicTimer
+        val logger = SimLogger(simTimer)
+        logger.log("Starting hosts...")
+//        startHosts(nodesStuff.map { it.host })
+        logger.log("Starting programs...")
+        startPrograms(nodesStuff)
+        logger.log("Running simulated event loop...")
 
-            val nextDelay = orchestrator.nextTaskDuration()
-            if (nextDelay == null) {
-                throw IllegalStateException("Simulation stalled: no pending tasks but only $completeCount/${nodePrograms.size} programs completed")
+        val startSimT = simTimer.time()
+        var lastLogSimT = startSimT
+        var ticksCount = 0L
+        var nextAdvance: Duration = Duration.ZERO
+        try {
+            while (true) {
+                simPacketPump.advanceAndExecuteAll(nextAdvance)
+                val simTime = simTimer.time()
+                ticksCount++
+
+                val completeCount = nodePrograms.count { it.isComplete() }
+                if (completeCount == nodePrograms.size) {
+                    break
+                }
+
+                if (simTime - lastLogSimT >= 10.seconds) {
+                    lastLogSimT = simTime
+                    logger.log("Nodes complete $completeCount of $nodeCount in $ticksCount ticks")
+                }
+
+                nextAdvance = simPacketPump.nextTaskDuration()
+                    ?: throw IllegalStateException("Simulation stalled: no pending tasks but only $completeCount/$nodeCount programs completed")
+
+                if (simTime - startSimT > maxSimulatedRunDuration) {
+                    throw IllegalStateException(
+                        "Simulation exceeded limit: simulated=${(simTime - startSimT).inWholeMilliseconds}ms " +
+                                "limit=${maxSimulatedRunDuration.inWholeMilliseconds}ms " +
+                                "completed=$completeCount/${nodePrograms.size}")
+                }
             }
-            val step = if (nextDelay == Duration.Companion.ZERO) 1.milliseconds else nextDelay
-            advanceSimulationBy(step)
 
-            ticks++
-            if (ticks % 10000 == 0) {
-                log("$completeCount of ${nodePrograms.size} completed")
-            }
-        }
-
-        log("All complete...")
-    }
-
-    private fun runUntil(done: () -> Boolean, timeout: Duration) {
-        var elapsed = Duration.Companion.ZERO
-        while (!done()) {
-            if (elapsed > timeout) {
-                throw IllegalStateException("Condition not reached in simulated loop within $timeout")
-            }
-
-            orchestrator.pumpPackets()
-            syncSimulatedElapsedFromNetwork()
-            val nextDelay = orchestrator.nextTaskDuration()
-            if (nextDelay == null) {
-                break
-            }
-            val step = if (nextDelay == Duration.Companion.ZERO) 1.milliseconds else nextDelay
-            advanceSimulationBy(step)
-            elapsed += step
-            ensureWithinTimeLimit()
-        }
-        check(done()) { "Condition was not reached in simulated protocol loop" }
-    }
-
-    private fun advanceSimulationBy(step: Duration) {
-        orchestrator.advanceAndExecuteAll(step)
-        syncSimulatedElapsedFromNetwork()
-    }
-
-    private fun syncSimulatedElapsedFromNetwork() {
-        simulatedElapsed = networkEngine.currentTimeMillis.milliseconds
-    }
-
-    private fun ensureWithinTimeLimit(completedCount: Int = nodePrograms.count { it.isComplete() }) {
-        if (simulatedElapsed > maxSimulatedRunDuration) {
-            throw IllegalStateException(
-                "Simulation exceeded limit: simulated=${simulatedElapsed.inWholeMilliseconds}ms " +
-                    "limit=${maxSimulatedRunDuration.inWholeMilliseconds}ms " +
-                    "completed=$completedCount/${nodePrograms.size}"
-            )
+            logger.log("All complete...")
+        } catch (e: Exception) {
+            logger.log("Exception: $e")
+            throw e
         }
     }
 }
+

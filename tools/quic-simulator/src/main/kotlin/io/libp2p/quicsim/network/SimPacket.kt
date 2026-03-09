@@ -12,6 +12,8 @@ data class SimPacket(
     val srcNodeId: String,
     /** Destination node id. */
     val dstNodeId: String,
+    val srcPort: Int = -1,
+    val dstPort: Int = -1,
     /** Optional external payload reference. */
     val payloadRef: Any? = null
 ) {

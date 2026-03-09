@@ -3,8 +3,7 @@ package io.libp2p.quicsim.host.impl
 import io.libp2p.core.Host
 import io.libp2p.core.crypto.KeyType
 import io.libp2p.core.dsl.HostBuilder
-import io.libp2p.etc.types.seconds
-import io.libp2p.quicsim.core.schedule.impl.CPUMonotonicTimer
+import io.libp2p.quicsim.core.schedule.impl.NanoMonotonicTimer
 import io.libp2p.quicsim.core.schedule.impl.toSimpleScheduler
 import io.libp2p.quicsim.host.NetworkContext
 import io.libp2p.quicsim.host.NodeFactory
@@ -33,7 +32,7 @@ class LocalRealRunner(
 
         simContexts = (0 until nodeCount).map {
             val scheduler = Executors.newSingleThreadScheduledExecutor().toSimpleScheduler()
-            SimContext(scheduler, CPUMonotonicTimer)
+            SimContext(scheduler, NanoMonotonicTimer.CPU)
         }
 
         hosts = (0 until nodeCount).map { idx ->

@@ -60,14 +60,8 @@ class SimulatedRunnerTest {
             networkEngine = BasicSimNetworkEngine(network)
         )
 
-        try {
-            runner.run()
-            assertTrue(runner.nodePrograms.all { it.isComplete() }, "Expected all node programs to complete")
-        } finally {
-            runCatching {
-                CompletableFuture.allOf(*runner.hosts.map { it.stop() }.toTypedArray()).get(10, TimeUnit.SECONDS)
-            }
-        }
+        runner.run()
+        assertTrue(runner.nodesStuff.all { it.nodeProgram.isComplete() }, "Expected all node programs to complete")
     }
 
     @Test
@@ -100,17 +94,11 @@ class SimulatedRunnerTest {
             networkEngine = BasicSimNetworkEngine(networkBuilder.build())
         )
 
-        try {
-            runner.run()
-            assertTrue(
-                nodePrograms.all { it.isComplete() },
-                "Expected all sample gossip node programs to complete"
-            )
-        } finally {
-            runCatching {
-                CompletableFuture.allOf(*runner.hosts.map { it.stop() }.toTypedArray()).get(10, TimeUnit.SECONDS)
-            }
-        }
+        runner.run()
+        assertTrue(
+            nodePrograms.all { it.isComplete() },
+            "Expected all sample gossip node programs to complete"
+        )
     }
 
     @Test
@@ -141,7 +129,7 @@ class SimulatedRunnerTest {
         assertTrue(
             large.simulatedDeltaMillis > small.simulatedDeltaMillis,
             "Expected larger message to take longer: small=${small.simulatedDeltaMillis}ms " +
-                "large=${large.simulatedDeltaMillis}ms"
+                    "large=${large.simulatedDeltaMillis}ms"
         )
     }
 
@@ -183,13 +171,7 @@ class SimulatedRunnerTest {
             networkEngine = BasicSimNetworkEngine(builder.build())
         )
 
-        try {
             runner.run()
-        } finally {
-            runCatching {
-                CompletableFuture.allOf(*runner.hosts.map { it.stop() }.toTypedArray()).get(10, TimeUnit.SECONDS)
-            }
-        }
 
         return TransferMetrics(
             receivedSize = receivedSize.get(5, TimeUnit.SECONDS),
@@ -224,6 +206,7 @@ class SimulatedRunnerTest {
         private val receivedSize: CompletableFuture<Int>
     ) : NodeProgram {
         private lateinit var binding: SizeEchoBinding
+
         @Volatile
         private var complete = false
 
@@ -234,7 +217,8 @@ class SimulatedRunnerTest {
 
         override fun start(simContext: SimContext, networkContext: NetworkContext) {
             val epoch = simContext.timer.time()
-            val addr = networkContext.allNodes[targetNodeId] ?: throw IllegalStateException("Node $targetNodeId not found")
+            val addr =
+                networkContext.allNodes[targetNodeId] ?: throw IllegalStateException("Node $targetNodeId not found")
             networkContext.myHost.network.connect(addr)
                 .thenCompose { conn ->
                     conn.muxerSession().createStream(binding).controller

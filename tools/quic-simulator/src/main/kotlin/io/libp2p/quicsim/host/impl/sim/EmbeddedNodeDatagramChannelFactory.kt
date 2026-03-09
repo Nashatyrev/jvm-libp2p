@@ -7,7 +7,7 @@ import java.net.SocketAddress
 import java.util.concurrent.CompletableFuture
 
 class EmbeddedNodeDatagramChannelFactory(
-    private val node: SimulatedRunner.EmbeddedNode
+    private val node: EmbeddedNode
 ) : DatagramChannelFactory {
     override fun createClientChannel(handler: ChannelHandler): CompletableFuture<Channel> =
         node.bindClientParent(handler)
