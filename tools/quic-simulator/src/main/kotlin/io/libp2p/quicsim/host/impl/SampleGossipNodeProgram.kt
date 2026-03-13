@@ -2,6 +2,7 @@ package io.libp2p.quicsim.host.impl
 
 import io.libp2p.core.PeerId
 import io.libp2p.core.multiformats.Multiaddr
+import io.libp2p.core.multistream.ProtocolBinding
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.pubsub.PubsubMessage
@@ -12,6 +13,7 @@ import io.libp2p.quicsim.host.NetworkContext
 import io.libp2p.quicsim.host.SimContext
 import io.libp2p.quicsim.host.SimNodeId
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
+import io.libp2p.quicsim.host.impl.sim.SimLogger
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import java.nio.charset.StandardCharsets
@@ -34,6 +36,7 @@ class SampleGossipNodeProgram(
     val messageSizeBytes: Int = 1024,
     val initialPublishDelay: Duration = 1.minutes,
 ) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed) {
+    var log: (String) -> Unit = { println("[SampleGossipNodeProgram] $it") }
 
     private val random = Random(randomSeed)
     private val testTopic = Topic(testTopicName)
@@ -51,18 +54,16 @@ class SampleGossipNodeProgram(
     @Volatile
     private var eventsListenerInstalled = false
 
+    override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> {
+        val simLogger = SimLogger(context.timer)
+        log = simLogger::log
+        return super.createProtocols(context)
+    }
+
     override fun onAllConnected(simContext: SimContext, networkContext: NetworkContext) {
-        val realStartMillis = System.currentTimeMillis()
-        val logTimeSource = (simContext.scheduler as? MonotonicTimer) ?: simContext.timer
-        val simStartTime = logTimeSource.time()
-        fun log(msg: String) {
-            val realElapsedMillis = System.currentTimeMillis() - realStartMillis
-            val simElapsedMillis = (logTimeSource.time() - simStartTime).inWholeMilliseconds
-            println("[r+${realElapsedMillis}ms s+${simElapsedMillis}ms] node=$simNodeId $msg")
-        }
         expectedNodeIds = networkContext.allNodes.keys.filter { it < publishersCount }.toSet() - simNodeId
         log("expected senders: $expectedNodeIds")
-        installRouterEventLogger(::log)
+        installRouterEventLogger()
 
         messageApi.subscribe(Consumer { msg ->
             parseSenderNodeId(msg.data)?.let { receivedNodeIds += it }
@@ -92,7 +93,7 @@ class SampleGossipNodeProgram(
     }
 
     override fun isComplete(): Boolean =
-        expectedNodeIds.isNotEmpty() && receivedNodeIds.containsAll(expectedNodeIds)
+        receivedNodeIds.containsAll(expectedNodeIds)
 
     fun debugState(): String {
         val received = receivedNodeIds.toSortedSet().toList()
@@ -111,7 +112,7 @@ class SampleGossipNodeProgram(
             "expected=$expectedNodeIds received=$received missing=$missing complete=${isComplete()}"
     }
 
-    private fun installRouterEventLogger(log: (String) -> Unit) {
+    private fun installRouterEventLogger() {
         if (eventsListenerInstalled) return
         eventsListenerInstalled = true
         gossipRouter.eventBroadcaster.listeners += object : GossipRouterEventListener {
