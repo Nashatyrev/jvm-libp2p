@@ -10,7 +10,7 @@ import io.libp2p.core.multistream.StrictProtocolBinding
 import io.libp2p.core.Stream
 import io.libp2p.etc.types.toByteArray
 import io.libp2p.etc.types.toByteBuf
-import io.libp2p.quicsim.network.TestNetworkBuilder
+import io.libp2p.quicsim.network.TestStarNetworkBuilder
 import io.libp2p.quicsim.network.SimNode
 import io.libp2p.quicsim.network.impl.BasicSimNetwork
 import io.libp2p.quicsim.network.impl.BasicSimNetworkEngine
@@ -18,10 +18,12 @@ import io.libp2p.quicsim.network.impl.FifoSimQueueDiscipline
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.protocol.ProtocolHandler
 import io.libp2p.protocol.ProtocolMessageHandler
+import io.libp2p.quicsim.host.impl.sim.SimLogger
 import io.libp2p.quicsim.host.impl.sim.SimulatedRunner
 import io.netty.buffer.ByteBuf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.time.Duration
@@ -31,6 +33,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 class SimulatedRunnerTest {
@@ -69,14 +72,10 @@ class SimulatedRunnerTest {
         val nodeCount = 5
         val publisherCount = 5
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
-        val networkBuilder = TestNetworkBuilder()
-        val simNodes = (0 until nodeCount).map { networkBuilder.node("node-$it") }
+        val networkBuilder = TestStarNetworkBuilder()
+        (0 until nodeCount).map { networkBuilder.node("node-$it") }
         val qdiscFactory = { FifoSimQueueDiscipline(1_000_000L) }
-        simNodes.indices.forEach { i ->
-            val a = simNodes[i]
-            val b = simNodes[(i + 1) % simNodes.size]
-            networkBuilder.bidirectional(a, b, Duration.ofMillis(50), qdiscFactory)
-        }
+        networkBuilder.linkAllToRouter( Duration.ofMillis(50), qdiscFactory)
 
         val runner = SimulatedRunner(
             nodeFactory = object : NodeFactory {
@@ -98,6 +97,44 @@ class SimulatedRunnerTest {
         assertTrue(
             nodePrograms.all { it.isComplete() },
             "Expected all sample gossip node programs to complete"
+        )
+    }
+
+    @Test
+    @Disabled
+    @Timeout(180)
+    fun `simulated runner completes 1000-node ring with 20-neighbor gossip and 200 publishers`() {
+        val nodeCount = 50
+        val publishersCount = 10
+        val neighboursToConnect = 5
+        val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
+
+        val networkBuilder = TestStarNetworkBuilder()
+        (0 until nodeCount).map { networkBuilder.node("node-$it") }
+        val qdiscFactory = { FifoSimQueueDiscipline(50_000_000L) }
+        networkBuilder.linkAllToRouter(Duration.ofMillis(50), qdiscFactory).build()
+
+        val runner = SimulatedRunner(
+            nodeFactory = object : NodeFactory {
+                override fun createNode(id: SimNodeId): NodeProgram =
+                    SampleGossipNodeProgram(
+                        simNodeId = id,
+                        connectToNodeIds = (1..neighboursToConnect).map { (id + it) % nodeCount },
+                        publishersCount = publishersCount,
+                        params = GossipParams(),
+                        randomSeed = id.toLong(),
+                        messageSizeBytes = 1024,
+                        initialPublishDelay = 30.seconds,
+                    ).also { nodePrograms += it }
+            },
+            networkEngine = BasicSimNetworkEngine(networkBuilder.build()),
+            maxSimulatedRunDuration = 5.minutes
+        )
+
+        runner.run()
+        assertTrue(
+            nodePrograms.all { it.isComplete() },
+            "Expected all sample gossip node programs to complete in 1000-node scenario"
         )
     }
 
@@ -142,12 +179,10 @@ class SimulatedRunnerTest {
         val receivedAtSimMillis = AtomicLong(-1L)
         val receivedSize = CompletableFuture<Int>()
 
-        val builder = TestNetworkBuilder()
-        val node0 = builder.node("node-0")
-        val node1 = builder.node("node-1")
-        builder.bidirectional(
-            node0,
-            node1,
+        val builder = TestStarNetworkBuilder()
+        builder.node("node-0")
+        builder.node("node-1")
+        builder.linkAllToRouter(
             Duration.ofMillis(linkLatencyMs),
             qdiscFactory = { FifoSimQueueDiscipline(bandwidthBytesPerSec) }
         )

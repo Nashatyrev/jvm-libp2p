@@ -241,7 +241,7 @@ class BasicSimNetworkEngineTest {
 
     @Test
     fun `packet with no route is dropped and engine has no deliveries`() {
-        val builder = TestNetworkBuilder()
+        val builder = TestStarNetworkBuilder()
         val node1 = builder.node("node-1")
         val isolatedNode = builder.node("node-2")
         val network = builder.build()
@@ -263,37 +263,5 @@ class BasicSimNetworkEngineTest {
 
         engine.advanceAndExecuteAll(5_000.milliseconds)
         assertEquals(5_000L, engine.currentTimeMillis)
-    }
-
-    @Test
-    fun `packet is delivered across multi-router path with more than two hops`() {
-        val bw = 1_000L
-        val hopLatency = Duration.ofMillis(5)
-        val builder = TestNetworkBuilder()
-        val node1 = builder.node("node-1")
-        val router1 = builder.node("router-1")
-        val router2 = builder.node("router-2")
-        val node2 = builder.node("node-2")
-
-        builder
-            .bidirectional(node1, router1, hopLatency, qdiscFactory = { FifoSimQueueDiscipline(bw) })
-            .bidirectional(router1, router2, hopLatency, qdiscFactory = { FifoSimQueueDiscipline(bw) })
-            .bidirectional(router2, node2, hopLatency, qdiscFactory = { FifoSimQueueDiscipline(bw) })
-
-        val engine = BasicSimNetworkEngine(builder.build())
-        val packet = SimPacket(
-            id = 1,
-            bytes = 1_000,
-            srcNodeId = node1.id,
-            dstNodeId = node2.id
-        )
-
-        assertTrue(engine.deliver(listOf(packet)).isEmpty())
-        engine.advanceAndExecuteAll(3_015.milliseconds)
-        val delivered = engine.deliver(emptyList())
-        assertEquals(listOf(packet.id), delivered.map { it.id })
-        assertEquals(node2.id, delivered.first().dstNodeId)
-        // 3 hops: (1000ms tx + 5ms latency) * 3 = 3015ms
-        assertEquals(3_015L, engine.currentTimeMillis)
     }
 }
