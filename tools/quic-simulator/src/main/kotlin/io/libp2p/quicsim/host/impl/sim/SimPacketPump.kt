@@ -43,7 +43,7 @@ class SimPacketPump(
                     dstNodeId = ipToId[datagramPacket.recipient().hostString]!!,
                     srcPort = datagramPacket.sender().port,
                     dstPort = datagramPacket.recipient().port,
-                    payloadRef = datagramPacket.content().retain()
+                    payloadRef = datagramPacket.content()
                 )
             },
             { simPacket ->
