@@ -39,10 +39,14 @@ import io.netty.handler.ssl.ClientAuth
 import org.slf4j.LoggerFactory
 import java.net.InetSocketAddress
 import java.net.SocketAddress
+import java.security.KeyStore
+import java.security.PrivateKey
+import java.security.cert.X509Certificate
 import java.time.Duration
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.KeyManagerFactory
 
 class QuicTransport @JvmOverloads constructor(
     private val localKey: PrivKey,
@@ -63,6 +67,21 @@ class QuicTransport @JvmOverloads constructor(
     private var allocator by lazyVar { AdaptiveByteBufAllocator(true) }
     private var multistreamProtocol: MultistreamProtocol = MultistreamProtocolV1
     private var incomingMultistreamProtocol: MultistreamProtocol by lazyVar { multistreamProtocol }
+
+    // Reuse local TLS identity and key manager across all contexts created by this transport.
+    // Building key manager repeatedly is expensive and dominates connection setup for large simulations.
+    private val localConnectionKeyPair by lazy {
+        if (certAlgorithm == "ECDSA") generateEcdsaKeyPair() else generateEd25519KeyPair()
+    }
+    private val localJavaPrivateKey by lazy {
+        getJavaKey(localConnectionKeyPair.first)
+    }
+    private val localCertificate by lazy {
+        buildCert(localKey, localConnectionKeyPair.first)
+    }
+    private val localKeyManagerFactory by lazy {
+        createKeyManagerFactory(localJavaPrivateKey, localCertificate)
+    }
 
     companion object {
         @JvmStatic
@@ -245,20 +264,30 @@ class QuicTransport @JvmOverloads constructor(
             !addr.has(WS)
 
     fun quicSslContext(isClient: Boolean, trustManager: Libp2pTrustManager): QuicSslContext {
-        val connectionKeys = if (certAlgorithm == "ECDSA") generateEcdsaKeyPair() else generateEd25519KeyPair()
-        val javaPrivateKey = getJavaKey(connectionKeys.first)
-        val cert = buildCert(localKey, connectionKeys.first)
-        logger.trace("Building {} keys and cert for peer id {}", certAlgorithm, PeerId.fromPubKey(localKey.publicKey()))
+        logger.trace("Building QUIC TLS context for peer id {}", PeerId.fromPubKey(localKey.publicKey()))
         return (
             if (isClient) {
-                QuicSslContextBuilder.forClient().keyManager(javaPrivateKey, null, cert)
+                QuicSslContextBuilder.forClient().keyManager(localKeyManagerFactory, null)
             } else {
-                QuicSslContextBuilder.forServer(javaPrivateKey, null, cert).clientAuth(ClientAuth.REQUIRE)
+                QuicSslContextBuilder.forServer(localKeyManagerFactory, null).clientAuth(ClientAuth.REQUIRE)
             }
             )
             .trustManager(trustManager)
             .applicationProtocols("libp2p")
             .build()
+    }
+
+    private fun createKeyManagerFactory(
+        privateKey: PrivateKey,
+        certificate: X509Certificate
+    ): KeyManagerFactory {
+        val password = CharArray(0)
+        val keyStore = KeyStore.getInstance(KeyStore.getDefaultType())
+        keyStore.load(null, null)
+        keyStore.setKeyEntry("quic-transport-key", privateKey, password, arrayOf(certificate))
+        return KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply {
+            init(keyStore, password)
+        }
     }
 
     fun serverTransportBuilder(
