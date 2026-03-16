@@ -93,7 +93,7 @@ class SampleGossipNodeProgram(
     }
 
     override fun isComplete(): Boolean =
-        receivedNodeIds.containsAll(expectedNodeIds)
+        expectedNodeIds.isNotEmpty() && receivedNodeIds.containsAll(expectedNodeIds)
 
     fun debugState(): String {
         val received = receivedNodeIds.toSortedSet().toList()
