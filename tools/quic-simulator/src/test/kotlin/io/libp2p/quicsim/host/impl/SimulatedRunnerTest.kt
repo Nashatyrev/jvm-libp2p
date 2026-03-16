@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
+import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -108,6 +109,15 @@ class SimulatedRunnerTest {
         val publishersCount = 10
         val neighboursToConnect = 5
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
+        val random = Random(1234)
+        val randomConnectionsByNode: Map<SimNodeId, List<SimNodeId>> =
+            (0 until nodeCount).associateWith { nodeId ->
+                generateSequence { random.nextInt(nodeCount) }
+                    .filter { it != nodeId }
+                    .distinct()
+                    .take(neighboursToConnect)
+                    .toList()
+            }
 
         val networkBuilder = TestStarNetworkBuilder()
         (0 until nodeCount).map { networkBuilder.node("node-$it") }
@@ -119,7 +129,7 @@ class SimulatedRunnerTest {
                 override fun createNode(id: SimNodeId): NodeProgram =
                     SampleGossipNodeProgram(
                         simNodeId = id,
-                        connectToNodeIds = (1..neighboursToConnect).map { (id + it) % nodeCount },
+                        connectToNodeIds = randomConnectionsByNode.getValue(id),
                         publishersCount = publishersCount,
                         params = GossipParams(),
                         randomSeed = id.toLong(),
