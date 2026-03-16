@@ -14,6 +14,7 @@ import kotlin.time.Duration.Companion.nanoseconds
 class EmbeddedChannelDatagramPacketProcessor(
     val channel: SimDatagramChannel
 ) : PacketProcessor<DatagramPacket> {
+    private var nextScheduledTaskDelay: Duration? = null
 
     override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
         inboundData.forEach {
@@ -29,14 +30,13 @@ class EmbeddedChannelDatagramPacketProcessor(
         runTasksAtCurrentTime()
     }
 
-    override fun nextTaskDuration(): Duration? {
-        val nanos = channel.runScheduledPendingTasks()
-        return if (nanos >= 0) nanos.nanoseconds else null
-    }
+    override fun nextTaskDuration(): Duration? =
+        if (channel.hasPendingTasks()) Duration.ZERO else nextScheduledTaskDelay
 
     private fun runTasksAtCurrentTime() {
         channel.runPendingTasks()
-        channel.runScheduledPendingTasks()
+        val nanos = channel.runScheduledPendingTasks()
+        nextScheduledTaskDelay = if (nanos >= 0) nanos.nanoseconds else null
     }
 
     private fun drainOutbound(): List<DatagramPacket> =
