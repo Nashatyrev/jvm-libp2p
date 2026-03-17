@@ -2,9 +2,6 @@ package io.libp2p.quicsim.host.impl.sim
 
 import io.libp2p.quicsim.core.PacketProcessor
 import io.netty.channel.socket.DatagramPacket
-import io.netty.util.ReferenceCountUtil
-import java.net.InetSocketAddress
-import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.nanoseconds
 
@@ -20,20 +17,24 @@ class EmbeddedChannelDatagramPacketProcessor(
         inboundData.forEach {
             channel.writeInbound(it)
         }
-        runTasksAtCurrentTime()
+        runPendingTasksOnly()
         return drainOutbound()
     }
 
     override fun advanceAndExecuteAll(advanceDuration: Duration) {
         require(!advanceDuration.isNegative()) { "advanceDuration must be non-negative" }
-        channel.advanceTimeBy(advanceDuration.inWholeNanoseconds, TimeUnit.NANOSECONDS)
-        runTasksAtCurrentTime()
+        // Time is provided by EmbeddedChannel custom Ticker (NettyTicker), so we should not call advanceTimeBy().
+        runPendingAndScheduledTasks()
     }
 
     override fun nextTaskDuration(): Duration? =
         if (channel.hasPendingTasks()) Duration.ZERO else nextScheduledTaskDelay
 
-    private fun runTasksAtCurrentTime() {
+    private fun runPendingTasksOnly() {
+        channel.runPendingTasks()
+    }
+
+    private fun runPendingAndScheduledTasks() {
         channel.runPendingTasks()
         val nanos = channel.runScheduledPendingTasks()
         nextScheduledTaskDelay = if (nanos >= 0) nanos.nanoseconds else null
