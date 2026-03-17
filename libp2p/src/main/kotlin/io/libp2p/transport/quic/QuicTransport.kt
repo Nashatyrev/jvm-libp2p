@@ -197,17 +197,20 @@ class QuicTransport @JvmOverloads constructor(
                     .connect()
                     .toCompletableFuture()
             }
-            .thenApply {
-                registerChannel(it)
-                val connection = ConnectionOverNetty(it, this@QuicTransport, true)
+            .thenApply { quicChannel ->
+                registerChannel(quicChannel)
+                val connection = ConnectionOverNetty(quicChannel, this@QuicTransport, true)
 
-                connection.setMuxerSession(QuicMuxerSession(it, connection))
+                connection.setMuxerSession(QuicMuxerSession(quicChannel, connection))
 
                 val pubHash = Multihash.of(addr.getPeerId()!!.bytes.toByteBuf())
                 val remotePubKey = if (pubHash.desc.digest == Multihash.Digest.Identity) {
                     unmarshalPublicKey(pubHash.bytes.toByteArray())
                 } else {
-                    getPublicKeyFromCert(arrayOf(trustManager.remoteCert!!))
+                    val peerCertificates = (quicChannel.sslEngine()
+                        ?: throw IllegalStateException("Missing QUIC SSL engine for client channel"))
+                        .session.peerCertificates
+                    getPublicKeyFromCert(peerCertificates)
                 }
                 connection.setSecureSession(
                     SecureChannel.Session(
@@ -221,7 +224,7 @@ class QuicTransport @JvmOverloads constructor(
                 preHandler?.also { visitor -> visitor.visit(connection) }
                 connHandler.handleConnection(connection)
 
-                it.attr(CONNECTION).set(connection)
+                quicChannel.attr(CONNECTION).set(connection)
 
                 connection
             }
@@ -313,34 +316,30 @@ class QuicTransport @JvmOverloads constructor(
                         "quic-handshake-waiter",
                         object : ChannelInboundHandlerAdapter() {
                             override fun channelActive(ctx: ChannelHandlerContext) {
-                                // Now the handshake is complete and remoteCert should be available
-                                val remoteCert = trustManager.remoteCert
-                                if (remoteCert != null) {
-                                    val remotePeerId = verifyAndExtractPeerId(arrayOf(remoteCert))
-                                    val remotePublicKey = getPublicKeyFromCert(arrayOf(remoteCert))
+                                val quicChannel = connection.nettyChannel as QuicChannel
+                                val peerCertificates = (quicChannel.sslEngine()
+                                    ?: throw IllegalStateException("Missing QUIC SSL engine for server channel"))
+                                    .session.peerCertificates
+                                val remotePeerId = verifyAndExtractPeerId(peerCertificates)
+                                val remotePublicKey = getPublicKeyFromCert(peerCertificates)
 
-                                    logger.info("Handshake completed with remote peer id: {}", remotePeerId)
+                                logger.info("Handshake completed with remote peer id: {}", remotePeerId)
 
-                                    connection.setSecureSession(
-                                        SecureChannel.Session(
-                                            PeerId.fromPubKey(localKey.publicKey()),
-                                            remotePeerId,
-                                            remotePublicKey,
-                                            null
-                                        )
+                                connection.setSecureSession(
+                                    SecureChannel.Session(
+                                        PeerId.fromPubKey(localKey.publicKey()),
+                                        remotePeerId,
+                                        remotePublicKey,
+                                        null
                                     )
+                                )
 
-                                    // Remove this handler as it's no longer needed
-                                    ctx.pipeline().remove(this)
+                                // Remove this handler as it's no longer needed
+                                ctx.pipeline().remove(this)
 
-                                    // Now it's safe to call the connection handler
-                                    preHandler?.also { visitor -> visitor.visit(connection) }
-                                    connHandler.handleConnection(connection)
-                                } else {
-                                    // This should not happen if channelActive is called after handshake
-                                    ctx.close()
-                                    throw IllegalStateException("Remote certificate still not available after handshake")
-                                }
+                                // Now it's safe to call the connection handler
+                                preHandler?.also { visitor -> visitor.visit(connection) }
+                                connHandler.handleConnection(connection)
 
                                 super.channelActive(ctx)
                             }
