@@ -12,9 +12,9 @@ import io.libp2p.quicsim.host.NetworkContext
 import io.libp2p.quicsim.host.NodeFactory
 import io.libp2p.quicsim.host.NodeProgram
 import io.libp2p.quicsim.host.SimContext
-import io.libp2p.quicsim.host.SimNodeId
 import io.libp2p.quicsim.network.SimNetworkEngine
 import io.libp2p.transport.quic.QuicTransport
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.function.BiFunction
 import kotlin.time.Duration
@@ -105,10 +105,11 @@ class SimulatedRunner(
         startFutures.forEach { it.get(1, TimeUnit.SECONDS) }
     }
 
-    fun startPrograms(nodesStuff: List<NodeStuff>) {
-        nodesStuff.forEach { nodeStuff ->
+    fun startPrograms(nodesStuff: List<NodeStuff>): CompletableFuture<Void> {
+        val futures = nodesStuff.map { nodeStuff ->
             nodeStuff.nodeProgram.start(nodeStuff.simContext, nodeStuff.networkContext)
         }
+        return CompletableFuture.allOf(*futures.toTypedArray())
     }
 
     fun run() {
@@ -128,7 +129,16 @@ class SimulatedRunner(
         logger.log("Starting hosts...")
 //        startHosts(nodesStuff.map { it.host })
         logger.log("Starting programs...")
-        startPrograms(nodesStuff)
+        val startFuture = startPrograms(nodesStuff)
+        startFuture.handle { _, throwable ->
+            if (throwable != null) {
+                logger.log("Error on starting programs...")
+                throwable.printStackTrace()
+                throw throwable
+            } else {
+                logger.log("All connected and all programs are started.")
+            }
+        }
         logger.log("Running simulated event loop...")
 
         val startSimT = simTimer.time()

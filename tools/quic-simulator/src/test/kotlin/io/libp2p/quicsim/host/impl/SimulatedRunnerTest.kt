@@ -18,6 +18,7 @@ import io.libp2p.quicsim.network.impl.FifoSimQueueDiscipline
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.protocol.ProtocolHandler
 import io.libp2p.protocol.ProtocolMessageHandler
+import io.libp2p.quicsim.core.schedule.impl.submitAfterDelay
 import io.libp2p.quicsim.host.impl.sim.SimLogger
 import io.libp2p.quicsim.host.impl.sim.SimulatedRunner
 import io.netty.buffer.ByteBuf
@@ -233,8 +234,8 @@ class SimulatedRunnerTest {
 
         override fun createProtocols(context: SimContext) = emptyList<io.libp2p.core.multistream.ProtocolBinding<*>>()
 
-        override fun start(simContext: SimContext, networkContext: NetworkContext) {
-            simContext.scheduler.executeAfterDelay(100.milliseconds) {
+        override fun start(simContext: SimContext, networkContext: NetworkContext): CompletableFuture<Unit> {
+            return simContext.scheduler.submitAfterDelay(100.milliseconds) {
                 complete = true
             }
         }
@@ -260,11 +261,12 @@ class SimulatedRunnerTest {
             return listOf(binding)
         }
 
-        override fun start(simContext: SimContext, networkContext: NetworkContext) {
+        override fun start(simContext: SimContext, networkContext: NetworkContext): CompletableFuture<Unit> {
             val epoch = simContext.timer.time()
             val addr =
                 networkContext.allNodes[targetNodeId] ?: throw IllegalStateException("Node $targetNodeId not found")
-            networkContext.myHost.network.connect(addr)
+
+            return networkContext.myHost.network.connect(addr)
                 .thenCompose { conn ->
                     conn.muxerSession().createStream(binding).controller
                 }
@@ -272,7 +274,7 @@ class SimulatedRunnerTest {
                     sentAtSimMillis.set((simContext.timer.time() - epoch).inWholeMilliseconds)
                     ctrl.send(payload.toByteArray(StandardCharsets.UTF_8))
                 }
-                .whenComplete { echoedBytes, err ->
+                .handle { echoedBytes, err ->
                     if (err == null) {
                         receivedAtSimMillis.set((simContext.timer.time() - epoch).inWholeMilliseconds)
                         receivedSize.complete(echoedBytes.size)
@@ -295,8 +297,9 @@ class SimulatedRunnerTest {
         override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> =
             listOf(SizeEchoBinding(SizeEchoProtocol()))
 
-        override fun start(simContext: SimContext, networkContext: NetworkContext) {
+        override fun start(simContext: SimContext, networkContext: NetworkContext): CompletableFuture<Unit> {
             started = true
+            return CompletableFuture.completedFuture(Unit)
         }
 
         override fun isComplete(): Boolean = started

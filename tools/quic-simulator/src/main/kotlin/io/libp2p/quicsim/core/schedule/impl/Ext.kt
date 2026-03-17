@@ -7,6 +7,7 @@ import java.util.Collections
 import java.util.concurrent.AbstractExecutorService
 import java.util.concurrent.Callable
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionStage
 import java.util.concurrent.Delayed
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Future
@@ -24,6 +25,14 @@ fun MonotonicTimer.toCurrentTimeSupplier(): CurrentTimeSupplier {
     return {
         (this@toCurrentTimeSupplier.time() - epochTimePoint).inWholeMilliseconds
     }
+}
+
+fun <T> SimpleScheduler.submitAfterDelay(delay: Duration, task: () -> T): CompletableFuture<T> {
+    val ret = CompletableFuture<T>()
+    this.executeAfterDelay(delay) {
+        ret.complete(task())
+    }
+    return ret
 }
 
 private class ScheduledExecutorSimpleScheduler(

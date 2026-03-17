@@ -12,14 +12,12 @@ abstract class AbstractNodeProgram(
     val connectToNodeIds: List<SimNodeId>,
 ) : NodeProgram {
 
-    override fun start(simContext: SimContext, networkContext: NetworkContext) {
+    override fun start(simContext: SimContext, networkContext: NetworkContext): CompletableFuture<Unit> {
         val connectAll = connectAll(networkContext)
-        CompletableFuture.allOf(*connectAll.toTypedArray())
-            .thenRun {
-                onAllConnected(simContext, networkContext)
-            }
-
+        return CompletableFuture.allOf(*connectAll.toTypedArray())
+            .thenApply { onAllConnected(simContext, networkContext) }
     }
+
 
     protected fun connectAll(context: NetworkContext): List<CompletableFuture<Connection>> =
         connectToNodeIds.map { nodeId ->

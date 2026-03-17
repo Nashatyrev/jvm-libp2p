@@ -60,15 +60,17 @@ class LocalRealRunner(
         CompletableFuture.allOf(*allStartFuts.toTypedArray()).get(60, TimeUnit.SECONDS)
     }
 
-    fun startPrograms() {
+    fun startPrograms(): CompletableFuture<Void> {
         val allListenAddresses = hosts.indices.associateWith {
             hosts[it].listenAddresses().first()
         }
         networkContexts = hosts.map { NetworkContext(it, allListenAddresses) }
 
-        nodePrograms.indices.forEach { i ->
+        val futures = nodePrograms.indices.map { i ->
             nodePrograms[i].start(simContexts[i], networkContexts[i])
         }
+
+        return CompletableFuture.allOf(*futures.toTypedArray())
     }
 
     fun run() {
@@ -80,7 +82,9 @@ class LocalRealRunner(
         log("Starting hosts...")
         startHosts()
         log("Starting programs...")
-        startPrograms()
+        val startFuture = startPrograms()
+        log("Waiting all programs to start...")
+        startFuture.get(60, TimeUnit.SECONDS)
         log("Waiting all programs to complete...")
         var ticks = 0
         var prevCompleteCount = -1

@@ -2,6 +2,7 @@ package io.libp2p.quicsim.host
 
 import io.libp2p.core.dsl.BuilderJ
 import io.libp2p.core.multistream.ProtocolBinding
+import java.util.concurrent.CompletableFuture
 
 interface NodeProgram {
 
@@ -11,7 +12,7 @@ interface NodeProgram {
 
     fun modifyBuilder(context: SimContext, builder: BuilderJ) {}
 
-    fun start(simContext: SimContext, networkContext: NetworkContext)
+    fun start(simContext: SimContext, networkContext: NetworkContext): CompletableFuture<Unit>
 
     fun isComplete(): Boolean
 }
