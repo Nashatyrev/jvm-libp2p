@@ -14,6 +14,7 @@ class SimLogger(
         val realTime = realTimer.time() - realEpochStart
         val simTime = simTimer.time() - simEpochStart
 
-        println("[$realTime][$simTime] $msg")
+//        println("[$realTime][$simTime] $msg")
+        println("[$simTime] $msg")
     }
 }

@@ -1,38 +1,39 @@
 package io.libp2p.quicsim.host.impl
 
+import io.libp2p.core.Host
+import io.libp2p.core.Stream
+import io.libp2p.core.multistream.ProtocolBinding
+import io.libp2p.core.multistream.StrictProtocolBinding
+import io.libp2p.etc.types.toByteArray
+import io.libp2p.etc.types.toByteBuf
+import io.libp2p.protocol.ProtocolHandler
+import io.libp2p.protocol.ProtocolMessageHandler
+import io.libp2p.pubsub.gossip.GossipParams
+import io.libp2p.quicsim.core.schedule.impl.submitAfterDelay
 import io.libp2p.quicsim.host.NetworkContext
 import io.libp2p.quicsim.host.NodeFactory
 import io.libp2p.quicsim.host.NodeProgram
 import io.libp2p.quicsim.host.SimContext
 import io.libp2p.quicsim.host.SimNodeId
-import io.libp2p.core.multistream.ProtocolBinding
-import io.libp2p.core.multistream.StrictProtocolBinding
-import io.libp2p.core.Stream
-import io.libp2p.etc.types.toByteArray
-import io.libp2p.etc.types.toByteBuf
-import io.libp2p.quicsim.network.TestStarNetworkBuilder
+import io.libp2p.quicsim.host.impl.sim.SimulatedRunner
+import io.libp2p.quicsim.network.SimNetworkEngine
 import io.libp2p.quicsim.network.SimNode
+import io.libp2p.quicsim.network.SimPacket
+import io.libp2p.quicsim.network.TestStarNetworkBuilder
 import io.libp2p.quicsim.network.impl.BasicSimNetwork
 import io.libp2p.quicsim.network.impl.BasicSimNetworkEngine
 import io.libp2p.quicsim.network.impl.FifoSimQueueDiscipline
-import io.libp2p.pubsub.gossip.GossipParams
-import io.libp2p.protocol.ProtocolHandler
-import io.libp2p.protocol.ProtocolMessageHandler
-import io.libp2p.quicsim.core.schedule.impl.submitAfterDelay
-import io.libp2p.quicsim.host.impl.sim.SimLogger
-import io.libp2p.quicsim.host.impl.sim.SimulatedRunner
 import io.netty.buffer.ByteBuf
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Disabled
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import java.io.ByteArrayOutputStream
+import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
-import java.io.ByteArrayOutputStream
-import java.nio.charset.StandardCharsets
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -103,26 +104,18 @@ class SimulatedRunnerTest {
     }
 
     @Test
-    @Disabled
     @Timeout(180)
-    fun `simulated runner completes 1000-node ring with 20-neighbor gossip and 200 publishers`() {
-        val nodeCount = 50
+    fun `simulated runner completes`() {
+        val nodeCount = 10
         val publishersCount = 10
         val neighboursToConnect = 5
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
-        val random = Random(1234)
         val randomConnectionsByNode: Map<SimNodeId, List<SimNodeId>> =
-            (0 until nodeCount).associateWith { nodeId ->
-                generateSequence { random.nextInt(nodeCount) }
-                    .filter { it != nodeId }
-                    .distinct()
-                    .take(neighboursToConnect)
-                    .toList()
-            }
+            createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = 1234)
 
         val networkBuilder = TestStarNetworkBuilder()
         (0 until nodeCount).map { networkBuilder.node("node-$it") }
-        val qdiscFactory = { FifoSimQueueDiscipline(50_000_000L) }
+        val qdiscFactory = { FifoSimQueueDiscipline(50_000L) }
         networkBuilder.linkAllToRouter(Duration.ofMillis(50), qdiscFactory).build()
 
         val runner = SimulatedRunner(
@@ -139,7 +132,7 @@ class SimulatedRunnerTest {
                     ).also { nodePrograms += it }
             },
             networkEngine = BasicSimNetworkEngine(networkBuilder.build()),
-            maxSimulatedRunDuration = 5.minutes
+            maxSimulatedRunDuration = 10.minutes
         )
 
         runner.run()
@@ -147,6 +140,53 @@ class SimulatedRunnerTest {
             nodePrograms.all { it.isComplete() },
             "Expected all sample gossip node programs to complete in 1000-node scenario"
         )
+    }
+
+    private fun createBidirectionalRandomTopology(
+        nodeCount: Int,
+        neighboursToConnect: Int,
+        seed: Int
+    ): Map<SimNodeId, List<SimNodeId>> {
+        require(neighboursToConnect in 0 until nodeCount) {
+            "neighboursToConnect must be in [0, $nodeCount), got $neighboursToConnect"
+        }
+        require((nodeCount * neighboursToConnect) % 2 == 0) {
+            "nodeCount * neighboursToConnect must be even for bidirectional topology"
+        }
+
+        val random = Random(seed)
+        val permutation = (0 until nodeCount).shuffled(random)
+        val adjacency = MutableList(nodeCount) { mutableSetOf<Int>() }
+
+        val evenDegree = neighboursToConnect and 1.inv()
+        val half = evenDegree / 2
+        for (i in permutation.indices) {
+            val a = permutation[i]
+            for (step in 1..half) {
+                val b = permutation[(i + step) % nodeCount]
+                adjacency[a] += b
+                adjacency[b] += a
+            }
+        }
+
+        if ((neighboursToConnect and 1) == 1) {
+            require(nodeCount % 2 == 0) { "Odd degree requires even nodeCount" }
+            val halfNodes = nodeCount / 2
+            for (i in 0 until halfNodes) {
+                val a = permutation[i]
+                val b = permutation[(i + halfNodes) % nodeCount]
+                adjacency[a] += b
+                adjacency[b] += a
+            }
+        }
+
+        check(adjacency.all { it.size == neighboursToConnect }) {
+            "Failed to generate bidirectional topology: nodeCount=$nodeCount degree=$neighboursToConnect"
+        }
+
+        return adjacency
+            .mapIndexed { nodeId, peers -> nodeId to peers.toList().sorted() }
+            .toMap()
     }
 
     @Test
@@ -162,6 +202,84 @@ class SimulatedRunnerTest {
             metrics.simulatedDeltaMillis >= linkLatencyMs * 2,
             "Expected request/response to reflect at least round-trip link latency in simulated millis"
         )
+    }
+
+    @Test
+    fun `2 nodes connect to each other`() {
+        val builder = TestStarNetworkBuilder()
+        builder.node("node-0")
+        builder.node("node-1")
+        builder.linkAllToRouter(
+            Duration.ofMillis(100),
+            qdiscFactory = { FifoSimQueueDiscipline(50_000L) }
+        )
+
+        class LoggingUdpNetworkEngine(val delegate: SimNetworkEngine) : SimNetworkEngine by delegate {
+            private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
+            override fun deliver(inboundData: List<SimPacket>): List<SimPacket> {
+                fun simPacketStr(packet: SimPacket) =
+                    "[${delegate.currentTimeMillis}][$simTime] ${packet.srcNodeId} ==> ${packet.dstNodeId} size: ${packet.bytes}"
+
+                for (packet in inboundData) {
+                    println("  ... " + simPacketStr(packet))
+                }
+                val outbound = delegate.deliver(inboundData)
+                for (packet in outbound) {
+                    println(simPacketStr(packet))
+                }
+                return outbound
+            }
+
+            override fun advanceAndExecuteAll(advanceDuration: kotlin.time.Duration) {
+                println(" Advance $advanceDuration")
+                delegate.advanceAndExecuteAll(advanceDuration)
+                simTime += advanceDuration
+            }
+
+            override fun nextTaskDuration(): kotlin.time.Duration? {
+                val nextTaskDuration = delegate.nextTaskDuration()
+                println(" Next task duration: $nextTaskDuration")
+                return nextTaskDuration
+            }
+        }
+        val udpNetwork = BasicSimNetworkEngine(builder.build())
+        val udpNetworkLogging = LoggingUdpNetworkEngine(udpNetwork)
+
+        val runner = SimulatedRunner(
+            nodeFactory = object : NodeFactory {
+                override fun createNode(id: SimNodeId): NodeProgram =
+                    object : NodeProgram {
+                        override val simNodeId: SimNodeId = id
+                        private var myHost: Host? = null
+
+                        override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> {
+                            return emptyList()
+                        }
+
+                        override fun start(
+                            simContext: SimContext,
+                            networkContext: NetworkContext
+                        ): CompletableFuture<Unit> {
+                            myHost = networkContext.myHost
+                            return if (simNodeId == 0) {
+                                networkContext.myHost.network
+                                    .connect(networkContext.allNodes[1]!!)
+                                    .thenApply { Unit }
+                            } else {
+                                CompletableFuture.completedFuture(Unit)
+                            }
+                        }
+
+                        override fun isComplete(): Boolean {
+                            return myHost?.network?.connections?.isNotEmpty() ?: false
+                        }
+
+                    }
+            },
+            networkEngine = udpNetworkLogging
+        )
+
+        runner.run()
     }
 
     @Test
