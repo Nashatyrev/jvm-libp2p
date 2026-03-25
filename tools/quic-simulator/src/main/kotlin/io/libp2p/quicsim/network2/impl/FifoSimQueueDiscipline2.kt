@@ -1,89 +1,62 @@
 package io.libp2p.quicsim.network2.impl
 
 import io.libp2p.quicsim.network.SimPacket
-import io.libp2p.quicsim.network.impl.TransmissionMode
+import io.libp2p.quicsim.network2.Bandwidth
 import io.libp2p.quicsim.network2.SimQueueDiscipline2
 import java.util.ArrayDeque
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.nanoseconds
+import kotlin.time.Duration.Companion.ZERO
 
 class FifoSimQueueDiscipline2(
-    private val bandwidthBytesPerSecond: Long,
-    private val transmissionMode: TransmissionMode = TransmissionMode.SERIALIZED
+    override val bandwidth: Bandwidth,
+    override val latency: Duration,
+    // unbound queue by default
+    val maxQueueWaitTime: Duration = Duration.INFINITE,
 ) : SimQueueDiscipline2 {
-    init {
-        require(bandwidthBytesPerSecond > 0) { "bandwidthBytesPerSecond must be > 0" }
-    }
 
     private data class QueuedPacket(
         val packet: SimPacket,
-        val enqueueAt: Duration
+        val enqueueAt: Duration,
+        val dequeueAt: Duration,
+        val dequeueWithLatencyAt: Duration
     )
 
     private val queue = ArrayDeque<QueuedPacket>()
-    private val readyPackets = ArrayDeque<SimPacket>()
-
-    private var currentTime: Duration = Duration.Companion.ZERO
-    private var nextDequeueAvailableTime: Duration = Duration.Companion.ZERO
+    private var currentTime: Duration = ZERO
 
     override fun deliver(inboundData: List<SimPacket>): List<SimPacket> {
+        var lastDequeueAt = queue.lastOrNull()?.dequeueAt ?: currentTime
         inboundData.forEach { packet ->
-            queue.addLast(QueuedPacket(packet, currentTime))
+            val dequeueTime = lastDequeueAt + bandwidth.durationToTransfer(packet.bytes)
+            if (dequeueTime - currentTime <= maxQueueWaitTime) {
+                queue.addLast(
+                    QueuedPacket(packet, currentTime, dequeueTime, dequeueTime + latency)
+                )
+                lastDequeueAt = dequeueTime
+            } // else packet is dropped
         }
 
-        val ready = ArrayList<SimPacket>(readyPackets.size)
-        while (readyPackets.isNotEmpty()) {
-            ready += readyPackets.removeFirst()
+
+        val ready = mutableListOf<SimPacket>()
+        while (queue.isNotEmpty()) {
+            val packet = queue.first()
+            if (packet.dequeueWithLatencyAt < currentTime) {
+                throw IllegalStateException("Internal error: Missed packed")
+            }
+            if (packet.dequeueWithLatencyAt > currentTime) {
+                break
+            }
+            ready += queue.removeFirst().packet
         }
         return ready
     }
 
     override fun advanceAndExecuteAll(advanceDuration: Duration) {
-        require(!advanceDuration.isNegative()) { "advanceDuration must be non-negative" }
-        val targetTime = currentTime + advanceDuration
+        currentTime += advanceDuration
+    }
 
-        while (queue.isNotEmpty()) {
-            val queued = queue.first()
-            val transmitStart = maxOf(nextDequeueAvailableTime, queued.enqueueAt)
-            val serviceTime = serializationDuration(queued.packet.bytes)
-            val dequeueTime = when (transmissionMode) {
-                TransmissionMode.SERIALIZED -> transmitStart + serviceTime
-                TransmissionMode.SHAPED_IMMEDIATE -> transmitStart
-            }
-
-            if (dequeueTime > targetTime) {
-                break
-            }
-
-            currentTime = dequeueTime
-            queue.removeFirst()
-            nextDequeueAvailableTime = transmitStart + serviceTime
-            readyPackets.addLast(queued.packet)
+    override fun nextTaskDuration(): Duration? =
+        queue.firstOrNull()?.let {
+            it.dequeueWithLatencyAt - currentTime
         }
-
-        currentTime = targetTime
-    }
-
-    override fun nextTaskDuration(): Duration? {
-        if (readyPackets.isNotEmpty()) {
-            return Duration.Companion.ZERO
-        }
-        val queued = queue.firstOrNull() ?: return null
-        val transmitStart = maxOf(nextDequeueAvailableTime, queued.enqueueAt)
-        val serviceTime = serializationDuration(queued.packet.bytes)
-        val dequeueTime = when (transmissionMode) {
-            TransmissionMode.SERIALIZED -> transmitStart + serviceTime
-            TransmissionMode.SHAPED_IMMEDIATE -> transmitStart
-        }
-        return (dequeueTime - currentTime).coerceAtLeast(Duration.Companion.ZERO)
-    }
-
-    private fun serializationDuration(bytes: Int): Duration {
-        val nanos = ((bytes.toLong() * NANOS_PER_SECOND) + bandwidthBytesPerSecond - 1) / bandwidthBytesPerSecond
-        return nanos.coerceAtLeast(1L).nanoseconds
-    }
-
-    companion object {
-        private const val NANOS_PER_SECOND = 1_000_000_000L
-    }
 }
