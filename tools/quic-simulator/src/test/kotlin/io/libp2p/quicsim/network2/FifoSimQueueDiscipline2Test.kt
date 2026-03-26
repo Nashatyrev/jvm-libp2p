@@ -1,6 +1,5 @@
 package io.libp2p.quicsim.network2
 
-import io.libp2p.quicsim.network.SimPacket
 import io.libp2p.quicsim.network2.impl.FifoSimQueueDiscipline2
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test

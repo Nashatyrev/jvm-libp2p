@@ -1,7 +1,5 @@
 package io.libp2p.quicsim.network2
 
-import io.libp2p.quicsim.network.SimNode
-import io.libp2p.quicsim.network.SimPacket
 import io.libp2p.quicsim.network2.impl.BasicSimNetwork2
 import io.libp2p.quicsim.network2.impl.SimLinks
 import io.libp2p.quicsim.network2.impl.SimNetworkEngine2Impl

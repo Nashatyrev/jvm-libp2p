@@ -1,9 +1,5 @@
 package io.libp2p.quicsim.network2
 
-import io.libp2p.quicsim.network.SimNode
-import io.libp2p.quicsim.network.SimQueueDiscipline
-import java.time.Duration
-
 
 /**
  * Directed link from one node to another.

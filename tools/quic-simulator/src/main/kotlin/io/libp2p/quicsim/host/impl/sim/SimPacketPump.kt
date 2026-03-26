@@ -6,8 +6,8 @@ import io.libp2p.quicsim.core.SimCoreNet
 import io.libp2p.quicsim.core.schedule.Controllable
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
 import io.libp2p.quicsim.core.schedule.impl.NanoMonotonicTimer
-import io.libp2p.quicsim.network.SimNetworkEngine
-import io.libp2p.quicsim.network.SimPacket
+import io.libp2p.quicsim.network2.SimNetworkEngine2
+import io.libp2p.quicsim.network2.SimPacket
 import io.netty.buffer.ByteBuf
 import io.netty.channel.socket.DatagramPacket
 import java.net.InetSocketAddress
@@ -16,7 +16,7 @@ import kotlin.time.Duration
 
 class SimPacketPump(
     simNet: SimCoreNet<DatagramPacket>,
-    udpNet: SimNetworkEngine,
+    udpNet: SimNetworkEngine2,
     idAndIp: Collection<IdMapEntry>,
 ) : Controllable {
 

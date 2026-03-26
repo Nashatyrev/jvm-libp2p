@@ -1,4 +1,4 @@
-package io.libp2p.quicsim.network
+package io.libp2p.quicsim.network2
 
 /**
  * Simulator packet envelope used by the network engine and queue disciplines.

@@ -1,7 +1,7 @@
 package io.libp2p.quicsim.network2.impl
 
-import io.libp2p.quicsim.network.SimPacket
 import io.libp2p.quicsim.network2.Bandwidth
+import io.libp2p.quicsim.network2.SimPacket
 import io.libp2p.quicsim.network2.SimQueueDiscipline2
 import java.util.ArrayDeque
 import kotlin.time.Duration

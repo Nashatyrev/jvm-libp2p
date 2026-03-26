@@ -1,4 +1,4 @@
-package io.libp2p.quicsim.network
+package io.libp2p.quicsim.network2
 
 /**
  * Generic network node in the simulator graph.

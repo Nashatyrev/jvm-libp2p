@@ -1,8 +1,5 @@
 package io.libp2p.quicsim.network2
 
-import io.libp2p.quicsim.network.SimLink
-import io.libp2p.quicsim.network.SimNode
-
 /**
  * Static network topology for the simulator engine.
  */

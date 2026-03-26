@@ -1,11 +1,11 @@
 package io.libp2p.quicsim.network2.impl
 
 import io.libp2p.quicsim.core.schedule.AggregateControllable
-import io.libp2p.quicsim.network.SimPacket
 import io.libp2p.quicsim.network2.RouteResolver
 import io.libp2p.quicsim.network2.SimLink2
 import io.libp2p.quicsim.network2.SimNetwork2
 import io.libp2p.quicsim.network2.SimNetworkEngine2
+import io.libp2p.quicsim.network2.SimPacket
 import kotlin.collections.plusAssign
 import kotlin.time.Duration
 
