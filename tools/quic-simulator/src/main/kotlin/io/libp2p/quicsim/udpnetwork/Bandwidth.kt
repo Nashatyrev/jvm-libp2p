@@ -1,4 +1,4 @@
-package io.libp2p.quicsim.network2
+package io.libp2p.quicsim.udpnetwork
 
 import java.util.Locale
 import kotlin.time.Duration

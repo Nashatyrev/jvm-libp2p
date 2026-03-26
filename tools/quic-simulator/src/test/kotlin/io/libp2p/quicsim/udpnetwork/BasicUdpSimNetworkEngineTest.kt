@@ -1,39 +1,39 @@
-package io.libp2p.quicsim.network2
+package io.libp2p.quicsim.udpnetwork
 
-import io.libp2p.quicsim.network2.impl.BasicSimNetwork2
-import io.libp2p.quicsim.network2.impl.SimLinks
-import io.libp2p.quicsim.network2.impl.SimNetworkEngine2Impl
+import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
+import io.libp2p.quicsim.udpnetwork.impl.UdpSimLinks
+import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import kotlin.time.Duration.Companion.milliseconds
-import io.libp2p.quicsim.network2.impl.FifoSimQueueDiscipline2 as FifoSimQueueDiscipline2_2
+import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimQueueDiscipline as FifoSimQueueDiscipline2_2
 
-class BasicSimNetworkEngine2Test {
+class BasicUdpSimNetworkEngineTest {
 
     @Test
     fun `routes through intermediate node`() {
-        val nodeA = SimNode("a")
-        val nodeR = SimNode("r")
-        val nodeB = SimNode("b")
-        val engine = SimNetworkEngine2Impl(
-            BasicSimNetwork2(
+        val nodeA = UdpSimNode("a")
+        val nodeR = UdpSimNode("r")
+        val nodeB = UdpSimNode("b")
+        val engine = UdpSimNetworkEngineImpl(
+            BasicUdpSimNetwork(
                 nodes = listOf(nodeA, nodeR, nodeB),
                 links =
-                    SimLinks()
+                    UdpSimLinks()
                         .withQDisc { FifoSimQueueDiscipline2_2(Bandwidth(1_000), 10.milliseconds) }
                         .addBiDir(nodeA, nodeR)
                         .addBiDir(nodeR, nodeB)
                         .links
             ))
 
-        val packet = SimPacket(1, 100, "a", "b")
+        val packet = UdpSimPacket(1, 100, "a", "b")
 
-        assertEquals(emptyList<SimPacket>(), engine.deliver(listOf(packet)))
+        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(listOf(packet)))
         assertEquals(110.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(110.milliseconds)
-        assertEquals(emptyList<SimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
         assertEquals(110.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(110.milliseconds)
@@ -42,21 +42,21 @@ class BasicSimNetworkEngine2Test {
 
     @Test
     fun `throws for packet to the same endpoint in star topology`() {
-        val nodeA = SimNode("a")
-        val nodeR = SimNode("r")
-        val nodeB = SimNode("b")
-        val engine = SimNetworkEngine2Impl(
-            BasicSimNetwork2(
+        val nodeA = UdpSimNode("a")
+        val nodeR = UdpSimNode("r")
+        val nodeB = UdpSimNode("b")
+        val engine = UdpSimNetworkEngineImpl(
+            BasicUdpSimNetwork(
                 nodes = listOf(nodeA, nodeR, nodeB),
                 links =
-                    SimLinks()
+                    UdpSimLinks()
                         .withQDisc { FifoSimQueueDiscipline2_2(Bandwidth(1_000), 10.milliseconds) }
                         .addBiDir(nodeA, nodeR)
                         .addBiDir(nodeR, nodeB)
                         .links
             )
         )
-        val packet = SimPacket(1, 100, "a", "a")
+        val packet = UdpSimPacket(1, 100, "a", "a")
 
         assertThrows(IllegalStateException::class.java) {
             engine.deliver(listOf(packet))
@@ -65,27 +65,27 @@ class BasicSimNetworkEngine2Test {
 
     @Test
     fun `preserves packet order on the same star path`() {
-        val nodeA = SimNode("a")
-        val nodeR = SimNode("r")
-        val nodeB = SimNode("b")
-        val engine = SimNetworkEngine2Impl(
-            BasicSimNetwork2(
+        val nodeA = UdpSimNode("a")
+        val nodeR = UdpSimNode("r")
+        val nodeB = UdpSimNode("b")
+        val engine = UdpSimNetworkEngineImpl(
+            BasicUdpSimNetwork(
                 nodes = listOf(nodeA, nodeR, nodeB),
                 links =
-                    SimLinks()
+                    UdpSimLinks()
                         .withQDisc { FifoSimQueueDiscipline2_2(Bandwidth(1_000), 10.milliseconds) }
                         .addBiDir(nodeA, nodeR)
                         .addBiDir(nodeR, nodeB)
                         .links
             )
         )
-        val packet1 = SimPacket(1, 100, "a", "b")
-        val packet2 = SimPacket(2, 100, "a", "b")
+        val packet1 = UdpSimPacket(1, 100, "a", "b")
+        val packet2 = UdpSimPacket(2, 100, "a", "b")
 
-        assertEquals(emptyList<SimPacket>(), engine.deliver(listOf(packet1, packet2)))
+        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(listOf(packet1, packet2)))
         assertEquals(110.milliseconds, engine.nextTaskDuration())
 
-        val delivered = mutableListOf<SimPacket>()
+        val delivered = mutableListOf<UdpSimPacket>()
         repeat(4) {
             engine.advanceAndExecuteAll(engine.nextTaskDuration()!!)
             delivered += engine.deliver(emptyList())
@@ -96,28 +96,28 @@ class BasicSimNetworkEngine2Test {
 
     @Test
     fun `handles simultaneous reverse traffic through the router`() {
-        val nodeA = SimNode("a")
-        val nodeR = SimNode("r")
-        val nodeB = SimNode("b")
-        val engine = SimNetworkEngine2Impl(
-            BasicSimNetwork2(
+        val nodeA = UdpSimNode("a")
+        val nodeR = UdpSimNode("r")
+        val nodeB = UdpSimNode("b")
+        val engine = UdpSimNetworkEngineImpl(
+            BasicUdpSimNetwork(
                 nodes = listOf(nodeA, nodeR, nodeB),
                 links =
-                    SimLinks()
+                    UdpSimLinks()
                         .withQDisc { FifoSimQueueDiscipline2_2(Bandwidth(1_000), 10.milliseconds) }
                         .addBiDir(nodeA, nodeR)
                         .addBiDir(nodeR, nodeB)
                         .links
             )
         )
-        val packetAb = SimPacket(1, 100, "a", "b")
-        val packetBa = SimPacket(2, 100, "b", "a")
+        val packetAb = UdpSimPacket(1, 100, "a", "b")
+        val packetBa = UdpSimPacket(2, 100, "b", "a")
 
-        assertEquals(emptyList<SimPacket>(), engine.deliver(listOf(packetAb, packetBa)))
+        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(listOf(packetAb, packetBa)))
         assertEquals(110.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(110.milliseconds)
-        assertEquals(emptyList<SimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
         assertEquals(110.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(110.milliseconds)
@@ -127,15 +127,15 @@ class BasicSimNetworkEngine2Test {
 
     @Test
     fun `fans out packets from one endpoint to different destinations via the same first hop`() {
-        val nodeA = SimNode("a")
-        val nodeR = SimNode("r")
-        val nodeB = SimNode("b")
-        val nodeC = SimNode("c")
-        val engine = SimNetworkEngine2Impl(
-            BasicSimNetwork2(
+        val nodeA = UdpSimNode("a")
+        val nodeR = UdpSimNode("r")
+        val nodeB = UdpSimNode("b")
+        val nodeC = UdpSimNode("c")
+        val engine = UdpSimNetworkEngineImpl(
+            BasicUdpSimNetwork(
                 nodes = listOf(nodeA, nodeR, nodeB, nodeC),
                 links =
-                    SimLinks()
+                    UdpSimLinks()
                         .withQDisc { FifoSimQueueDiscipline2_2(Bandwidth(1_000), 10.milliseconds) }
                         .addBiDir(nodeA, nodeR)
                         .addBiDir(nodeR, nodeB)
@@ -143,18 +143,18 @@ class BasicSimNetworkEngine2Test {
                         .links
             )
         )
-        val packetAb = SimPacket(1, 100, "a", "b")
-        val packetAc = SimPacket(2, 100, "a", "c")
+        val packetAb = UdpSimPacket(1, 100, "a", "b")
+        val packetAc = UdpSimPacket(2, 100, "a", "c")
 
-        assertEquals(emptyList<SimPacket>(), engine.deliver(listOf(packetAb, packetAc)))
+        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(listOf(packetAb, packetAc)))
         assertEquals(110.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(110.milliseconds)
-        assertEquals(emptyList<SimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
         assertEquals(100.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(100.milliseconds)
-        assertEquals(emptyList<SimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
         assertEquals(10.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(10.milliseconds)

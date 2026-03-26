@@ -12,7 +12,7 @@ import io.libp2p.quicsim.host.NetworkContext
 import io.libp2p.quicsim.host.NodeFactory
 import io.libp2p.quicsim.host.NodeProgram
 import io.libp2p.quicsim.host.SimContext
-import io.libp2p.quicsim.network2.SimNetworkEngine2
+import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.transport.quic.QuicTransport
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -23,7 +23,7 @@ import kotlin.time.Duration.Companion.seconds
 
 class SimulatedRunner(
     val nodeFactory: NodeFactory,
-    val networkEngine: SimNetworkEngine2,
+    val networkEngine: UdpSimNetworkEngine,
     val ipManager: IPManager = IPManager.Default,
     val listenPortStartRange: Int = 17000,
     val maxSimulatedRunDuration: Duration = 1.minutes,

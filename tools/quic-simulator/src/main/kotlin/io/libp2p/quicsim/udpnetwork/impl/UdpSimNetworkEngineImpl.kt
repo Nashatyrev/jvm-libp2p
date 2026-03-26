@@ -1,25 +1,25 @@
-package io.libp2p.quicsim.network2.impl
+package io.libp2p.quicsim.udpnetwork.impl
 
 import io.libp2p.quicsim.core.schedule.AggregateControllable
-import io.libp2p.quicsim.network2.RouteResolver
-import io.libp2p.quicsim.network2.SimLink2
-import io.libp2p.quicsim.network2.SimNetwork2
-import io.libp2p.quicsim.network2.SimNetworkEngine2
-import io.libp2p.quicsim.network2.SimPacket
+import io.libp2p.quicsim.udpnetwork.RouteResolver
+import io.libp2p.quicsim.udpnetwork.UdpSimLink
+import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
+import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
+import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import kotlin.collections.plusAssign
 import kotlin.time.Duration
 
-class SimNetworkEngine2Impl(
-    override val network: SimNetwork2,
+class UdpSimNetworkEngineImpl(
+    override val network: UdpSimNetwork,
     private val routeResolver: RouteResolver = BasicStarRouteResolver(network)
-) : SimNetworkEngine2 {
+) : UdpSimNetworkEngine {
 
     val idToNodeMap = network.nodes.associateBy { it.id }
 
     private val aggregateControllable = AggregateControllable(network.links.map { it.qdisc })
     private val linksMap = network.links.associateBy { it.from to it.to }
 
-    private fun findNextLink(fromLink: SimLink2?, packet: SimPacket): SimLink2? {
+    private fun findNextLink(fromLink: UdpSimLink?, packet: UdpSimPacket): UdpSimLink? {
         val srcHopNode = fromLink?.to ?: idToNodeMap[packet.srcNodeId]!!
         val nextHopNode = routeResolver.findNextHop(
             srcHopNode, idToNodeMap[packet.dstNodeId]!!
@@ -31,9 +31,9 @@ class SimNetworkEngine2Impl(
         }
     }
 
-    override fun deliver(inboundData: List<SimPacket>): List<SimPacket> {
+    override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
         val packetsForLink =
-            network.links.associateWith { mutableListOf<SimPacket>() }
+            network.links.associateWith { mutableListOf<UdpSimPacket>() }
                 .toMutableMap()
 
         inboundData
@@ -43,7 +43,7 @@ class SimNetworkEngine2Impl(
                 packetsForLink[link]!! += inboundPacket
             }
 
-        val deliveredPackets = mutableListOf<SimPacket>()
+        val deliveredPackets = mutableListOf<UdpSimPacket>()
 
         while (packetsForLink.isNotEmpty()) {
             val (link, packets) = packetsForLink.removeFirst()

@@ -6,8 +6,8 @@ import io.libp2p.quicsim.core.SimCoreNet
 import io.libp2p.quicsim.core.schedule.Controllable
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
 import io.libp2p.quicsim.core.schedule.impl.NanoMonotonicTimer
-import io.libp2p.quicsim.network2.SimNetworkEngine2
-import io.libp2p.quicsim.network2.SimPacket
+import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
+import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.netty.buffer.ByteBuf
 import io.netty.channel.socket.DatagramPacket
 import java.net.InetSocketAddress
@@ -16,7 +16,7 @@ import kotlin.time.Duration
 
 class SimPacketPump(
     simNet: SimCoreNet<DatagramPacket>,
-    udpNet: SimNetworkEngine2,
+    udpNet: UdpSimNetworkEngine,
     idAndIp: Collection<IdMapEntry>,
 ) : Controllable {
 
@@ -33,10 +33,10 @@ class SimPacketPump(
 
     val packetIdCounter = AtomicLong()
     val udpNetConverted =
-        MappingPacketProcessor<DatagramPacket, SimPacket>(
+        MappingPacketProcessor<DatagramPacket, UdpSimPacket>(
             udpNet,
             { datagramPacket ->
-                SimPacket(
+                UdpSimPacket(
                     id = packetIdCounter.incrementAndGet(),
                     bytes = datagramPacket.content().readableBytes(),
                     srcNodeId = ipToId[datagramPacket.sender().hostString]!!,

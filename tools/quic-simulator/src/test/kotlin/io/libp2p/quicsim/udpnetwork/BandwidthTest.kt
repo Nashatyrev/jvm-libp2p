@@ -1,4 +1,4 @@
-package io.libp2p.quicsim.network2
+package io.libp2p.quicsim.udpnetwork
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test

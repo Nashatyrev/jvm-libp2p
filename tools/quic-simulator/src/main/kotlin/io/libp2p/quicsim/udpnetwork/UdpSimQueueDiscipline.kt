@@ -1,9 +1,9 @@
-package io.libp2p.quicsim.network2
+package io.libp2p.quicsim.udpnetwork
 
 import io.libp2p.quicsim.core.PacketProcessor
 import kotlin.time.Duration
 
-interface SimQueueDiscipline2 : PacketProcessor<SimPacket> {
+interface UdpSimQueueDiscipline : PacketProcessor<UdpSimPacket> {
 
     val bandwidth: Bandwidth
 

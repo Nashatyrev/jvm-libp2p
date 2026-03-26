@@ -16,14 +16,14 @@ import io.libp2p.quicsim.host.NodeProgram
 import io.libp2p.quicsim.host.SimContext
 import io.libp2p.quicsim.host.SimNodeId
 import io.libp2p.quicsim.host.impl.sim.SimulatedRunner
-import io.libp2p.quicsim.network2.Bandwidth
-import io.libp2p.quicsim.network2.SimNetworkEngine2
-import io.libp2p.quicsim.network2.SimNode
-import io.libp2p.quicsim.network2.SimPacket
-import io.libp2p.quicsim.network2.TestStarNetworkBuilder2
-import io.libp2p.quicsim.network2.impl.BasicSimNetwork2
-import io.libp2p.quicsim.network2.impl.FifoSimQueueDiscipline2
-import io.libp2p.quicsim.network2.impl.SimNetworkEngine2Impl
+import io.libp2p.quicsim.udpnetwork.Bandwidth
+import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
+import io.libp2p.quicsim.udpnetwork.UdpSimNode
+import io.libp2p.quicsim.udpnetwork.UdpSimPacket
+import io.libp2p.quicsim.udpnetwork.TestStarNetworkBuilder2
+import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
+import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimQueueDiscipline
+import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
 import io.netty.buffer.ByteBuf
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -54,8 +54,8 @@ class SimulatedRunnerTest {
     @Test
     @Timeout(30)
     fun `simulated runner completes scheduled node programs`() {
-        val network = BasicSimNetwork2(
-            nodes = listOf(SimNode("node-0"), SimNode("node-1")),
+        val network = BasicUdpSimNetwork(
+            nodes = listOf(UdpSimNode("node-0"), UdpSimNode("node-1")),
             links = emptyList()
         )
 
@@ -65,7 +65,7 @@ class SimulatedRunnerTest {
                     simNodeId = id
                 )
             },
-            networkEngine = SimNetworkEngine2Impl(network)
+            networkEngine = UdpSimNetworkEngineImpl(network)
         )
 
         runner.run()
@@ -95,7 +95,7 @@ class SimulatedRunnerTest {
                         initialPublishDelay = 5.seconds
                     ).also { nodePrograms += it }
             },
-            networkEngine = SimNetworkEngine2Impl(networkBuilder.build())
+            networkEngine = UdpSimNetworkEngineImpl(networkBuilder.build())
         )
 
         runner.run()
@@ -133,7 +133,7 @@ class SimulatedRunnerTest {
                         initialPublishDelay = 30.seconds,
                     ).also { nodePrograms += it }
             },
-            networkEngine = SimNetworkEngine2Impl(networkBuilder.build()),
+            networkEngine = UdpSimNetworkEngineImpl(networkBuilder.build()),
             maxSimulatedRunDuration = 10.minutes
         )
 
@@ -216,10 +216,10 @@ class SimulatedRunnerTest {
             qdiscFactory = fifoQDiscFactory(10_000L)
         )
 
-        class LoggingUdpNetworkEngine(val delegate: SimNetworkEngine2) : SimNetworkEngine2 by delegate {
+        class LoggingUdpNetworkEngineUdp(val delegate: UdpSimNetworkEngine) : UdpSimNetworkEngine by delegate {
             private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
-            override fun deliver(inboundData: List<SimPacket>): List<SimPacket> {
-                fun simPacketStr(packet: SimPacket) =
+            override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
+                fun simPacketStr(packet: UdpSimPacket) =
                     "[$simTime] ${packet.srcNodeId} ==> ${packet.dstNodeId} size: ${packet.bytes}"
 
                 for (packet in inboundData) {
@@ -244,8 +244,8 @@ class SimulatedRunnerTest {
                 return nextTaskDuration
             }
         }
-        val udpNetwork = SimNetworkEngine2Impl(builder.build())
-        val udpNetworkLogging = LoggingUdpNetworkEngine(udpNetwork)
+        val udpNetwork = UdpSimNetworkEngineImpl(builder.build())
+        val udpNetworkLogging = LoggingUdpNetworkEngineUdp(udpNetwork)
 
         val runner = SimulatedRunner(
             nodeFactory = object : NodeFactory {
@@ -334,7 +334,7 @@ class SimulatedRunnerTest {
                         PassiveEchoNodeProgram(simNodeId = id)
                     }
             },
-            networkEngine = SimNetworkEngine2Impl(builder.build())
+            networkEngine = UdpSimNetworkEngineImpl(builder.build())
         )
 
             runner.run()
@@ -364,8 +364,8 @@ class SimulatedRunnerTest {
     }
 
     private companion object {
-        fun fifoQDiscFactory(bandwidthBytesPerSec: Long): (Duration) -> FifoSimQueueDiscipline2 = { latency ->
-            FifoSimQueueDiscipline2(
+        fun fifoQDiscFactory(bandwidthBytesPerSec: Long): (Duration) -> FifoUdpSimQueueDiscipline = { latency ->
+            FifoUdpSimQueueDiscipline(
                 bandwidth = Bandwidth(bandwidthBytesPerSec),
                 latency = latency.toKotlinDuration()
             )

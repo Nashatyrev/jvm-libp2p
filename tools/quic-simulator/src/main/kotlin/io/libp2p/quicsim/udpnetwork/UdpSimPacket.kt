@@ -1,9 +1,9 @@
-package io.libp2p.quicsim.network2
+package io.libp2p.quicsim.udpnetwork
 
 /**
  * Simulator packet envelope used by the network engine and queue disciplines.
  */
-data class SimPacket(
+data class UdpSimPacket(
     /** Packet identifier for tracing/debugging. */
     val id: Long,
     /** Packet size in bytes. */

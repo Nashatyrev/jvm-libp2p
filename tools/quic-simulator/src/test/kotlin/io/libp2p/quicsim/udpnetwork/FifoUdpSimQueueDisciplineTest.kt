@@ -1,27 +1,27 @@
-package io.libp2p.quicsim.network2
+package io.libp2p.quicsim.udpnetwork
 
-import io.libp2p.quicsim.network2.impl.FifoSimQueueDiscipline2
+import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimQueueDiscipline
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import kotlin.time.Duration.Companion.ZERO
 import kotlin.time.Duration.Companion.milliseconds
 
-class FifoSimQueueDiscipline2Test {
+class FifoUdpSimQueueDisciplineTest {
 
     @Test
     fun `dequeues packets in fifo order after service time and latency`() {
-        val qdisc = FifoSimQueueDiscipline2(
+        val qdisc = FifoUdpSimQueueDiscipline(
             bandwidth = Bandwidth(1_000),
             latency = 10.milliseconds
         )
-        val packet1 = SimPacket(1, 100, "a", "b")
-        val packet2 = SimPacket(2, 100, "a", "b")
+        val packet1 = UdpSimPacket(1, 100, "a", "b")
+        val packet2 = UdpSimPacket(2, 100, "a", "b")
 
-        assertEquals(emptyList<SimPacket>(), qdisc.deliver(listOf(packet1, packet2)))
+        assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(listOf(packet1, packet2)))
         assertEquals(110.milliseconds, qdisc.nextTaskDuration())
 
         qdisc.advanceAndExecuteAll(109.milliseconds)
-        assertEquals(emptyList<SimPacket>(), qdisc.deliver(emptyList()))
+        assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(emptyList()))
 
         qdisc.advanceAndExecuteAll(1.milliseconds)
         assertEquals(listOf(packet1), qdisc.deliver(emptyList()))
@@ -34,15 +34,15 @@ class FifoSimQueueDiscipline2Test {
 
     @Test
     fun `drops packets exceeding max queue wait time`() {
-        val qdisc = FifoSimQueueDiscipline2(
+        val qdisc = FifoUdpSimQueueDiscipline(
             bandwidth = Bandwidth(1_000),
             latency = 10.milliseconds,
             maxQueueWaitTime = 150.milliseconds
         )
-        val packet1 = SimPacket(1, 100, "a", "b")
-        val packet2 = SimPacket(2, 100, "a", "b")
+        val packet1 = UdpSimPacket(1, 100, "a", "b")
+        val packet2 = UdpSimPacket(2, 100, "a", "b")
 
-        assertEquals(emptyList<SimPacket>(), qdisc.deliver(listOf(packet1, packet2)))
+        assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(listOf(packet1, packet2)))
         assertEquals(110.milliseconds, qdisc.nextTaskDuration())
 
         qdisc.advanceAndExecuteAll(110.milliseconds)
@@ -52,12 +52,12 @@ class FifoSimQueueDiscipline2Test {
 
     @Test
     fun `accounts for current queue backlog when enqueueing later packets`() {
-        val qdisc = FifoSimQueueDiscipline2(
+        val qdisc = FifoUdpSimQueueDiscipline(
             bandwidth = Bandwidth(1_000),
             latency = 10.milliseconds
         )
-        val packet1 = SimPacket(1, 100, "a", "b")
-        val packet2 = SimPacket(2, 100, "a", "b")
+        val packet1 = UdpSimPacket(1, 100, "a", "b")
+        val packet2 = UdpSimPacket(2, 100, "a", "b")
 
         qdisc.deliver(listOf(packet1))
         qdisc.advanceAndExecuteAll(50.milliseconds)
@@ -75,17 +75,17 @@ class FifoSimQueueDiscipline2Test {
 
     @Test
     fun `dequeues after service time when latency is zero`() {
-        val qdisc = FifoSimQueueDiscipline2(
+        val qdisc = FifoUdpSimQueueDiscipline(
             bandwidth = Bandwidth(1_000),
             latency = ZERO
         )
-        val packet = SimPacket(1, 100, "a", "b")
+        val packet = UdpSimPacket(1, 100, "a", "b")
 
-        assertEquals(emptyList<SimPacket>(), qdisc.deliver(listOf(packet)))
+        assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(listOf(packet)))
         assertEquals(100.milliseconds, qdisc.nextTaskDuration())
 
         qdisc.advanceAndExecuteAll(99.milliseconds)
-        assertEquals(emptyList<SimPacket>(), qdisc.deliver(emptyList()))
+        assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(emptyList()))
 
         qdisc.advanceAndExecuteAll(1.milliseconds)
         assertEquals(listOf(packet), qdisc.deliver(emptyList()))
@@ -94,13 +94,13 @@ class FifoSimQueueDiscipline2Test {
 
     @Test
     fun `zero-length packet is delivered after latency without shaping delay`() {
-        val qdisc = FifoSimQueueDiscipline2(
+        val qdisc = FifoUdpSimQueueDiscipline(
             bandwidth = Bandwidth(1_000),
             latency = 10.milliseconds
         )
-        val packet = SimPacket(1, 0, "a", "b")
+        val packet = UdpSimPacket(1, 0, "a", "b")
 
-        assertEquals(emptyList<SimPacket>(), qdisc.deliver(listOf(packet)))
+        assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(listOf(packet)))
         assertEquals(10.milliseconds, qdisc.nextTaskDuration())
 
         qdisc.advanceAndExecuteAll(10.milliseconds)

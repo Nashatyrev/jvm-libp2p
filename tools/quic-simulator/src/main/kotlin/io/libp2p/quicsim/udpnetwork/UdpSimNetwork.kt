@@ -1,11 +1,11 @@
-package io.libp2p.quicsim.network2
+package io.libp2p.quicsim.udpnetwork
 
 /**
  * Static network topology for the simulator engine.
  */
-interface SimNetwork2 {
+interface UdpSimNetwork {
     /** All nodes participating in this topology. */
-    val nodes: List<SimNode>
+    val nodes: List<UdpSimNode>
     /** Directed links between nodes. */
-    val links: List<SimLink2>
+    val links: List<UdpSimLink>
 }

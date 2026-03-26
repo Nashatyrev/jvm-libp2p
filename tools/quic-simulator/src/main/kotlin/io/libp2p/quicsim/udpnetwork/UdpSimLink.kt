@@ -1,4 +1,4 @@
-package io.libp2p.quicsim.network2
+package io.libp2p.quicsim.udpnetwork
 
 
 /**
@@ -8,11 +8,11 @@ package io.libp2p.quicsim.network2
  *
  * Each directed link owns its own queue discipline via [qdisc].
  */
-data class SimLink2(
+data class UdpSimLink(
     /** Sender side of this directed link. */
-    val from: SimNode,
+    val from: UdpSimNode,
     /** Receiver side of this directed link. */
-    val to: SimNode,
+    val to: UdpSimNode,
     /** Egress queue discipline applied on this directed link. */
-    val qdisc: SimQueueDiscipline2
+    val qdisc: UdpSimQueueDiscipline
 )

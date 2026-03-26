@@ -1,14 +1,14 @@
-package io.libp2p.quicsim.network2.impl
+package io.libp2p.quicsim.udpnetwork.impl
 
-import io.libp2p.quicsim.network2.RouteResolver
-import io.libp2p.quicsim.network2.SimNetwork2
-import io.libp2p.quicsim.network2.SimNode
+import io.libp2p.quicsim.udpnetwork.RouteResolver
+import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
+import io.libp2p.quicsim.udpnetwork.UdpSimNode
 
 class BasicStarRouteResolver(
-    val network: SimNetwork2
+    val network: UdpSimNetwork
 ) : RouteResolver {
 
-    private val allNodes: Set<SimNode>
+    private val allNodes: Set<UdpSimNode>
         get() = network.nodes.toSet() + network.links.flatMap { listOf(it.from, it.to) }
 
     /** Nodes which are not routers */
@@ -37,13 +37,13 @@ class BasicStarRouteResolver(
             .also {
                 check(it.size == 1) { "Not of star topology" }
             }
-    private val router: SimNode
+    private val router: UdpSimNode
         get() = routers.first()
 
     override fun findNextHop(
-        fromNode: SimNode,
-        destNode: SimNode
-    ): SimNode? =
+        fromNode: UdpSimNode,
+        destNode: UdpSimNode
+    ): UdpSimNode? =
         when (fromNode) {
             destNode -> null
             router -> destNode

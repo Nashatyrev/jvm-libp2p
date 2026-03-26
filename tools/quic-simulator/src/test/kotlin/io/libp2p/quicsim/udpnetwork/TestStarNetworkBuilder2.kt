@@ -1,54 +1,54 @@
-package io.libp2p.quicsim.network2
+package io.libp2p.quicsim.udpnetwork
 
-import io.libp2p.quicsim.network2.impl.BasicSimNetwork2
-import io.libp2p.quicsim.network2.impl.SimLinks
-import io.libp2p.quicsim.network2.impl.SimNetworkEngine2Impl
+import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
+import io.libp2p.quicsim.udpnetwork.impl.UdpSimLinks
+import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
 import java.time.Duration
 
 class TestStarNetworkBuilder2 {
-    private val nodes = linkedMapOf<String, SimNode>()
-    private val links = SimLinks()
+    private val nodes = linkedMapOf<String, UdpSimNode>()
+    private val links = UdpSimLinks()
 
-    val router = SimNode("router-0")
+    val router = UdpSimNode("router-0")
 
-    fun node(id: String): SimNode = nodes.getOrPut(id) { SimNode(id) }
+    fun node(id: String): UdpSimNode = nodes.getOrPut(id) { UdpSimNode(id) }
 
     fun linkToRouter(
-        node: SimNode,
+        node: UdpSimNode,
         latency: Duration,
-        qdiscFactory: (Duration) -> SimQueueDiscipline2
+        qdiscFactory: (Duration) -> UdpSimQueueDiscipline
     ): TestStarNetworkBuilder2 = also {
         links.addBiDir(node, router) { qdiscFactory(latency) }
     }
 
     fun linkAllToRouter(
         latency: Duration,
-        qdiscFactory: (Duration) -> SimQueueDiscipline2
+        qdiscFactory: (Duration) -> UdpSimQueueDiscipline
     ): TestStarNetworkBuilder2 = also {
         nodes.values.forEach { linkToRouter(it, latency, qdiscFactory) }
     }
 
-    fun build(): BasicSimNetwork2 =
-        BasicSimNetwork2(
+    fun build(): BasicUdpSimNetwork =
+        BasicUdpSimNetwork(
             nodes = nodes.values.toList(),
             links = links.links.toList()
         )
 }
 
 data class ThreeNodeRouterFixture2(
-    val node1: SimNode,
-    val node2: SimNode,
-    val node3: SimNode,
-    val router: SimNode,
-    val network: BasicSimNetwork2,
-    val engine: SimNetworkEngine2Impl
+    val node1: UdpSimNode,
+    val node2: UdpSimNode,
+    val node3: UdpSimNode,
+    val router: UdpSimNode,
+    val network: BasicUdpSimNetwork,
+    val engine: UdpSimNetworkEngineImpl
 )
 
 fun buildThreeNodeRouterFixture2(
     node1Latency: Duration = Duration.ofMillis(10),
     node2Latency: Duration = Duration.ofMillis(20),
     node3Latency: Duration = Duration.ofMillis(30),
-    qdiscFactory: (Duration) -> SimQueueDiscipline2
+    qdiscFactory: (Duration) -> UdpSimQueueDiscipline
 ): ThreeNodeRouterFixture2 {
     val builder = TestStarNetworkBuilder2()
     val node1 = builder.node("node-1")
@@ -67,6 +67,6 @@ fun buildThreeNodeRouterFixture2(
         node3 = node3,
         router = builder.router,
         network = network,
-        engine = SimNetworkEngine2Impl(network)
+        engine = UdpSimNetworkEngineImpl(network)
     )
 }
