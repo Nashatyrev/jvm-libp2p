@@ -41,6 +41,7 @@ import java.net.InetSocketAddress
 import java.net.SocketAddress
 import java.security.KeyStore
 import java.security.PrivateKey
+import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.time.Duration
 import java.util.*
@@ -55,6 +56,7 @@ class QuicTransport @JvmOverloads constructor(
     private val datagramChannelFactory: DatagramChannelFactory = DefaultDatagramChannelFactory()
 ) : NettyTransport {
 
+    private val deterministicRandom = SecureRandom(localKey.publicKey().bytes())
     private val logger = LoggerFactory.getLogger(QuicTransport::class.java)
 
     private var closed = false
@@ -193,6 +195,7 @@ class QuicTransport @JvmOverloads constructor(
                     .option(ChannelOption.AUTO_READ, true)
                     .option(ChannelOption.ALLOCATOR, allocator)
                     .remoteAddress(fromMultiaddr(addr))
+                    .localConnectionAddress(QuicConnectionAddress(deterministicRandom.generateSeed(20)))
                     .streamHandler(InboundStreamHandler(multistreamProtocol, protocols))
                     .connect()
                     .toCompletableFuture()
