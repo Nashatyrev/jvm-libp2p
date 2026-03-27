@@ -6,6 +6,7 @@ import io.libp2p.core.crypto.PrivKey
 import io.libp2p.core.dsl.HostBuilder
 import io.libp2p.core.multistream.ProtocolBinding
 import io.libp2p.core.transport.Transport
+import io.libp2p.crypto.keys.generateEd25519KeyPair
 import io.libp2p.quicsim.core.schedule.DeterministicScheduler
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
 import io.libp2p.quicsim.host.NetworkContext
@@ -14,6 +15,7 @@ import io.libp2p.quicsim.host.NodeProgram
 import io.libp2p.quicsim.host.SimContext
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.transport.quic.QuicTransport
+import java.security.SecureRandom
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.function.BiFunction
@@ -27,6 +29,7 @@ class SimulatedRunner(
     val ipManager: IPManager = IPManager.Default,
     val listenPortStartRange: Int = 17000,
     val maxSimulatedRunDuration: Duration = 1.minutes,
+    val random: SecureRandom = SecureRandom(byteArrayOf(100))
 ) {
     val nodeCount: Int = networkEngine.network.nodes.size
 
@@ -92,11 +95,13 @@ class SimulatedRunner(
         }
 
         return HostBuilder(HostBuilder.DefaultMode.None)
-            .keyType(KeyType.ED25519)
             .secureTransport(transportFactory)
             .protocol(*(protocols.toTypedArray()))
             .listen("/ip4/$listenIP/udp/$port/quic-v1")
-            .builderModifier { nodeProgram.modifyBuilder(simContext, it) }
+            .builderModifier {
+                nodeProgram.modifyBuilder(simContext, it)
+                it.identity.factory = { generateEd25519KeyPair(random).first }
+            }
             .build()
     }
 
