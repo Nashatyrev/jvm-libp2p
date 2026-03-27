@@ -1,6 +1,6 @@
-package io.libp2p.quicsim.host.impl.sim
+package io.libp2p.quicsim.runner
 
-import io.libp2p.quicsim.host.SimNodeId
+import io.libp2p.quicsim.sim.SimNodeId
 
 interface IPManager {
     fun getIP(nodeId: SimNodeId): String
@@ -14,4 +14,3 @@ interface IPManager {
         }
     }
 }
-

@@ -1,4 +1,4 @@
-package io.libp2p.quicsim.host.impl
+package io.libp2p.quicsim.program
 
 import io.libp2p.core.multistream.ProtocolBinding
 import io.libp2p.core.pubsub.PubsubApi
@@ -10,8 +10,8 @@ import io.libp2p.pubsub.gossip.GossipScoreParams
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.quicsim.core.schedule.impl.toCurrentTimeSupplier
 import io.libp2p.quicsim.core.schedule.impl.toScheduledExecutorService
-import io.libp2p.quicsim.host.SimContext
-import io.libp2p.quicsim.host.SimNodeId
+import io.libp2p.quicsim.sim.SimContext
+import io.libp2p.quicsim.sim.SimNodeId
 import java.util.Random
 
 abstract class GossipNodeProgram(

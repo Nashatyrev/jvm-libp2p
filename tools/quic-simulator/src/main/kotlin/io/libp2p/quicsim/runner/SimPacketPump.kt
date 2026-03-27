@@ -1,11 +1,11 @@
-package io.libp2p.quicsim.host.impl.sim
+package io.libp2p.quicsim.runner
 
 import io.libp2p.quicsim.core.ControllablePacketPump
 import io.libp2p.quicsim.core.MappingPacketProcessor
-import io.libp2p.quicsim.core.SimCoreNet
 import io.libp2p.quicsim.core.schedule.Controllable
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
 import io.libp2p.quicsim.core.schedule.impl.NanoMonotonicTimer
+import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.netty.buffer.ByteBuf
@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 
 class SimPacketPump(
-    simNet: SimCoreNet<DatagramPacket>,
+    simNet: SimNet<DatagramPacket>,
     udpNet: UdpSimNetworkEngine,
     idAndIp: Collection<IdMapEntry>,
 ) : Controllable {

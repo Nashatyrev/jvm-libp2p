@@ -1,13 +1,13 @@
-package io.libp2p.quicsim.host.impl.sim
+package io.libp2p.quicsim.sim.impl
 
 import io.libp2p.quicsim.core.DispatchingPacketProcessor
-import io.libp2p.quicsim.core.SimCoreNet
+import io.libp2p.quicsim.sim.SimNet
 import io.netty.channel.socket.DatagramPacket
 import kotlin.time.Duration
 
-class SimCoreNetImpl(
-    override val allNodes: List<EmbeddedNode>
-) : SimCoreNet<DatagramPacket> {
+class SimNetImpl(
+    override val allNodes: List<SimNodeImpl>
+) : SimNet<DatagramPacket> {
 
     val nodesByIp =
         allNodes.associateBy { it.ip }

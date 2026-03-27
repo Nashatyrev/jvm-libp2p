@@ -1,4 +1,4 @@
-package io.libp2p.quicsim.host.impl
+package io.libp2p.quicsim.program
 
 import io.libp2p.core.PeerId
 import io.libp2p.core.multiformats.Multiaddr
@@ -9,11 +9,10 @@ import io.libp2p.pubsub.PubsubMessage
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.pubsub.gossip.GossipRouterEventListener
 import io.libp2p.pubsub.gossip.GossipScoreParams
-import io.libp2p.quicsim.host.NetworkContext
-import io.libp2p.quicsim.host.SimContext
-import io.libp2p.quicsim.host.SimNodeId
-import io.libp2p.quicsim.core.schedule.MonotonicTimer
-import io.libp2p.quicsim.host.impl.sim.SimLogger
+import io.libp2p.quicsim.SimLogger
+import io.libp2p.quicsim.sim.NetworkContext
+import io.libp2p.quicsim.sim.SimContext
+import io.libp2p.quicsim.sim.SimNodeId
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import java.nio.charset.StandardCharsets
@@ -21,7 +20,6 @@ import java.util.Optional
 import java.util.Random
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Consumer
-import kotlin.collections.plusAssign
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 

@@ -1,12 +1,13 @@
-package io.libp2p.quicsim.host.impl.sim
+package io.libp2p.quicsim.sim.impl
 
 import io.libp2p.etc.types.toCompletableFuture
 import io.libp2p.quicsim.core.DispatchingPacketProcessor
-import io.libp2p.quicsim.core.SimCoreNode
 import io.libp2p.quicsim.core.schedule.AggregateControllable
 import io.libp2p.quicsim.core.schedule.DeterministicScheduler
 import io.libp2p.quicsim.core.schedule.impl.NettyTicker
-import io.libp2p.quicsim.host.SimNodeId
+import io.libp2p.quicsim.sim.SimNode
+import io.libp2p.quicsim.sim.SimNodeId
+import io.libp2p.quicsim.sim.impl.netty.SimDatagramChannel
 import io.netty.channel.Channel
 import io.netty.channel.ChannelHandler
 import io.netty.channel.socket.DatagramPacket
@@ -15,11 +16,11 @@ import java.net.SocketAddress
 import java.util.concurrent.CompletableFuture
 import kotlin.time.Duration
 
-class EmbeddedNode(
+class SimNodeImpl(
     val nodeId: SimNodeId,
     val ip: String,
     val scheduler: DeterministicScheduler
-) : SimCoreNode<DatagramPacket> {
+) : SimNode<DatagramPacket> {
 
     private var nextClientPort = 35000
     private val channelsByPort =

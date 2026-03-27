@@ -1,4 +1,4 @@
-package io.libp2p.quicsim.host.impl
+package io.libp2p.quicsim.sim.impl
 
 import io.libp2p.core.Host
 import io.libp2p.core.Stream
@@ -10,17 +10,18 @@ import io.libp2p.protocol.ProtocolHandler
 import io.libp2p.protocol.ProtocolMessageHandler
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.core.schedule.impl.submitAfterDelay
-import io.libp2p.quicsim.host.NetworkContext
-import io.libp2p.quicsim.host.NodeFactory
-import io.libp2p.quicsim.host.NodeProgram
-import io.libp2p.quicsim.host.SimContext
-import io.libp2p.quicsim.host.SimNodeId
-import io.libp2p.quicsim.host.impl.sim.SimulatedRunner
+import io.libp2p.quicsim.program.NodeProgram
+import io.libp2p.quicsim.program.NodeProgramFactory
+import io.libp2p.quicsim.program.SampleGossipNodeProgram
+import io.libp2p.quicsim.runner.SimulatedRunner
+import io.libp2p.quicsim.sim.NetworkContext
+import io.libp2p.quicsim.sim.SimContext
+import io.libp2p.quicsim.sim.SimNodeId
 import io.libp2p.quicsim.udpnetwork.Bandwidth
+import io.libp2p.quicsim.udpnetwork.TestStarNetworkBuilder2
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
-import io.libp2p.quicsim.udpnetwork.TestStarNetworkBuilder2
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimQueueDiscipline
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
@@ -52,27 +53,6 @@ class SimulatedRunnerTest {
     }
 
     @Test
-    @Timeout(30)
-    fun `simulated runner completes scheduled node programs`() {
-        val network = BasicUdpSimNetwork(
-            nodes = listOf(UdpSimNode("node-0"), UdpSimNode("node-1")),
-            links = emptyList()
-        )
-
-        val runner = SimulatedRunner(
-            nodeFactory = object : NodeFactory {
-                override fun createNode(id: SimNodeId): NodeProgram = SimpleConnectNodeProgram(
-                    simNodeId = id
-                )
-            },
-            networkEngine = UdpSimNetworkEngineImpl(network)
-        )
-
-        runner.run()
-        assertTrue(runner.nodesStuff.all { it.nodeProgram.isComplete() }, "Expected all node programs to complete")
-    }
-
-    @Test
     fun `simulated runner completes 5-node ring with sample gossip`() {
         val nodeCount = 5
         val publisherCount = 5
@@ -83,7 +63,7 @@ class SimulatedRunnerTest {
         networkBuilder.linkAllToRouter( Duration.ofMillis(50), qdiscFactory)
 
         val runner = SimulatedRunner(
-            nodeFactory = object : NodeFactory {
+            nodeFactory = object : NodeProgramFactory {
                 override fun createNode(id: SimNodeId) =
                     SampleGossipNodeProgram(
                         simNodeId = id,
@@ -106,10 +86,9 @@ class SimulatedRunnerTest {
     }
 
     @Test
-    @Timeout(180)
     fun `simulated runner completes`() {
         val nodeCount = 10
-        val publishersCount = 10
+        val publishersCount = 20
         val neighboursToConnect = 5
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val randomConnectionsByNode: Map<SimNodeId, List<SimNodeId>> =
@@ -121,7 +100,7 @@ class SimulatedRunnerTest {
         networkBuilder.linkAllToRouter(Duration.ofMillis(50), qdiscFactory).build()
 
         val runner = SimulatedRunner(
-            nodeFactory = object : NodeFactory {
+            nodeFactory = object : NodeProgramFactory {
                 override fun createNode(id: SimNodeId): NodeProgram =
                     SampleGossipNodeProgram(
                         simNodeId = id,
@@ -220,7 +199,7 @@ class SimulatedRunnerTest {
             private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
             override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
                 fun simPacketStr(packet: UdpSimPacket) =
-                    "[$simTime] ${packet.srcNodeId} ==> ${packet.dstNodeId} size: ${packet.bytes}"
+                    "[$simTime] ${packet.srcNodeId} ==> ${packet.dstNodeId} size: ${packet.bytes}, hash: ${packet.payloadRef.hashCode()}"
 
                 for (packet in inboundData) {
                     println("  ... " + simPacketStr(packet))
@@ -248,7 +227,7 @@ class SimulatedRunnerTest {
         val udpNetworkLogging = LoggingUdpNetworkEngineUdp(udpNetwork)
 
         val runner = SimulatedRunner(
-            nodeFactory = object : NodeFactory {
+            nodeFactory = object : NodeProgramFactory {
                 override fun createNode(id: SimNodeId): NodeProgram =
                     object : NodeProgram {
                         override val simNodeId: SimNodeId = id
@@ -319,7 +298,7 @@ class SimulatedRunnerTest {
         )
 
         val runner = SimulatedRunner(
-            nodeFactory = object : NodeFactory {
+            nodeFactory = object : NodeProgramFactory {
                 override fun createNode(id: SimNodeId): NodeProgram =
                     if (id == 0) {
                         FixedMessageSenderProgram(

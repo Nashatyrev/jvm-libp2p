@@ -1,4 +1,4 @@
-package io.libp2p.quicsim.host
+package io.libp2p.quicsim.sim
 
 import io.libp2p.core.Host
 import io.libp2p.core.multiformats.Multiaddr

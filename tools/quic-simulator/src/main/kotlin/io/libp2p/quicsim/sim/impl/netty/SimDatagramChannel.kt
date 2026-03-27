@@ -1,4 +1,4 @@
-package io.libp2p.quicsim.host.impl.sim
+package io.libp2p.quicsim.sim.impl.netty
 
 import io.netty.channel.ChannelHandler
 import io.netty.channel.embedded.EmbeddedChannel

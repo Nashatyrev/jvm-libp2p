@@ -1,10 +1,9 @@
-package io.libp2p.quicsim.host.impl
+package io.libp2p.quicsim.program
 
 import io.libp2p.core.Connection
-import io.libp2p.quicsim.host.NetworkContext
-import io.libp2p.quicsim.host.NodeProgram
-import io.libp2p.quicsim.host.SimContext
-import io.libp2p.quicsim.host.SimNodeId
+import io.libp2p.quicsim.sim.NetworkContext
+import io.libp2p.quicsim.sim.SimContext
+import io.libp2p.quicsim.sim.SimNodeId
 import java.util.concurrent.CompletableFuture
 
 abstract class AbstractNodeProgram(

@@ -1,7 +1,9 @@
-package io.libp2p.quicsim.host.impl.sim
+package io.libp2p.quicsim.sim.impl.sim
 
 import io.libp2p.quicsim.core.schedule.DeterministicScheduler
 import io.libp2p.quicsim.core.schedule.impl.NettyTicker
+import io.libp2p.quicsim.sim.impl.EmbeddedChannelDatagramPacketProcessor
+import io.libp2p.quicsim.sim.impl.netty.SimDatagramChannel
 import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.SimpleChannelInboundHandler

@@ -1,8 +1,10 @@
-package io.libp2p.quicsim.host.impl
+package io.libp2p.quicsim.sim.impl
 
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.core.schedule.impl.toScheduledExecutorService
-import io.libp2p.quicsim.host.NodeFactory
+import io.libp2p.quicsim.program.NodeProgramFactory
+import io.libp2p.quicsim.program.SampleGossipNodeProgram
+import io.libp2p.quicsim.runner.LocalRealRunner
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -18,7 +20,7 @@ class LocalRealRunnerTest {
         val nodeCount = 5
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val runner = LocalRealRunner(
-            nodeFactory = object : NodeFactory {
+            nodeFactory = object : NodeProgramFactory {
                 override fun createNode(id: Int) =
                     SampleGossipNodeProgram(
                         simNodeId = id,

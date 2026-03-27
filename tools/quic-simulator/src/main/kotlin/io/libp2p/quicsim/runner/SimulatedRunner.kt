@@ -1,18 +1,21 @@
-package io.libp2p.quicsim.host.impl.sim
+package io.libp2p.quicsim.runner
 
 import io.libp2p.core.Host
-import io.libp2p.core.crypto.KeyType
 import io.libp2p.core.crypto.PrivKey
 import io.libp2p.core.dsl.HostBuilder
 import io.libp2p.core.multistream.ProtocolBinding
 import io.libp2p.core.transport.Transport
 import io.libp2p.crypto.keys.generateEd25519KeyPair
+import io.libp2p.quicsim.SimLogger
 import io.libp2p.quicsim.core.schedule.DeterministicScheduler
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
-import io.libp2p.quicsim.host.NetworkContext
-import io.libp2p.quicsim.host.NodeFactory
-import io.libp2p.quicsim.host.NodeProgram
-import io.libp2p.quicsim.host.SimContext
+import io.libp2p.quicsim.program.NodeProgram
+import io.libp2p.quicsim.program.NodeProgramFactory
+import io.libp2p.quicsim.sim.NetworkContext
+import io.libp2p.quicsim.sim.SimContext
+import io.libp2p.quicsim.sim.impl.SimNetImpl
+import io.libp2p.quicsim.sim.impl.SimNodeImpl
+import io.libp2p.quicsim.sim.impl.netty.SimNodeDatagramChannelFactory
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.transport.quic.QuicTransport
 import java.security.SecureRandom
@@ -24,7 +27,7 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 class SimulatedRunner(
-    val nodeFactory: NodeFactory,
+    val nodeFactory: NodeProgramFactory,
     val networkEngine: UdpSimNetworkEngine,
     val ipManager: IPManager = IPManager.Default,
     val listenPortStartRange: Int = 17000,
@@ -39,7 +42,7 @@ class SimulatedRunner(
     data class NodeStuff(
         val nodeProgram: NodeProgram,
         val nodeScheduler: DeterministicScheduler,
-        val embeddedNode: EmbeddedNode,
+        val simNodeImpl: SimNodeImpl,
         val simContext: SimContext,
         val networkContext: NetworkContext,
         val host: Host
@@ -50,9 +53,9 @@ class SimulatedRunner(
 
         val nodeSchedulers = List(nodeCount) { DeterministicScheduler() }
 
-        val embeddedNodes = List(nodeCount) { i ->
+        val simNodeImpls = List(nodeCount) { i ->
             val program = nodePrograms[i]
-            EmbeddedNode(
+            SimNodeImpl(
                 nodeId = program.simNodeId,
                 scheduler = nodeSchedulers[i],
                 ip = ipManager.getIP(program.simNodeId)
@@ -64,7 +67,7 @@ class SimulatedRunner(
         }
 
         val hosts = List(nodeCount) { idx ->
-            createHost(nodePrograms[idx], simContexts[idx], embeddedNodes[idx])
+            createHost(nodePrograms[idx], simContexts[idx], simNodeImpls[idx])
         }
 
         startHosts(hosts)
@@ -76,11 +79,11 @@ class SimulatedRunner(
         val networkContexts = hosts.map { NetworkContext(it, allListenAddresses) }
 
         return List(nodeCount) { i->
-            NodeStuff(nodePrograms[i], nodeSchedulers[i], embeddedNodes[i], simContexts[i], networkContexts[i], hosts[i])
+            NodeStuff(nodePrograms[i], nodeSchedulers[i], simNodeImpls[i], simContexts[i], networkContexts[i], hosts[i])
         }
     }
 
-    private fun createHost(nodeProgram: NodeProgram, simContext: SimContext, node: EmbeddedNode): Host {
+    private fun createHost(nodeProgram: NodeProgram, simContext: SimContext, node: SimNodeImpl): Host {
         val protocols = nodeProgram.createProtocols(simContext)
         val port = listenPortStartRange + nodeProgram.simNodeId
         val listenIP = node.ip
@@ -90,7 +93,7 @@ class SimulatedRunner(
                 key,
                 "ECDSA",
                 selectedProtocols,
-                datagramChannelFactory = EmbeddedNodeDatagramChannelFactory(node)
+                datagramChannelFactory = SimNodeDatagramChannelFactory(node)
             )
         }
 
@@ -121,9 +124,9 @@ class SimulatedRunner(
         println("Creating hosts...")
         nodesStuff = createNodesStuff()
         val nodePrograms = nodesStuff.map { it.nodeProgram }
-        val embeddedNodes = nodesStuff.map { it.embeddedNode }
+        val embeddedNodes = nodesStuff.map { it.simNodeImpl }
         println("Creating sim network...")
-        val simCoreNet = SimCoreNetImpl(embeddedNodes)
+        val simCoreNet = SimNetImpl(embeddedNodes)
         val idAndIp =
             embeddedNodes.map { node ->
                 SimPacketPump.IdMapEntry(networkEngine.network.nodes[node.nodeId].id, node.ip)
@@ -149,7 +152,7 @@ class SimulatedRunner(
         val startSimT = simTimer.time()
         var lastLogSimT = startSimT
         var ticksCount = 0L
-        var nextAdvance: Duration = Duration.ZERO
+        var nextAdvance: Duration = Duration.Companion.ZERO
         try {
             while (true) {
                 simPacketPump.advanceAndExecuteAll(nextAdvance)

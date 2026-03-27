@@ -1,21 +1,22 @@
-package io.libp2p.quicsim.host.impl
+package io.libp2p.quicsim.runner
 
 import io.libp2p.core.Host
 import io.libp2p.core.crypto.KeyType
 import io.libp2p.core.dsl.HostBuilder
 import io.libp2p.quicsim.core.schedule.impl.NanoMonotonicTimer
 import io.libp2p.quicsim.core.schedule.impl.toSimpleScheduler
-import io.libp2p.quicsim.host.NetworkContext
-import io.libp2p.quicsim.host.NodeFactory
-import io.libp2p.quicsim.host.NodeProgram
-import io.libp2p.quicsim.host.SimContext
+import io.libp2p.quicsim.program.NodeProgram
+import io.libp2p.quicsim.program.NodeProgramFactory
+import io.libp2p.quicsim.program.SampleGossipNodeProgram
+import io.libp2p.quicsim.sim.NetworkContext
+import io.libp2p.quicsim.sim.SimContext
 import io.libp2p.transport.quic.QuicTransport
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class LocalRealRunner(
-    val nodeFactory: NodeFactory,
+    val nodeFactory: NodeProgramFactory,
     val nodeCount: Int,
     val listenIP: String = "127.0.0.1",
     val listenPortStartRange: Int = 17000
@@ -32,7 +33,7 @@ class LocalRealRunner(
 
         simContexts = (0 until nodeCount).map {
             val scheduler = Executors.newSingleThreadScheduledExecutor().toSimpleScheduler()
-            SimContext(scheduler, NanoMonotonicTimer.CPU)
+            SimContext(scheduler, NanoMonotonicTimer.Companion.CPU)
         }
 
         hosts = (0 until nodeCount).map { idx ->

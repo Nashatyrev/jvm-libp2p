@@ -1,12 +1,13 @@
-package io.libp2p.quicsim.host.impl.sim
+package io.libp2p.quicsim.sim.impl
 
 import io.libp2p.quicsim.core.PacketProcessor
+import io.libp2p.quicsim.sim.impl.netty.SimDatagramChannel
 import io.netty.channel.socket.DatagramPacket
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.nanoseconds
 
 /**
- * Adapts [SimDatagramChannel] to [PacketProcessor] contract where packets are exchanged as Netty [DatagramPacket].
+ * Adapts [io.libp2p.quicsim.sim.impl.netty.SimDatagramChannel] to [PacketProcessor] contract where packets are exchanged as Netty [DatagramPacket].
  */
 class EmbeddedChannelDatagramPacketProcessor(
     val channel: SimDatagramChannel
