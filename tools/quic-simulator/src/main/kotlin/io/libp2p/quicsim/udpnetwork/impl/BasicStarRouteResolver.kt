@@ -37,8 +37,7 @@ class BasicStarRouteResolver(
             .also {
                 check(it.size == 1) { "Not of star topology" }
             }
-    private val router: UdpSimNode
-        get() = routers.first()
+    private val router = routers.first()
 
     override fun findNextHop(
         fromNode: UdpSimNode,
