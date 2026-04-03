@@ -38,7 +38,7 @@ class FifoUdpSimQueueDiscipline(
 
         val ready = mutableListOf<UdpSimPacket>()
         while (queue.isNotEmpty()) {
-            val packet = queue.first()
+            val packet = queue.peekFirst()
             if (packet.dequeueWithLatencyAt < cumulativeAdvance) {
                 throw IllegalStateException("Internal error: Missed packed")
             }
