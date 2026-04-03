@@ -1,18 +1,18 @@
 package io.libp2p.quicsim.udpnetwork.impl
 
+import io.libp2p.quicsim.core.PacketProcessorAdapter
 import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.libp2p.quicsim.udpnetwork.UdpSimQueueDiscipline
 import java.util.ArrayDeque
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.ZERO
 
 class FifoUdpSimQueueDiscipline(
     override val bandwidth: Bandwidth,
     override val latency: Duration,
     // unbound queue by default
     val maxQueueWaitTime: Duration = Duration.INFINITE,
-) : UdpSimQueueDiscipline {
+) : UdpSimQueueDiscipline, PacketProcessorAdapter<UdpSimPacket>() {
 
     private data class QueuedPacket(
         val packet: UdpSimPacket,
@@ -22,15 +22,14 @@ class FifoUdpSimQueueDiscipline(
     )
 
     private val queue = ArrayDeque<QueuedPacket>()
-    private var currentTime: Duration = ZERO
 
-    override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
-        var lastDequeueAt = queue.lastOrNull()?.dequeueAt ?: currentTime
+    override fun deliverImpl(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
+        var lastDequeueAt = queue.peekLast()?.dequeueAt ?: cumulativeAdvance
         inboundData.forEach { packet ->
             val dequeueTime = lastDequeueAt + bandwidth.durationToTransfer(packet.bytes)
-            if (dequeueTime - currentTime <= maxQueueWaitTime) {
+            if (dequeueTime - cumulativeAdvance <= maxQueueWaitTime) {
                 queue.addLast(
-                    QueuedPacket(packet, currentTime, dequeueTime, dequeueTime + latency)
+                    QueuedPacket(packet, cumulativeAdvance, dequeueTime, dequeueTime + latency)
                 )
                 lastDequeueAt = dequeueTime
             } // else packet is dropped
@@ -40,10 +39,10 @@ class FifoUdpSimQueueDiscipline(
         val ready = mutableListOf<UdpSimPacket>()
         while (queue.isNotEmpty()) {
             val packet = queue.first()
-            if (packet.dequeueWithLatencyAt < currentTime) {
+            if (packet.dequeueWithLatencyAt < cumulativeAdvance) {
                 throw IllegalStateException("Internal error: Missed packed")
             }
-            if (packet.dequeueWithLatencyAt > currentTime) {
+            if (packet.dequeueWithLatencyAt > cumulativeAdvance) {
                 break
             }
             ready += queue.removeFirst().packet
@@ -51,12 +50,11 @@ class FifoUdpSimQueueDiscipline(
         return ready
     }
 
-    override fun advanceAndExecuteAll(advanceDuration: Duration) {
-        currentTime += advanceDuration
+    override fun advanceAndExecuteAllImpl(advanceDuration: Duration) {
     }
 
-    override fun nextTaskDuration(): Duration? =
-        queue.firstOrNull()?.let {
-            it.dequeueWithLatencyAt - currentTime
+    override fun nextTaskDurationImpl(): Duration? =
+        queue.peekFirst()?.let {
+            it.dequeueWithLatencyAt - cumulativeAdvance
         }
 }
