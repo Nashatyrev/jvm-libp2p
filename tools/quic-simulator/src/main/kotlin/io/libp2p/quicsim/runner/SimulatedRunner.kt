@@ -3,9 +3,11 @@ package io.libp2p.quicsim.runner
 import io.libp2p.core.Host
 import io.libp2p.core.crypto.PrivKey
 import io.libp2p.core.dsl.HostBuilder
+import io.libp2p.core.dsl.host
 import io.libp2p.core.multistream.ProtocolBinding
 import io.libp2p.core.transport.Transport
 import io.libp2p.crypto.keys.generateEd25519KeyPair
+import io.libp2p.etc.types.forward
 import io.libp2p.quicsim.SimLogger
 import io.libp2p.quicsim.core.schedule.DeterministicScheduler
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
@@ -13,6 +15,7 @@ import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
 import io.libp2p.quicsim.sim.NetworkContext
 import io.libp2p.quicsim.sim.SimContext
+import io.libp2p.quicsim.sim.SimNodeId
 import io.libp2p.quicsim.sim.impl.SimNetImpl
 import io.libp2p.quicsim.sim.impl.SimNodeImpl
 import io.libp2p.quicsim.sim.impl.netty.SimNodeDatagramChannelFactory
@@ -36,51 +39,53 @@ class SimulatedRunner(
 ) {
     val nodeCount: Int = networkEngine.network.nodes.size
 
-    lateinit var nodesStuff: List<NodeStuff>
     lateinit var simTimer: MonotonicTimer
 
-    data class NodeStuff(
-        val nodeProgram: NodeProgram,
-        val nodeScheduler: DeterministicScheduler,
-        val simNodeImpl: SimNodeImpl,
-        val simContext: SimContext,
-        val networkContext: NetworkContext,
-        val host: Host
-    )
+    class NodeStuff(
+        val id: SimNodeId,
+    ) {
+        lateinit var nodeProgram: NodeProgram
+        lateinit var nodeScheduler: DeterministicScheduler
+        lateinit var simNodeImpl: SimNodeImpl
+        lateinit var simContext: SimContext
+        lateinit var networkContext: NetworkContext
+        lateinit var host: Host
+        val startFuture: CompletableFuture<Unit> = CompletableFuture()
+
+        fun startProgram() {
+            val startFut = nodeProgram.start(simContext, networkContext)
+            startFut.forward(startFut)
+        }
+    }
 
     fun createNodesStuff(): List<NodeStuff> {
-        val nodePrograms = List(nodeCount, nodeFactory::createNode)
-
-        val nodeSchedulers = List(nodeCount) { DeterministicScheduler() }
-
-        val simNodeImpls = List(nodeCount) { i ->
-            val program = nodePrograms[i]
-            SimNodeImpl(
-                nodeId = program.simNodeId,
-                scheduler = nodeSchedulers[i],
-                ip = ipManager.getIP(program.simNodeId)
+        val nodeStuffs = List(nodeCount) { simNodeId ->
+            val stuff = NodeStuff(simNodeId)
+            stuff.nodeProgram = nodeFactory.createNode(simNodeId)
+            val scheduler = DeterministicScheduler()
+            scheduler.executeAfterDelay(Duration.ZERO, stuff::startProgram)
+            stuff.nodeScheduler = scheduler
+            stuff.simNodeImpl = SimNodeImpl(
+                nodeId = simNodeId,
+                scheduler = scheduler,
+                ip = ipManager.getIP(simNodeId)
             )
+            stuff.simContext = SimContext(scheduler, scheduler)
+            stuff.host = createHost(stuff.nodeProgram, stuff.simContext, stuff.simNodeImpl)
+            stuff
         }
 
-        val simContexts = List(nodeCount) {
-            SimContext(nodeSchedulers[it], nodeSchedulers[it])
+
+        startHosts(nodeStuffs.map { it.host })
+
+        val allListenAddresses = nodeStuffs
+            .associate { it.id to it.host.listenAddresses().first() }
+
+        nodeStuffs.forEach { nodeStuff ->
+            nodeStuff.networkContext = NetworkContext(nodeStuff.host, allListenAddresses)
         }
 
-        val hosts = List(nodeCount) { idx ->
-            createHost(nodePrograms[idx], simContexts[idx], simNodeImpls[idx])
-        }
-
-        startHosts(hosts)
-
-        val allListenAddresses = hosts.indices.associateWith { idx ->
-            hosts[idx].listenAddresses().first()
-        }
-
-        val networkContexts = hosts.map { NetworkContext(it, allListenAddresses) }
-
-        return List(nodeCount) { i->
-            NodeStuff(nodePrograms[i], nodeSchedulers[i], simNodeImpls[i], simContexts[i], networkContexts[i], hosts[i])
-        }
+        return nodeStuffs
     }
 
     private fun createHost(nodeProgram: NodeProgram, simContext: SimContext, node: SimNodeImpl): Host {
@@ -114,15 +119,13 @@ class SimulatedRunner(
     }
 
     fun startPrograms(nodesStuff: List<NodeStuff>): CompletableFuture<Void> {
-        val futures = nodesStuff.map { nodeStuff ->
-            nodeStuff.nodeProgram.start(nodeStuff.simContext, nodeStuff.networkContext)
-        }
+        val futures = nodesStuff.map { it.startFuture }
         return CompletableFuture.allOf(*futures.toTypedArray())
     }
 
     fun run() {
         println("Creating hosts...")
-        nodesStuff = createNodesStuff()
+        val nodesStuff = createNodesStuff()
         val nodePrograms = nodesStuff.map { it.nodeProgram }
         val embeddedNodes = nodesStuff.map { it.simNodeImpl }
         println("Creating sim network...")
@@ -156,31 +159,37 @@ class SimulatedRunner(
         try {
             while (true) {
                 simPacketPump.advanceAndExecuteAll(nextAdvance)
-                val simTime = simTimer.time()
-                ticksCount++
 
-                val completeCount = nodePrograms.count { it.isComplete() }
-                if (completeCount == nodePrograms.size) {
-                    break
+                val maybeNextAdvance = simPacketPump.nextTaskDuration()
+
+                var completeCount: Int? = null
+                if (maybeNextAdvance == null || ticksCount % 1000L == 0L) {
+                    completeCount = nodePrograms.count { it.isComplete() }
+                    if (completeCount == nodePrograms.size) {
+                        break
+                    }
                 }
 
+                nextAdvance = maybeNextAdvance
+                    ?: throw IllegalStateException("Simulation stalled: no pending tasks but only $completeCount/$nodeCount programs completed")
+
+                val simTime = simTimer.time()
+                ticksCount++
                 if (simTime - lastLogSimT >= 10.seconds) {
                     lastLogSimT = simTime
                     logger.log("Nodes complete $completeCount of $nodeCount in $ticksCount ticks")
                 }
 
-                nextAdvance = simPacketPump.nextTaskDuration()
-                    ?: throw IllegalStateException("Simulation stalled: no pending tasks but only $completeCount/$nodeCount programs completed")
-
                 if (simTime - startSimT > maxSimulatedRunDuration) {
                     throw IllegalStateException(
                         "Simulation exceeded limit: simulated=${(simTime - startSimT).inWholeMilliseconds}ms " +
                                 "limit=${maxSimulatedRunDuration.inWholeMilliseconds}ms " +
-                                "completed=$completeCount/${nodePrograms.size}")
+                                "completed=$completeCount/${nodePrograms.size}"
+                    )
                 }
             }
 
-            logger.log("All complete...")
+            logger.log("All complete in $ticksCount ticks")
         } catch (e: Exception) {
             logger.log("Exception: $e")
             throw e

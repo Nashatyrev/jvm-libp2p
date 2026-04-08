@@ -25,6 +25,7 @@ import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimQueueDiscipline
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
+import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl2
 import io.netty.buffer.ByteBuf
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -60,7 +61,7 @@ class SimulatedRunnerTest {
         val networkBuilder = TestStarNetworkBuilder2()
         (0 until nodeCount).map { networkBuilder.node("node-$it") }
         val qdiscFactory = fifoQDiscFactory(1_000_000L)
-        networkBuilder.linkAllToRouter( Duration.ofMillis(50), qdiscFactory)
+        networkBuilder.linkAllToRouter(Duration.ofMillis(50), qdiscFactory)
 
         val runner = SimulatedRunner(
             nodeFactory = object : NodeProgramFactory {
@@ -87,17 +88,43 @@ class SimulatedRunnerTest {
 
     @Test
     fun `simulated runner completes`() {
-        val nodeCount = 10
-        val publishersCount = 20
-        val neighboursToConnect = 5
+        val nodeCount = 100
+        val publishersCount = 100
+        val neighboursToConnect = 20
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val randomConnectionsByNode: Map<SimNodeId, List<SimNodeId>> =
             createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = 1234)
 
         val networkBuilder = TestStarNetworkBuilder2()
         (0 until nodeCount).map { networkBuilder.node("node-$it") }
-        val qdiscFactory = fifoQDiscFactory(50_000L)
+        val qdiscFactory = fifoQDiscFactory(5_000_000L)
         networkBuilder.linkAllToRouter(Duration.ofMillis(50), qdiscFactory).build()
+
+        class LoggingUdpNetworkEngineUdp(val delegate: UdpSimNetworkEngine) : UdpSimNetworkEngine by delegate {
+            private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
+            var packetsCount = 0L
+            var throughputBytes = 0L
+            override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
+                val outbound = delegate.deliver(inboundData)
+                packetsCount += outbound.size
+                throughputBytes += outbound.sumOf { it.bytes }
+                return outbound
+            }
+
+            override fun advanceAndExecuteAll(advanceDuration: kotlin.time.Duration) {
+                delegate.advanceAndExecuteAll(advanceDuration)
+                simTime += advanceDuration
+            }
+
+            override fun nextTaskDuration(): kotlin.time.Duration? {
+                val nextTaskDuration = delegate.nextTaskDuration()
+                return nextTaskDuration
+            }
+        }
+
+        val udpNetwork = UdpSimNetworkEngineImpl2(networkBuilder.build())
+        val udpNetworkLogging = LoggingUdpNetworkEngineUdp(udpNetwork)
+
 
         val runner = SimulatedRunner(
             nodeFactory = object : NodeProgramFactory {
@@ -112,7 +139,7 @@ class SimulatedRunnerTest {
                         initialPublishDelay = 30.seconds,
                     ).also { nodePrograms += it }
             },
-            networkEngine = UdpSimNetworkEngineImpl(networkBuilder.build()),
+            networkEngine = udpNetworkLogging,
             maxSimulatedRunDuration = 10.minutes
         )
 
@@ -121,6 +148,8 @@ class SimulatedRunnerTest {
             nodePrograms.all { it.isComplete() },
             "Expected all sample gossip node programs to complete in 1000-node scenario"
         )
+
+        println("Total packet count: " + udpNetworkLogging.packetsCount + ", bytes: " + udpNetworkLogging.throughputBytes)
     }
 
     private fun createBidirectionalRandomTopology(
@@ -223,6 +252,7 @@ class SimulatedRunnerTest {
                 return nextTaskDuration
             }
         }
+
         val udpNetwork = UdpSimNetworkEngineImpl(builder.build())
         val udpNetworkLogging = LoggingUdpNetworkEngineUdp(udpNetwork)
 
@@ -316,7 +346,7 @@ class SimulatedRunnerTest {
             networkEngine = UdpSimNetworkEngineImpl(builder.build())
         )
 
-            runner.run()
+        runner.run()
 
         return TransferMetrics(
             receivedSize = receivedSize.get(5, TimeUnit.SECONDS),

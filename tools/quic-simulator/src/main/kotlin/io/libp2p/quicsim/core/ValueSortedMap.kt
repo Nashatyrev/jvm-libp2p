@@ -39,14 +39,17 @@ class ValueSortedMap<K, V, TValueKey : Comparable<TValueKey>>(
             }
         }
 
-    fun updateByKey(key: K, updater: (V) -> Unit) {
+    fun <R> updateByKey(key: K, updater: (V) -> R): R {
         val v = privMap[key]!!
         val oldK = SortKey(valueKeyExtractor(v.value), v.index)
-        updater(v.value)
+        val ret = updater(v.value)
         valueSortedMap -= oldK
         val newK = SortKey(valueKeyExtractor(v.value), v.index)
         valueSortedMap[newK] = v.value
+        return ret
     }
+
+    fun getByKey(key: K): V = privMap[key]!!.value
 
     fun <R> updateFirst(updater: (V) -> R): R {
         val (oldK, v) = valueSortedMap.firstEntry()!!
