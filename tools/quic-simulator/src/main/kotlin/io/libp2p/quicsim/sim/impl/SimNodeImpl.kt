@@ -30,6 +30,7 @@ class SimNodeImpl(
     private val aggregateControllable =
         AggregateControllable(listOf(scheduler, dispatchingPacketProcessor))
     private val nettyTicker = NettyTicker(scheduler)
+    private var cachedNextTaskDuration: Duration? = null
 
     fun bindServerParent(bindAddress: SocketAddress,handler: ChannelHandler): CompletableFuture<Channel> =
         bindParent(handler, bindAddress as InetSocketAddress)
@@ -47,16 +48,22 @@ class SimNodeImpl(
         return bindFuture.toCompletableFuture()
     }
 
-    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> =
-        dispatchingPacketProcessor.deliver(inboundData)
+    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
+        cachedNextTaskDuration = null
+        return dispatchingPacketProcessor.deliver(inboundData)
+    }
 
     override fun advanceAndExecuteAll(advanceDuration: Duration) {
+        cachedNextTaskDuration = null
         aggregateControllable.advanceAndExecuteAll(advanceDuration)
     }
 
-    override fun nextTaskDuration(): Duration? =
-        aggregateControllable.nextTaskDuration()
-
+    override fun nextTaskDuration(): Duration? {
+        if (cachedNextTaskDuration == null) {
+            cachedNextTaskDuration = aggregateControllable.nextTaskDuration()
+        }
+        return cachedNextTaskDuration
+    }
 
     private fun registerChannel(address: InetSocketAddress, channel: SimDatagramChannel) {
         channelsByPort[address.port] = EmbeddedChannelDatagramPacketProcessor(channel)
