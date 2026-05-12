@@ -101,6 +101,15 @@ class QuicTransport @JvmOverloads constructor(
             channel.attr(STREAM).set(stream)
             return stream
         }
+
+        private val quicheClientConfig = QuicClientCodecBuilder()
+            .maxIdleTimeout(60000, TimeUnit.MILLISECONDS)
+            .initialMaxData(1 shl 20)
+            .initialMaxStreamsBidirectional(64)
+            .initialMaxStreamDataBidirectionalRemote(1 shl 18)
+            .initialMaxStreamDataBidirectionalLocal(1 shl 18)
+            .createConfig()
+
     }
 
     override val activeListeners: Int
@@ -180,12 +189,8 @@ class QuicTransport @JvmOverloads constructor(
         val sslContext = quicSslContext(true, trustManager)
         val requestsHandler = QuicClientCodecBuilder()
             .sslEngineProvider { q -> sslContext.newEngine(q.alloc()) }
-            .maxIdleTimeout(60000, TimeUnit.MILLISECONDS)
             .sslTaskExecutor(null) // IMMEDIATE Executor
-            .initialMaxData(1 shl 20)
-            .initialMaxStreamsBidirectional(64)
-            .initialMaxStreamDataBidirectionalRemote(1 shl 18)
-            .initialMaxStreamDataBidirectionalLocal(1 shl 18)
+            .quicheConfig(quicheClientConfig)
             .build()
 
         return datagramChannelFactory.createClientChannel(requestsHandler)
