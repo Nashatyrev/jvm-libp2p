@@ -18,7 +18,7 @@ class EmbeddedChannelDatagramPacketProcessor(
         inboundData.forEach {
             channel.writeInbound(it)
         }
-        runPendingTasksOnly()
+        runPendingAndScheduledTasks()
         return drainOutbound()
     }
 
@@ -30,10 +30,6 @@ class EmbeddedChannelDatagramPacketProcessor(
 
     override fun nextTaskDuration(): Duration? =
         if (channel.hasPendingTasks()) Duration.ZERO else nextScheduledTaskDelay
-
-    private fun runPendingTasksOnly() {
-        channel.runPendingTasks()
-    }
 
     private fun runPendingAndScheduledTasks() {
         channel.runPendingTasks()
