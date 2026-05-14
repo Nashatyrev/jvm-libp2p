@@ -41,7 +41,6 @@ class EmbeddedChannelDatagramPacketProcessorTest {
                     }, 1, TimeUnit.MILLISECONDS)
                 }
             },
-            ticker
         )
 
         val channelB = SimDatagramChannel(
@@ -54,7 +53,6 @@ class EmbeddedChannelDatagramPacketProcessorTest {
                     receivedAtB += String(bytes, StandardCharsets.UTF_8)
                 }
             },
-            ticker
         )
 
         val procA = EmbeddedChannelDatagramPacketProcessor(channelA)

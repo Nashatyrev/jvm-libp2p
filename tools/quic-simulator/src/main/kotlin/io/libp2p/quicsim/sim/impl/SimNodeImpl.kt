@@ -42,7 +42,7 @@ class SimNodeImpl(
         handler: ChannelHandler,
         addr: InetSocketAddress
     ): CompletableFuture<Channel> {
-        val channel = SimDatagramChannel("sim-$nodeId-${addr.port}", addr, handler, nettyTicker)
+        val channel = SimDatagramChannel("sim-$nodeId-${addr.port}", addr, handler)
         registerChannel(addr, channel)
         val bindFuture = channel.bind(addr)
         return bindFuture.toCompletableFuture()

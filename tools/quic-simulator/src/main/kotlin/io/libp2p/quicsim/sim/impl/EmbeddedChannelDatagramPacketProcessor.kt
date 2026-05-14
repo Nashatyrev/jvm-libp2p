@@ -23,7 +23,7 @@ class EmbeddedChannelDatagramPacketProcessor(
     }
 
     override fun advanceAndExecuteAll(advanceDuration: Duration) {
-        require(!advanceDuration.isNegative()) { "advanceDuration must be non-negative" }
+        channel.ticker.time += advanceDuration
         // Time is provided by EmbeddedChannel custom Ticker (NettyTicker), so we should not call advanceTimeBy().
         runPendingAndScheduledTasks()
     }
