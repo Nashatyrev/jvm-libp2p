@@ -35,7 +35,8 @@ class SimulatedRunner(
     val ipManager: IPManager = IPManager.Default,
     val listenPortStartRange: Int = 17000,
     val maxSimulatedRunDuration: Duration = 1.minutes,
-    val random: SecureRandom = SecureRandom(byteArrayOf(100))
+    val random: SecureRandom = SecureRandom(byteArrayOf(100)),
+    val latencyWindowParallelism: Int = 0,
 ) {
     val nodeCount: Int = networkEngine.network.nodes.size
 
@@ -54,7 +55,7 @@ class SimulatedRunner(
 
         fun startProgram() {
             val startFut = nodeProgram.start(simContext, networkContext)
-            startFut.forward(startFut)
+            startFut.forward(startFuture)
         }
     }
 
@@ -141,8 +142,19 @@ class SimulatedRunner(
             embeddedNodes.map { node ->
                 SimPacketPump.IdMapEntry(networkEngine.network.nodes[node.nodeId].id, node.ip)
             }
-        val simPacketPump = SimPacketPump(simCoreNet, networkEngine, idAndIp)
-        simTimer = simPacketPump.monotonicTimer
+        val latencyWindowPump =
+            if (latencyWindowParallelism > 0) {
+                LatencyWindowSimPacketPump(embeddedNodes, networkEngine.network, idAndIp, latencyWindowParallelism)
+            } else {
+                null
+            }
+        val sequentialPacketPump = if (latencyWindowPump == null) {
+            SimPacketPump(simCoreNet, networkEngine, idAndIp)
+        } else {
+            null
+        }
+        val simPacketPump = latencyWindowPump ?: sequentialPacketPump!!
+        simTimer = latencyWindowPump?.monotonicTimer ?: sequentialPacketPump!!.monotonicTimer
         val logger = SimLogger(simTimer)
         logger.log("Starting hosts...")
 //        startHosts(nodesStuff.map { it.host })
@@ -169,12 +181,9 @@ class SimulatedRunner(
 
                 val maybeNextAdvance = simPacketPump.nextTaskDuration()
 
-                var completeCount: Int? = null
-                if (maybeNextAdvance == null || ticksCount % 1000L == 0L) {
-                    completeCount = nodePrograms.count { it.isComplete() }
-                    if (completeCount == nodePrograms.size) {
-                        break
-                    }
+                val completeCount = nodePrograms.count { it.isComplete() }
+                if (completeCount == nodePrograms.size) {
+                    break
                 }
 
                 nextAdvance = maybeNextAdvance
@@ -200,6 +209,8 @@ class SimulatedRunner(
         } catch (e: Exception) {
             logger.log("Exception: $e")
             throw e
+        } finally {
+            latencyWindowPump?.close()
         }
     }
 }

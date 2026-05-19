@@ -98,7 +98,7 @@ class SimulatedRunnerTest {
         val networkBuilder = TestStarNetworkBuilder2()
         (0 until nodeCount).map { networkBuilder.node("node-$it") }
         val qdiscFactory = fifoQDiscFactory(5_000_000L)
-        networkBuilder.linkAllToRouter(Duration.ofMillis(50), qdiscFactory).build()
+        networkBuilder.linkAllToRouter(Duration.ofMillis(100), qdiscFactory).build()
 
         class LoggingUdpNetworkEngineUdp(val delegate: UdpSimNetworkEngine) : UdpSimNetworkEngine by delegate {
             private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
@@ -140,7 +140,8 @@ class SimulatedRunnerTest {
                     ).also { nodePrograms += it }
             },
             networkEngine = udpNetworkLogging,
-            maxSimulatedRunDuration = 10.minutes
+            maxSimulatedRunDuration = 10.minutes,
+            latencyWindowParallelism = 1
         )
 
         runner.run()
@@ -205,6 +206,27 @@ class SimulatedRunnerTest {
         val messageSize = 1_000
         val linkLatencyMs = 25L
         val metrics = runFixedMessageScenario("x".repeat(messageSize), linkLatencyMs, 1_000_000L)
+        assertEquals(messageSize, metrics.receivedSize)
+        assertTrue(metrics.sentAtSimMillis >= 0, "Expected sender to record send timestamp")
+        assertTrue(metrics.receivedAtSimMillis >= 0, "Expected receiver to record receive timestamp")
+        assertTrue(
+            metrics.simulatedDeltaMillis >= linkLatencyMs * 2,
+            "Expected request/response to reflect at least round-trip link latency in simulated millis"
+        )
+    }
+
+    @Test
+    @Timeout(30)
+    fun `latency window simulated runner transfers fixed-size message over primitive protocol`() {
+        val messageSize = 1_000
+        val linkLatencyMs = 25L
+        val metrics = runFixedMessageScenario(
+            payload = "w".repeat(messageSize),
+            linkLatencyMs = linkLatencyMs,
+            bandwidthBytesPerSec = 1_000_000L,
+            latencyWindowParallelism = 2
+        )
+
         assertEquals(messageSize, metrics.receivedSize)
         assertTrue(metrics.sentAtSimMillis >= 0, "Expected sender to record send timestamp")
         assertTrue(metrics.receivedAtSimMillis >= 0, "Expected receiver to record receive timestamp")
@@ -313,7 +335,8 @@ class SimulatedRunnerTest {
     private fun runFixedMessageScenario(
         payload: String,
         linkLatencyMs: Long,
-        bandwidthBytesPerSec: Long
+        bandwidthBytesPerSec: Long,
+        latencyWindowParallelism: Int = 0,
     ): TransferMetrics {
         val sentAtSimMillis = AtomicLong(-1L)
         val receivedAtSimMillis = AtomicLong(-1L)
@@ -343,7 +366,8 @@ class SimulatedRunnerTest {
                         PassiveEchoNodeProgram(simNodeId = id)
                     }
             },
-            networkEngine = UdpSimNetworkEngineImpl(builder.build())
+            networkEngine = UdpSimNetworkEngineImpl(builder.build()),
+            latencyWindowParallelism = latencyWindowParallelism,
         )
 
         runner.run()
