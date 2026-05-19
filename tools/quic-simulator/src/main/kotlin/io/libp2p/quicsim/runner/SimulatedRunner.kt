@@ -71,10 +71,15 @@ class SimulatedRunner(
                 ip = ipManager.getIP(simNodeId)
             )
             stuff.simContext = SimContext(scheduler, scheduler)
-            stuff.host = createHost(stuff.nodeProgram, stuff.simContext, stuff.simNodeImpl)
             stuff
         }
 
+        // Creating hosts in parallel for perf
+        nodeStuffs
+            .parallelStream()
+            .forEach { stuff ->
+                stuff.host = createHost(stuff.nodeProgram, stuff.simContext, stuff.simNodeImpl)
+            }
 
         startHosts(nodeStuffs.map { it.host })
 
@@ -114,7 +119,9 @@ class SimulatedRunner(
     }
 
     fun startHosts(hosts: List<Host>) {
-        val startFutures = hosts.map { it.start() }
+        val startFutures = hosts
+            .parallelStream()
+            .map { it.start() }
         startFutures.forEach { it.get(1, TimeUnit.SECONDS) }
     }
 
