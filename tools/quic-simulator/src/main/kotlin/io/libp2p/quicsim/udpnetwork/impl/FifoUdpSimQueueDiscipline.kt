@@ -1,5 +1,6 @@
 package io.libp2p.quicsim.udpnetwork.impl
 
+import com.google.common.collect.Comparators.max
 import io.libp2p.quicsim.core.PacketProcessorAdapter
 import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
@@ -24,8 +25,8 @@ class FifoUdpSimQueueDiscipline(
     private val queue = ArrayDeque<QueuedPacket>()
 
     override fun deliverImpl(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
-        var lastDequeueAt = queue.peekLast()?.dequeueAt ?: cumulativeAdvance
-        inboundData.forEach { packet ->
+        var lastDequeueAt = max(queue.peekLast()?.dequeueAt ?: cumulativeAdvance, cumulativeAdvance)
+            inboundData.forEach { packet ->
             val dequeueTime = lastDequeueAt + bandwidth.durationToTransfer(packet.bytes)
             if (dequeueTime - cumulativeAdvance <= maxQueueWaitTime) {
                 queue.addLast(

@@ -107,4 +107,28 @@ class FifoUdpSimQueueDisciplineTest {
         assertEquals(listOf(packet), qdisc.deliver(emptyList()))
         assertEquals(null, qdisc.nextTaskDuration())
     }
+
+
+    @Test
+    fun `test 2 packets`() {
+        val qdisc = FifoUdpSimQueueDiscipline(
+            bandwidth = Bandwidth(1_000),
+            latency = 200.milliseconds
+        )
+        val packet1 = UdpSimPacket(1, 100, "a", "b")
+
+        qdisc.deliver(listOf(packet1))
+        assertEquals(300.milliseconds, qdisc.nextTaskDuration())
+
+        qdisc.advanceAndExecuteAll(250.milliseconds)
+
+        val packet2 = UdpSimPacket(1, 100, "a", "b")
+
+        qdisc.deliver(listOf(packet2))
+
+        qdisc.advanceAndExecuteAll(50.milliseconds) // 300 ms
+        assertEquals(listOf(packet1), qdisc.deliver(emptyList()))
+
+        assertEquals(250.milliseconds, qdisc.nextTaskDuration())
+    }
 }
