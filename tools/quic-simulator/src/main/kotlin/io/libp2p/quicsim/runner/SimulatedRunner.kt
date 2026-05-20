@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.function.BiFunction
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -172,33 +173,36 @@ class SimulatedRunner(
         logger.log("Running simulated event loop...")
 
         val startSimT = simTimer.time()
-        var lastLogSimT = startSimT
         var ticksCount = 0L
         var nextAdvance: Duration = Duration.Companion.ZERO
         try {
+            val isCompleteCheck = OncePerPeriod(1.milliseconds)
+            val statusPrint = OncePerPeriod(1.seconds)
+            var completeCount = 0
             while (true) {
                 simPacketPump.advanceAndExecuteAll(nextAdvance)
+                val simTime = simTimer.time() - startSimT
+                ticksCount++
 
                 val maybeNextAdvance = simPacketPump.nextTaskDuration()
 
-                val completeCount = nodePrograms.count { it.isComplete() }
-                if (completeCount == nodePrograms.size) {
-                    break
+                if (maybeNextAdvance == null || isCompleteCheck.shouldRun(simTime)) {
+                    completeCount = nodePrograms.count { it.isComplete() }
+                    if (completeCount == nodePrograms.size) {
+                        break
+                    }
                 }
 
                 nextAdvance = maybeNextAdvance
                     ?: throw IllegalStateException("Simulation stalled: no pending tasks but only $completeCount/$nodeCount programs completed")
 
-                val simTime = simTimer.time()
-                ticksCount++
-                if (simTime - lastLogSimT >= 10.seconds) {
-                    lastLogSimT = simTime
+                statusPrint.run(simTime) {
                     logger.log("Nodes complete $completeCount of $nodeCount in $ticksCount ticks")
                 }
 
-                if (simTime - startSimT > maxSimulatedRunDuration) {
+                if (simTime > maxSimulatedRunDuration) {
                     throw IllegalStateException(
-                        "Simulation exceeded limit: simulated=${(simTime - startSimT).inWholeMilliseconds}ms " +
+                        "Simulation exceeded limit: simulated=${simTime.inWholeMilliseconds}ms " +
                                 "limit=${maxSimulatedRunDuration.inWholeMilliseconds}ms " +
                                 "completed=$completeCount/${nodePrograms.size}"
                     )
@@ -211,6 +215,22 @@ class SimulatedRunner(
             throw e
         } finally {
             latencyWindowPump?.close()
+        }
+    }
+
+    class OncePerPeriod(val period: Duration) {
+        private var lastTime: Duration? = null
+        fun run(curTime: Duration, body: () -> Unit) {
+            if (shouldRun(curTime)) {
+                body()
+            }
+        }
+
+        fun shouldRun(curTime: Duration): Boolean {
+            return if (lastTime == null || curTime > lastTime!! + period) {
+                lastTime = curTime
+                true
+            } else false
         }
     }
 }
