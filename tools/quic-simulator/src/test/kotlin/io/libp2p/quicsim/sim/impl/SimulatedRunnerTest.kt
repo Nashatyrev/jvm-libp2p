@@ -298,7 +298,7 @@ class SimulatedRunnerTest {
             nodeCount = nodeCount,
             chunks = listOf(
                 DataChunkNodeProgramFactory.DataChunk(
-                    sizeBytes = 2000,
+                    sizeBytes = 1_000_000,
                     at = 10.seconds,
                     from = 0,
                     to = 1
@@ -309,7 +309,7 @@ class SimulatedRunnerTest {
         val builder = TestStarNetworkBuilder2()
         (0 until nodeCount).forEach { builder.node("node-$it") }
         builder.linkAllToRouter(
-            latency = 200.milliseconds.toJavaDuration(),
+            latency = 100.milliseconds.toJavaDuration(),
             qdiscFactory = fifoQDiscFactory(1_000_000L)
         )
 
@@ -327,8 +327,42 @@ class SimulatedRunnerTest {
         }
 
         val firstChunkReceipts = factory.packetReceipts(0)
-        firstChunkReceipts.forEach {
-            println("${it.receivedAt.inWholeMilliseconds}\t${it.sequence}\t${it.totalPackets}")
+//        firstChunkReceipts.forEach {
+//            println("${it.receivedAt.inWholeMilliseconds}\t${it.sequence}\t${it.totalPackets}")
+//        }
+        assertEquals(1_000, firstChunkReceipts.size)
+        assertExponentialLikePacketFlights(firstChunkReceipts)
+    }
+
+    private fun assertExponentialLikePacketFlights(
+        receipts: List<DataChunkNodeProgramFactory.PacketReceipt>,
+        interFlightGapMillis: Long = 100,
+    ) {
+        val flights = receipts
+            .sortedWith(compareBy<DataChunkNodeProgramFactory.PacketReceipt> { it.receivedAt }.thenBy { it.sequence })
+            .fold(mutableListOf<MutableList<DataChunkNodeProgramFactory.PacketReceipt>>()) { grouped, receipt ->
+                val previousReceipt = grouped.lastOrNull()?.lastOrNull()
+                if (
+                    previousReceipt == null ||
+                    receipt.receivedAt.inWholeMilliseconds - previousReceipt.receivedAt.inWholeMilliseconds > interFlightGapMillis
+                ) {
+                    grouped += mutableListOf(receipt)
+                } else {
+                    grouped.last() += receipt
+                }
+                grouped
+            }
+
+        val firstSlowStartFlights = flights.take(4).map { it.size }
+        assertTrue(
+            firstSlowStartFlights.size == 4,
+            "Expected at least 4 packet flights, got ${flights.map { it.size }}"
+        )
+        firstSlowStartFlights.zipWithNext().forEach { (previous, next) ->
+            assertTrue(
+                next >= previous * 3 / 2,
+                "Expected exponential-like packet flight growth, got ${flights.map { it.size }}"
+            )
         }
     }
 
