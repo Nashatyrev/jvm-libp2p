@@ -141,7 +141,7 @@ class SimulatedRunnerTest {
             },
             networkEngine = udpNetworkLogging,
             maxSimulatedRunDuration = 10.minutes,
-            latencyWindowParallelism = 1
+            latencyWindowParallelism = 0
         )
 
         runner.run()
