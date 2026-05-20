@@ -10,6 +10,7 @@ import io.libp2p.protocol.ProtocolHandler
 import io.libp2p.protocol.ProtocolMessageHandler
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.core.schedule.impl.submitAfterDelay
+import io.libp2p.quicsim.program.DataChunkNodeProgramFactory
 import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
 import io.libp2p.quicsim.program.SampleGossipNodeProgram
@@ -41,6 +42,7 @@ import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
 import kotlin.time.toKotlinDuration
 
 class SimulatedRunnerTest {
@@ -234,6 +236,100 @@ class SimulatedRunnerTest {
             metrics.simulatedDeltaMillis >= linkLatencyMs * 2,
             "Expected request/response to reflect at least round-trip link latency in simulated millis"
         )
+    }
+
+    @Test
+    @Timeout(30)
+    fun `data chunk node program factory records flushed packet receive timestamps`() {
+        val nodeCount = 3
+        val factory = DataChunkNodeProgramFactory(
+            nodeCount = nodeCount,
+            chunks = listOf(
+                DataChunkNodeProgramFactory.DataChunk(
+                    sizeBytes = 2_500,
+                    at = 100.milliseconds,
+                    from = 0,
+                    to = 1
+                ),
+                DataChunkNodeProgramFactory.DataChunk(
+                    sizeBytes = 1_000,
+                    at = 150.milliseconds,
+                    from = 2,
+                    to = 0
+                )
+            )
+        )
+
+        val builder = TestStarNetworkBuilder2()
+        (0 until nodeCount).forEach { builder.node("node-$it") }
+        builder.linkAllToRouter(
+            Duration.ofMillis(10),
+            qdiscFactory = fifoQDiscFactory(1_000_000L)
+        )
+
+        val runner = SimulatedRunner(
+            nodeFactory = factory,
+            networkEngine = UdpSimNetworkEngineImpl(builder.build()),
+            maxSimulatedRunDuration = 5.seconds
+        )
+
+        try {
+            runner.run()
+        } catch (t: Throwable) {
+            println(factory.debugState())
+            throw t
+        }
+
+        val firstChunkReceipts = factory.packetReceipts(0)
+        val secondChunkReceipts = factory.packetReceipts(1)
+        assertEquals(3, firstChunkReceipts.size)
+        assertEquals(1, secondChunkReceipts.size)
+        assertEquals(listOf(0, 1, 2), firstChunkReceipts.map { it.sequence }.sorted())
+        assertTrue(firstChunkReceipts.all { it.from == 0 && it.to == 1 })
+        assertTrue(secondChunkReceipts.all { it.from == 2 && it.to == 0 })
+        assertTrue(factory.packetReceipts().all { !it.receivedAt.isNegative() })
+    }
+
+    @Test
+    @Timeout(30)
+    fun `data chunk node program 2 nodes`() {
+        val nodeCount = 2
+        val factory = DataChunkNodeProgramFactory(
+            nodeCount = nodeCount,
+            chunks = listOf(
+                DataChunkNodeProgramFactory.DataChunk(
+                    sizeBytes = 2000,
+                    at = 10.seconds,
+                    from = 0,
+                    to = 1
+                ),
+            )
+        )
+
+        val builder = TestStarNetworkBuilder2()
+        (0 until nodeCount).forEach { builder.node("node-$it") }
+        builder.linkAllToRouter(
+            latency = 200.milliseconds.toJavaDuration(),
+            qdiscFactory = fifoQDiscFactory(1_000_000L)
+        )
+
+        val runner = SimulatedRunner(
+            nodeFactory = factory,
+            networkEngine = UdpSimNetworkEngineImpl(builder.build()),
+            maxSimulatedRunDuration = 100.seconds
+        )
+
+        try {
+            runner.run()
+        } catch (t: Throwable) {
+            println(factory.debugState())
+            throw t
+        }
+
+        val firstChunkReceipts = factory.packetReceipts(0)
+        firstChunkReceipts.forEach {
+            println("${it.receivedAt.inWholeMilliseconds}\t${it.sequence}\t${it.totalPackets}")
+        }
     }
 
     @Test
