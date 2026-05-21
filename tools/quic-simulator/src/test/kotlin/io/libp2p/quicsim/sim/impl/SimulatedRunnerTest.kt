@@ -10,6 +10,7 @@ import io.libp2p.protocol.ProtocolHandler
 import io.libp2p.protocol.ProtocolMessageHandler
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.core.schedule.impl.submitAfterDelay
+import io.libp2p.quicsim.program.DataChunkMetrics
 import io.libp2p.quicsim.program.DataChunkNodeProgramFactory
 import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
@@ -372,9 +373,8 @@ class SimulatedRunnerTest {
     @Timeout(30)
     fun `check QUIC slow start`() {
         val result = SimulatedQuicScenarioRunner().run(QuicScenarios.slowStart())
-        val factory = result.nodeProgramFactory
 
-        val firstChunkReceipts = factory.packetReceipts()
+        val firstChunkReceipts = DataChunkMetrics.packetReceipts(result.events)
         firstChunkReceipts.forEach {
             println("${it.receivedAt.inWholeMilliseconds}\t${it.sequence}\t${it.totalPackets}")
         }

@@ -3,6 +3,7 @@ package io.libp2p.quicsim.runner
 import io.libp2p.quicsim.program.DataChunkNodeProgramFactory
 import io.libp2p.quicsim.program.NodeProgramFactory
 import io.libp2p.quicsim.scenario.QuicScenario
+import io.libp2p.quicsim.scenario.QuicScenarioEventSource
 import io.libp2p.quicsim.scenario.QuicScenarioResult
 import io.libp2p.quicsim.scenario.QuicScenarioRunner
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
@@ -36,7 +37,8 @@ class SimulatedQuicScenarioRunner(
         return QuicScenarioResult(
             scenarioName = scenario.name,
             runnerName = "simulated",
-            nodeProgramFactory = nodeProgramFactory
+            nodeProgramFactory = nodeProgramFactory,
+            events = (nodeProgramFactory as? QuicScenarioEventSource)?.events().orEmpty()
         )
     }
 }

@@ -7,6 +7,10 @@ import io.libp2p.core.multistream.StrictProtocolBinding
 import io.libp2p.protocol.ProtocolHandler
 import io.libp2p.protocol.ProtocolMessageHandler
 import io.libp2p.quicsim.core.schedule.TimePoint
+import io.libp2p.quicsim.scenario.QuicScenarioEvent
+import io.libp2p.quicsim.scenario.QuicScenarioEventSink
+import io.libp2p.quicsim.scenario.QuicScenarioEventSource
+import io.libp2p.quicsim.scenario.RecordingQuicScenarioEventSink
 import io.libp2p.quicsim.sim.NetworkContext
 import io.libp2p.quicsim.sim.SimContext
 import io.libp2p.quicsim.sim.SimNodeId
@@ -29,7 +33,8 @@ class DataChunkNodeProgramFactory(
     val nodeCount: Int,
     chunks: List<DataChunk>,
     val packetSizeBytes: Int = DEFAULT_PACKET_SIZE_BYTES,
-) : NodeProgramFactory {
+    val eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink(),
+) : NodeProgramFactory, QuicScenarioEventSource {
 
     data class DataChunk(
         val sizeBytes: Int,
@@ -65,8 +70,6 @@ class DataChunkNodeProgramFactory(
     private val indexedChunks: List<IndexedDataChunk>
     private val chunksBySender: Map<SimNodeId, List<IndexedDataChunk>>
     private val chunksByReceiver: Map<SimNodeId, List<IndexedDataChunk>>
-    private val receipts = Collections.synchronizedList(mutableListOf<PacketReceipt>())
-    private val sends = Collections.synchronizedList(mutableListOf<ChunkSend>())
     private val receiptCounts = ConcurrentHashMap<Int, AtomicInteger>()
     private val sentChunkIndices = ConcurrentHashMap.newKeySet<Int>()
     private val connectedNodeIds = List(nodeCount) { ConcurrentHashMap.newKeySet<SimNodeId>() }
@@ -94,12 +97,17 @@ class DataChunkNodeProgramFactory(
         return DataChunkNodeProgram(id)
     }
 
-    fun packetReceipts(): List<PacketReceipt> = synchronized(receipts) { receipts.toList() }
+    override fun events(): List<QuicScenarioEvent> =
+        (eventSink as? QuicScenarioEventSource)?.events().orEmpty()
+
+    fun packetReceipts(): List<PacketReceipt> =
+        DataChunkMetrics.packetReceipts(events())
 
     fun packetReceipts(chunkIndex: Int): List<PacketReceipt> =
         packetReceipts().filter { it.chunkIndex == chunkIndex }
 
-    fun chunkSends(): List<ChunkSend> = synchronized(sends) { sends.toList() }
+    fun chunkSends(): List<ChunkSend> =
+        DataChunkMetrics.chunkSends(events())
 
     fun debugState(): String {
         val receiptCountsSnapshot = indexedChunks.associate { chunk ->
@@ -141,7 +149,18 @@ class DataChunkNodeProgramFactory(
             "Packet route ${receipt.from}->${receipt.to} does not match chunk ${receipt.chunkIndex}"
         }
 
-        receipts += receipt
+        eventSink.record(
+            QuicScenarioEvent.DataChunkPacketReceived(
+                nodeId = receipt.to,
+                at = receipt.receivedAt,
+                chunkIndex = receipt.chunkIndex,
+                sequence = receipt.sequence,
+                totalPackets = receipt.totalPackets,
+                payloadBytes = receipt.payloadBytes,
+                from = receipt.from,
+                to = receipt.to
+            )
+        )
         receiptCounts.computeIfAbsent(receipt.chunkIndex) { AtomicInteger() }.incrementAndGet()
     }
 
@@ -190,6 +209,13 @@ class DataChunkNodeProgramFactory(
                         .thenAccept { connection ->
                             connections[nodeId] = connection
                             connectedNodeIds[simNodeId] += nodeId
+                            eventSink.record(
+                                QuicScenarioEvent.NodeConnected(
+                                    nodeId = simNodeId,
+                                    at = now(),
+                                    remoteNodeId = nodeId
+                                )
+                            )
                         }
                 }
 
@@ -231,8 +257,16 @@ class DataChunkNodeProgramFactory(
                 val connection = connections[target]
                     ?: throw IllegalStateException("Node $simNodeId is not connected to node $target")
                 val sentAt = now()
-                sends += ChunkSend(indexedChunk.index, simNodeId, target, sentAt)
                 sentChunkIndices += indexedChunk.index
+                eventSink.record(
+                    QuicScenarioEvent.DataChunkSent(
+                        nodeId = simNodeId,
+                        at = sentAt,
+                        chunkIndex = indexedChunk.index,
+                        from = simNodeId,
+                        to = target
+                    )
+                )
 
                 connection.muxerSession()
                     .createStream(binding)

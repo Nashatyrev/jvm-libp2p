@@ -4,6 +4,7 @@ import io.libp2p.quicsim.core.schedule.impl.toScheduledExecutorService
 import io.libp2p.quicsim.program.DataChunkNodeProgramFactory
 import io.libp2p.quicsim.program.NodeProgramFactory
 import io.libp2p.quicsim.scenario.QuicScenario
+import io.libp2p.quicsim.scenario.QuicScenarioEventSource
 import io.libp2p.quicsim.scenario.QuicScenarioResult
 import io.libp2p.quicsim.scenario.QuicScenarioRunner
 import java.util.concurrent.CompletableFuture
@@ -55,7 +56,8 @@ class LocalQuicScenarioRunner(
         return QuicScenarioResult(
             scenarioName = scenario.name,
             runnerName = "local",
-            nodeProgramFactory = nodeProgramFactory
+            nodeProgramFactory = nodeProgramFactory,
+            events = (nodeProgramFactory as? QuicScenarioEventSource)?.events().orEmpty()
         )
     }
 }

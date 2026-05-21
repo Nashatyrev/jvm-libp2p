@@ -16,7 +16,8 @@ data class QuicScenario<F : NodeProgramFactory>(
 data class QuicScenarioResult<F : NodeProgramFactory>(
     val scenarioName: String,
     val runnerName: String,
-    val nodeProgramFactory: F
+    val nodeProgramFactory: F,
+    val events: List<QuicScenarioEvent> = emptyList()
 )
 
 interface QuicScenarioRunner {
