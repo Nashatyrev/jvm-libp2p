@@ -51,7 +51,7 @@ class FifoUdpSimQueueDiscipline(
         return ready
     }
 
-    override fun advanceAndExecuteAllImpl(advanceDuration: Duration) {
+    override fun executePendingImpl() {
     }
 
     override fun nextTaskDurationImpl(): Duration? =
