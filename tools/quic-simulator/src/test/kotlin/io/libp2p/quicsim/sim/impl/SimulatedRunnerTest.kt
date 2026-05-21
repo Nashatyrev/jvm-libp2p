@@ -15,6 +15,8 @@ import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
 import io.libp2p.quicsim.program.SampleGossipNodeProgram
 import io.libp2p.quicsim.runner.SimulatedRunner
+import io.libp2p.quicsim.runner.SimulatedQuicScenarioRunner
+import io.libp2p.quicsim.scenario.QuicScenarios
 import io.libp2p.quicsim.sim.NetworkContext
 import io.libp2p.quicsim.sim.SimContext
 import io.libp2p.quicsim.sim.SimNodeId
@@ -369,46 +371,8 @@ class SimulatedRunnerTest {
     @Test
     @Timeout(30)
     fun `check QUIC slow start`() {
-        val nodeCount = 2
-        val factory = DataChunkNodeProgramFactory(
-            nodeCount = nodeCount,
-            chunks = listOf(
-                DataChunkNodeProgramFactory.DataChunk(
-                    sizeBytes = 1_000_000,
-                    at = 10.seconds,
-                    from = 0,
-                    to = 1
-                ),
-                // transmission would end at about 15s
-                // let's see if 'slow start' is in effect after another 15s
-                DataChunkNodeProgramFactory.DataChunk(
-                    sizeBytes = 1_000_000,
-                    at = 30.seconds,
-                    from = 0,
-                    to = 1
-                ),
-            )
-        )
-
-        val builder = TestStarNetworkBuilder2()
-        (0 until nodeCount).forEach { builder.node("node-$it") }
-        builder.linkAllToRouter(
-            latency = 100.milliseconds.toJavaDuration(),
-            qdiscFactory = fifoQDiscFactory(1_000_000L)
-        )
-
-        val runner = SimulatedRunner(
-            nodeFactory = factory,
-            networkEngine = UdpSimNetworkEngineImpl(builder.build()),
-            maxSimulatedRunDuration = 100.seconds
-        )
-
-        try {
-            runner.run()
-        } catch (t: Throwable) {
-            println(factory.debugState())
-            throw t
-        }
+        val result = SimulatedQuicScenarioRunner().run(QuicScenarios.slowStart())
+        val factory = result.nodeProgramFactory
 
         val firstChunkReceipts = factory.packetReceipts()
         firstChunkReceipts.forEach {
