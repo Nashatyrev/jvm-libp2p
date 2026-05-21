@@ -8,6 +8,8 @@ import kotlin.time.Duration.Companion.ZERO
 abstract class PacketProcessorAdapter<TPacket> : PacketProcessor<TPacket> {
     private var cumulativeAdvanceMutable: Duration = ZERO
     val cumulativeAdvance get() = cumulativeAdvanceMutable
+    private var pendingAdvanceDuration: Duration = ZERO
+    private var pendingExecution = false
 
     private var nextDuration by lazyVar { nextTaskDurationImpl() }
     var deliverRequests = 0L
@@ -31,9 +33,10 @@ abstract class PacketProcessorAdapter<TPacket> : PacketProcessor<TPacket> {
         return ret
     }
 
-    override fun advanceAndExecuteAll(advanceDuration: Duration) {
+    override fun advance(advanceDuration: Duration) {
         advanceRequests++
         cumulativeAdvanceMutable += advanceDuration
+        pendingAdvanceDuration += advanceDuration
         if (nextDuration == null) {
             return
         }
@@ -43,6 +46,16 @@ abstract class PacketProcessorAdapter<TPacket> : PacketProcessor<TPacket> {
         if (newNexDur > ZERO) {
             return
         }
+        pendingExecution = true
+    }
+
+    override fun executePending() {
+        if (!pendingExecution) {
+            return
+        }
+        val advanceDuration = pendingAdvanceDuration
+        pendingAdvanceDuration = ZERO
+        pendingExecution = false
         advanceCalls++
         nextDurationCalls++
         advanceAndExecuteAllImpl(advanceDuration)

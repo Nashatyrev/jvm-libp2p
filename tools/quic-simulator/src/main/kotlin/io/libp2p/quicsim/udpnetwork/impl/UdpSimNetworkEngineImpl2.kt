@@ -84,7 +84,7 @@ class UdpSimNetworkEngineImpl2(
         return deliveredPackets
     }
 
-    override fun advanceAndExecuteAll(advanceDuration: Duration) {
+    override fun advance(advanceDuration: Duration) {
         cumulativeAdvanceMutable += advanceDuration
 
     }

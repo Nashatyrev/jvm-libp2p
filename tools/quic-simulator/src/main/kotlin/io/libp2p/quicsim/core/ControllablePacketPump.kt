@@ -11,8 +11,12 @@ class ControllablePacketPump<TPacket>(
 
     val aggregateControllable = AggregateControllable(listOf(packetProcessor1, packetProcessor2))
 
-    override fun advanceAndExecuteAll(advanceDuration: Duration) {
-        aggregateControllable.advanceAndExecuteAll(advanceDuration)
+    override fun advance(advanceDuration: Duration) {
+        aggregateControllable.advance(advanceDuration)
+    }
+
+    override fun executePending() {
+        aggregateControllable.executePending()
         pumpPackets()
     }
 

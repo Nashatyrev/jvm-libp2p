@@ -42,20 +42,24 @@ class DeterministicScheduler : Controllable, SimpleScheduler, MonotonicTimer {
         )
     }
 
-    override fun advanceAndExecuteAll(advanceDuration: Duration) {
+    override fun advance(advanceDuration: Duration) {
         require(!advanceDuration.isNegative()) { "advanceDuration must be non-negative" }
-        val target = currentTime + advanceDuration
+        val targetTime = currentTime + advanceDuration
+        val nextTask = queue.peek()
+        require(nextTask == null || nextTask.dueAt >= targetTime) {
+            "Cannot advance to $targetTime with pending task scheduled at ${nextTask.dueAt}"
+        }
+        currentTime = targetTime
+    }
 
+    override fun executePending() {
         while (true) {
             val next = queue.peek() ?: break
-            if (next.dueAt > target) break
+            if (next.dueAt > currentTime) break
 
             queue.poll()
-            currentTime = next.dueAt
             next.task.run()
         }
-
-        currentTime = target
     }
 
     override fun nextTaskDuration(): Duration? {

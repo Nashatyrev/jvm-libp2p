@@ -56,9 +56,13 @@ class SimPacketPump(
 
     val pump = ControllablePacketPump(simNet, udpNetConverted)
 
-    override fun advanceAndExecuteAll(advanceDuration: Duration) {
+    override fun advance(advanceDuration: Duration) {
         nanosPassed.updateAndGet { it + advanceDuration.inWholeNanoseconds }
-        pump.advanceAndExecuteAll(advanceDuration)
+        pump.advance(advanceDuration)
+    }
+
+    override fun executePending() {
+        pump.executePending()
     }
 
     override fun nextTaskDuration(): Duration? =

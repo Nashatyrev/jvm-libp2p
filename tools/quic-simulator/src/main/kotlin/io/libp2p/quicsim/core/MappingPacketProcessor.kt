@@ -18,6 +18,14 @@ class MappingPacketProcessor<TOuter, TInner>(
         return delegate.deliver(mappedInbound).map(mapToOuter)
     }
 
+    override fun advance(advanceDuration: Duration) {
+        delegate.advance(advanceDuration)
+    }
+
+    override fun executePending() {
+        delegate.executePending()
+    }
+
     override fun advanceAndExecuteAll(advanceDuration: Duration) {
         delegate.advanceAndExecuteAll(advanceDuration)
     }

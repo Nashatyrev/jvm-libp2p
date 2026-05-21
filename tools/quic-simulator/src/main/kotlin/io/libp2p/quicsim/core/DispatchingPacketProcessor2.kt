@@ -24,8 +24,12 @@ class DispatchingPacketProcessor2<TKey, TPacket>(
     }
 
 
-    override fun advanceAndExecuteAll(advanceDuration: Duration) {
-        aggregatePacketProcessor.advanceAndExecuteAll(advanceDuration)
+    override fun advance(advanceDuration: Duration) {
+        aggregatePacketProcessor.advance(advanceDuration)
+    }
+
+    override fun executePending() {
+        aggregatePacketProcessor.executePending()
     }
 
     override fun nextTaskDuration(): Duration? =

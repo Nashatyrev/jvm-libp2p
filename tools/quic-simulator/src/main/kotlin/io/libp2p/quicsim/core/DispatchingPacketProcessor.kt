@@ -27,6 +27,14 @@ class DispatchingPacketProcessor<TKey, TPacket>(
         return ret
     }
 
+    override fun advance(advanceDuration: Duration) {
+        delegates.values.forEach { it.advance(advanceDuration) }
+    }
+
+    override fun executePending() {
+        delegates.values.forEach { it.executePending() }
+    }
+
     override fun advanceAndExecuteAll(advanceDuration: Duration) {
         delegates.values.forEach { it.advanceAndExecuteAll(advanceDuration) }
     }

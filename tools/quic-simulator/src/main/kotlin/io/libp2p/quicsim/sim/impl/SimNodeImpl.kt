@@ -53,9 +53,14 @@ class SimNodeImpl(
         return dispatchingPacketProcessor.deliver(inboundData)
     }
 
-    override fun advanceAndExecuteAll(advanceDuration: Duration) {
+    override fun advance(advanceDuration: Duration) {
         cachedNextTaskDuration = null
-        aggregateControllable.advanceAndExecuteAll(advanceDuration)
+        aggregateControllable.advance(advanceDuration)
+    }
+
+    override fun executePending() {
+        cachedNextTaskDuration = null
+        aggregateControllable.executePending()
     }
 
     override fun nextTaskDuration(): Duration? {

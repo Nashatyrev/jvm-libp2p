@@ -51,7 +51,18 @@ class DeterministicSchedulerTest {
     }
 
     @Test
-    fun `task can schedule another task inside same advance window`() {
+    fun `advance rejects jumping past a scheduled task`() {
+        val scheduler = DeterministicScheduler()
+
+        scheduler.executeAfterDelay(5.milliseconds, Runnable {})
+
+        assertThrows(IllegalArgumentException::class.java) {
+            scheduler.advanceAndExecuteAll(10.milliseconds)
+        }
+    }
+
+    @Test
+    fun `task can schedule another task for a later exact advance`() {
         val scheduler = DeterministicScheduler()
         val executed = mutableListOf<String>()
 
@@ -60,7 +71,8 @@ class DeterministicSchedulerTest {
             scheduler.executeAfterDelay(3.milliseconds, Runnable { executed += "B" })
         })
 
-        scheduler.advanceAndExecuteAll(10.milliseconds)
+        scheduler.advanceAndExecuteAll(5.milliseconds)
+        scheduler.advanceAndExecuteAll(3.milliseconds)
         assertEquals(listOf("A", "B"), executed)
     }
 
@@ -83,7 +95,9 @@ class DeterministicSchedulerTest {
         assertEquals(1, runs)
         assertEquals(10.milliseconds, scheduler.nextTaskDuration())
 
-        scheduler.advanceAndExecuteAll(30.milliseconds)
+        scheduler.advanceAndExecuteAll(10.milliseconds)
+        scheduler.advanceAndExecuteAll(10.milliseconds)
+        scheduler.advanceAndExecuteAll(10.milliseconds)
         assertEquals(4, runs)
     }
 

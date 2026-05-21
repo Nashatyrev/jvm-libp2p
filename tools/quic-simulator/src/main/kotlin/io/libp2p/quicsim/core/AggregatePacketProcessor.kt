@@ -42,12 +42,14 @@ class AggregatePacketProcessor<TPacket, TKey>(
         return ret
     }
 
-    fun advanceAndExecuteAll(advanceDuration: Duration) {
+    fun advance(advanceDuration: Duration) {
         if (advanceDuration > ZERO && outboundPacketBuf.isNotEmpty()) {
             throw IllegalStateException("Advancing without draining outbound packets")
         }
         cumulativeAdvanceMutable += advanceDuration
+    }
 
+    fun executePending() {
         @Suppress("ControlFlowWithEmptyBody")
         while (
             sortingDelegateList.updateFirst { delegate ->
@@ -64,6 +66,11 @@ class AggregatePacketProcessor<TPacket, TKey>(
             }
         ) {
         }
+    }
+
+    fun advanceAndExecuteAll(advanceDuration: Duration) {
+        advance(advanceDuration)
+        executePending()
     }
 
     fun nextTaskDuration(): Duration? =

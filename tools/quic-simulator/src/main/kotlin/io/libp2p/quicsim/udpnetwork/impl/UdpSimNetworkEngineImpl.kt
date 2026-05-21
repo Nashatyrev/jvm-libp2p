@@ -61,8 +61,12 @@ class UdpSimNetworkEngineImpl(
         return deliveredPackets
     }
 
-    override fun advanceAndExecuteAll(advanceDuration: Duration) {
-        aggregateControllable.advanceAndExecuteAll(advanceDuration)
+    override fun advance(advanceDuration: Duration) {
+        aggregateControllable.advance(advanceDuration)
+    }
+
+    override fun executePending() {
+        aggregateControllable.executePending()
     }
 
     override fun nextTaskDuration(): Duration? =

@@ -6,10 +6,12 @@ open class AggregateControllable(
     private val controllables: List<Controllable>
 ) : Controllable {
 
-    override fun advanceAndExecuteAll(advanceDuration: Duration) {
-        controllables.forEach {
-            it.advanceAndExecuteAll(advanceDuration)
-        }
+    override fun advance(advanceDuration: Duration) {
+        controllables.forEach { it.advance(advanceDuration) }
+    }
+
+    override fun executePending() {
+        controllables.forEach { it.executePending() }
     }
 
     override fun nextTaskDuration(): Duration? =

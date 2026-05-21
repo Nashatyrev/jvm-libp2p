@@ -18,8 +18,11 @@ class SimNetImpl(
     override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> =
         nodePacketDispatcher.deliver(inboundData)
 
-    override fun advanceAndExecuteAll(advanceDuration: Duration) =
-        nodePacketDispatcher.advanceAndExecuteAll(advanceDuration)
+    override fun advance(advanceDuration: Duration) =
+        nodePacketDispatcher.advance(advanceDuration)
+
+    override fun executePending() =
+        nodePacketDispatcher.executePending()
 
     override fun nextTaskDuration(): Duration? =
         nodePacketDispatcher.nextTaskDuration()

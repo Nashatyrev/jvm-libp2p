@@ -22,9 +22,12 @@ class EmbeddedChannelDatagramPacketProcessor(
         return drainOutbound()
     }
 
-    override fun advanceAndExecuteAll(advanceDuration: Duration) {
+    override fun advance(advanceDuration: Duration) {
         channel.ticker.time += advanceDuration
         // Time is provided by EmbeddedChannel custom Ticker (NettyTicker), so we should not call advanceTimeBy().
+    }
+
+    override fun executePending() {
         runPendingAndScheduledTasks()
     }
 
