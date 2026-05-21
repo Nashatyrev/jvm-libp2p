@@ -410,7 +410,7 @@ class SimulatedRunnerTest {
             throw t
         }
 
-        val firstChunkReceipts = factory.packetReceipts(0)
+        val firstChunkReceipts = factory.packetReceipts()
         firstChunkReceipts.forEach {
             println("${it.receivedAt.inWholeMilliseconds}\t${it.sequence}\t${it.totalPackets}")
         }
