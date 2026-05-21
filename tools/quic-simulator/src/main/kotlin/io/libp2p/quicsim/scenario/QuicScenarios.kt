@@ -5,10 +5,14 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 object QuicScenarios {
-    fun slowStart(): QuicScenario<DataChunkNodeProgramFactory> {
+    const val SLOW_START = "quic-slow-start"
+
+    fun slowStart(
+        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
+    ): QuicScenario<DataChunkNodeProgramFactory> {
         val nodeCount = 2
         return QuicScenario(
-            name = "quic-slow-start",
+            name = SLOW_START,
             network = QuicNetworkTopology.star(
                 hostCount = nodeCount,
                 latency = 100.milliseconds,
@@ -31,9 +35,19 @@ object QuicScenarios {
                             from = 0,
                             to = 1
                         )
-                    )
+                    ),
+                    eventSink = eventSink
                 )
             }
         )
     }
+
+    fun byName(
+        name: String,
+        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
+    ): QuicScenario<DataChunkNodeProgramFactory> =
+        when (name) {
+            SLOW_START -> slowStart(eventSink)
+            else -> throw IllegalArgumentException("Unknown QUIC scenario: $name")
+        }
 }

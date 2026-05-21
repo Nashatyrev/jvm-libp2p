@@ -2,6 +2,7 @@ package io.libp2p.quicsim.runner
 
 import io.libp2p.core.Host
 import io.libp2p.core.crypto.KeyType
+import io.libp2p.core.crypto.PrivKey
 import io.libp2p.core.dsl.HostBuilder
 import io.libp2p.quicsim.core.schedule.impl.NanoMonotonicTimer
 import io.libp2p.quicsim.core.schedule.impl.toSimpleScheduler
@@ -19,7 +20,8 @@ class LocalRealRunner(
     val nodeFactory: NodeProgramFactory,
     val nodeCount: Int,
     val listenIP: String = "127.0.0.1",
-    val listenPortStartRange: Int = 17000
+    val listenPortStartRange: Int = 17000,
+    val identityFactory: ((Int) -> PrivKey)? = null
 ) {
     lateinit var nodePrograms: List<NodeProgram>
     lateinit var hosts: List<Host>
@@ -51,7 +53,12 @@ class LocalRealRunner(
             .secureTransport(QuicTransport.Companion::ECDSA)
             .protocol(*(protocols.toTypedArray()))
             .listen("/ip4/$listenIP/udp/$port/quic-v1")
-            .builderModifier { nodeProgram.modifyBuilder(simContext, it) }
+            .builderModifier { builder ->
+                identityFactory?.let { factory ->
+                    builder.identity { this.factory = { factory(nodeProgram.simNodeId) } }
+                }
+                nodeProgram.modifyBuilder(simContext, builder)
+            }
             .build()
 
     }
