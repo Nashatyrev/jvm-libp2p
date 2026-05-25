@@ -6,7 +6,7 @@ import io.libp2p.quicsim.scenario.QuicScenario
 import io.libp2p.quicsim.scenario.QuicScenarioEventSource
 import io.libp2p.quicsim.scenario.QuicScenarioResult
 import io.libp2p.quicsim.scenario.QuicScenarioRunner
-import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
+import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl2
 
 class SimulatedQuicScenarioRunner(
     private val ipManager: IPManager = IPManager.Default,
@@ -18,7 +18,7 @@ class SimulatedQuicScenarioRunner(
         val nodeProgramFactory = scenario.createNodeProgramFactory()
         val runner = SimulatedRunner(
             nodeFactory = nodeProgramFactory,
-            networkEngine = UdpSimNetworkEngineImpl(scenario.network.toUdpSimNetwork()),
+            networkEngine = UdpSimNetworkEngineImpl2(scenario.network.toUdpSimNetwork()),
             ipManager = ipManager,
             listenPortStartRange = listenPortStartRange,
             maxSimulatedRunDuration = scenario.maxRunDuration,

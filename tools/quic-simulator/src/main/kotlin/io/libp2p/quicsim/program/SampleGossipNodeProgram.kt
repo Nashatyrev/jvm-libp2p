@@ -10,6 +10,9 @@ import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.pubsub.gossip.GossipRouterEventListener
 import io.libp2p.pubsub.gossip.GossipScoreParams
 import io.libp2p.quicsim.SimLogger
+import io.libp2p.quicsim.core.schedule.TimePoint
+import io.libp2p.quicsim.scenario.QuicScenarioEvent
+import io.libp2p.quicsim.scenario.QuicScenarioEventSink
 import io.libp2p.quicsim.sim.NetworkContext
 import io.libp2p.quicsim.sim.SimContext
 import io.libp2p.quicsim.sim.SimNodeId
@@ -18,6 +21,7 @@ import io.netty.buffer.Unpooled
 import java.nio.charset.StandardCharsets
 import java.util.Optional
 import java.util.Random
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Consumer
 import kotlin.time.Duration
@@ -33,6 +37,7 @@ class SampleGossipNodeProgram(
     testTopicName: String = "/quicsim/test-topic",
     val messageSizeBytes: Int = 1024,
     val initialPublishDelay: Duration = 1.minutes,
+    private val eventSink: QuicScenarioEventSink = QuicScenarioEventSink.Noop,
 ) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed) {
     var log: (String) -> Unit = { println("[SampleGossipNodeProgram] $it") }
 
@@ -51,11 +56,17 @@ class SampleGossipNodeProgram(
     private var lastPublishError: String? = null
     @Volatile
     private var eventsListenerInstalled = false
+    private lateinit var epoch: TimePoint
 
     override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> {
         val simLogger = SimLogger(context.timer)
         log = simLogger::log
         return super.createProtocols(context)
+    }
+
+    override fun start(simContext: SimContext, networkContext: NetworkContext): CompletableFuture<Unit> {
+        epoch = simContext.timer.time()
+        return super.start(simContext, networkContext)
     }
 
     override fun onAllConnected(simContext: SimContext, networkContext: NetworkContext) {
@@ -64,7 +75,16 @@ class SampleGossipNodeProgram(
         installRouterEventLogger()
 
         messageApi.subscribe(Consumer { msg ->
-            parseSenderNodeId(msg.data)?.let { receivedNodeIds += it }
+            parseSenderNodeId(msg.data)?.let { publisherNodeId ->
+                receivedNodeIds += publisherNodeId
+                eventSink.record(
+                    QuicScenarioEvent.GossipMessageReceived(
+                        nodeId = simNodeId,
+                        at = simContext.timer.time() - epoch,
+                        publisherNodeId = publisherNodeId
+                    )
+                )
+            }
         }, testTopic)
         log("subscribed to ${testTopic.topic}")
 

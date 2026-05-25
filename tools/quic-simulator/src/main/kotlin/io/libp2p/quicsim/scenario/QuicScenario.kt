@@ -3,7 +3,7 @@ package io.libp2p.quicsim.scenario
 import io.libp2p.quicsim.program.NodeProgramFactory
 import kotlin.time.Duration
 
-data class QuicScenario<F : NodeProgramFactory>(
+data class QuicScenario<out F : NodeProgramFactory>(
     val name: String,
     val network: QuicNetworkTopology,
     val maxRunDuration: Duration,

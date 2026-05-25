@@ -21,7 +21,8 @@ class ShadowQuicScenarioRunner(
     private val workDir: Path = Files.createTempDirectory("quic-shadow-"),
     private val listenPortStartRange: Int = 17000,
     private val nodeIpPrefix: String = "11.0.0.",
-    private val parallelism: Int = 1
+    private val parallelism: Int = 1,
+    private val javaOptions: List<String> = DEFAULT_SHADOW_NODE_JAVA_OPTIONS
 ) : QuicScenarioRunner {
 
     override fun <F : NodeProgramFactory> run(scenario: QuicScenario<F>): QuicScenarioResult<F> {
@@ -34,7 +35,8 @@ class ShadowQuicScenarioRunner(
             classpath = classpath,
             eventsDir = eventsDir,
             listenPortStartRange = listenPortStartRange,
-            nodeIpPrefix = nodeIpPrefix
+            nodeIpPrefix = nodeIpPrefix,
+            javaOptions = javaOptions
         ).build()
         val configPath = workDir.resolve("shadow.yaml")
         configPath.writeText(config)
@@ -70,6 +72,15 @@ class ShadowQuicScenarioRunner(
             events = events
         )
     }
+
+    private companion object {
+        val DEFAULT_SHADOW_NODE_JAVA_OPTIONS = listOf(
+            "-Xmx96m",
+            "-XX:MaxDirectMemorySize=32m",
+            "-XX:ReservedCodeCacheSize=32m",
+            "-Xss256k"
+        )
+    }
 }
 
 class ShadowConfigBuilder(
@@ -78,7 +89,8 @@ class ShadowConfigBuilder(
     private val classpath: String,
     private val eventsDir: Path,
     private val listenPortStartRange: Int,
-    private val nodeIpPrefix: String = "11.0.0."
+    private val nodeIpPrefix: String = "11.0.0.",
+    private val javaOptions: List<String> = emptyList()
 ) {
     fun build(): String =
         buildString {
@@ -111,7 +123,7 @@ class ShadowConfigBuilder(
         }
 
     private fun shadowNodeArgs(nodeId: Int): List<String> =
-        listOf(
+        javaOptions + listOf(
             "-cp",
             classpath,
             "io.libp2p.quicsim.runner.shadow.ShadowScenarioNode",

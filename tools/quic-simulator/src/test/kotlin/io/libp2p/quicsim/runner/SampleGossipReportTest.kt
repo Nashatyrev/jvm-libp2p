@@ -1,0 +1,68 @@
+package io.libp2p.quicsim.runner
+
+import io.libp2p.quicsim.program.GossipMetrics
+import io.libp2p.quicsim.runner.shadow.ShadowQuicScenarioRunner
+import io.libp2p.quicsim.scenario.QuicScenarioResult
+import io.libp2p.quicsim.scenario.QuicScenarios
+import org.junit.jupiter.api.Assumptions.assumeTrue
+import org.junit.jupiter.api.Test
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.Path
+import kotlin.io.path.createDirectories
+import kotlin.io.path.writeText
+import kotlin.time.Duration
+
+class SampleGossipReportTest {
+    @Test
+    fun `write simulated sample gossip message receipt csv`() {
+        writeMessageReceiptCsv(
+            result = SimulatedQuicScenarioRunner().run(QuicScenarios.sampleGossip100()),
+            outputPath = outputDir().resolve("sample-gossip-simulated-message-receipts.csv")
+        )
+    }
+
+    @Test
+    fun `write shadow sample gossip message receipt csv`() {
+        val shadowPath = System.getProperty("shadow.path")
+        assumeTrue(!shadowPath.isNullOrBlank(), "Set -Dshadow.path=/path/to/shadow to run Shadow report")
+
+        writeMessageReceiptCsv(
+            result = ShadowQuicScenarioRunner(
+                shadowPath = Path(shadowPath),
+                workDir = Files.createTempDirectory("quic-shadow-sample-gossip-report-")
+            ).run(QuicScenarios.sampleGossip100()),
+            outputPath = outputDir().resolve("sample-gossip-shadow-message-receipts.csv")
+        )
+    }
+
+    private fun writeMessageReceiptCsv(
+        result: QuicScenarioResult<*>,
+        outputPath: Path
+    ) {
+        outputPath.parent.createDirectories()
+        val csvRows = buildString {
+            appendLine("runner,scenario,time_ns,time_s,receiving_node_id,publishing_node_id")
+            GossipMetrics.messageReceipts(result.events).forEach { receipt ->
+                appendLine(
+                    listOf(
+                        result.runnerName,
+                        result.scenarioName,
+                        receipt.receivedAt.inWholeNanoseconds,
+                        seconds(receipt.receivedAt),
+                        receipt.receivingNodeId,
+                        receipt.publishingNodeId
+                    ).joinToString(",")
+                )
+            }
+        }
+        outputPath.writeText(csvRows)
+        println("Wrote sample gossip message receipt CSV: $outputPath")
+    }
+
+    private fun seconds(duration: Duration): String =
+        "%.9f".format(duration.inWholeNanoseconds / 1_000_000_000.0)
+
+    private fun outputDir(): Path =
+        Path(System.getProperty("sampleGossipReport.dir", "build/reports/sample-gossip"))
+}

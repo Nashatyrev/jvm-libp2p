@@ -70,6 +70,13 @@ object QuicScenarioEventFileCodec {
                 event.totalPackets,
                 event.payloadBytes
             ).joinToString("\t")
+
+            is QuicScenarioEvent.GossipMessageReceived -> listOf(
+                "gossip_message_received",
+                event.nodeId,
+                event.at.inWholeNanoseconds,
+                event.publisherNodeId
+            ).joinToString("\t")
         }
 
     fun decode(line: String): QuicScenarioEvent {
@@ -98,6 +105,12 @@ object QuicScenarioEventFileCodec {
                 payloadBytes = parts[8].toInt(),
                 from = parts[4].toInt(),
                 to = parts[5].toInt()
+            )
+
+            "gossip_message_received" -> QuicScenarioEvent.GossipMessageReceived(
+                nodeId = parts[1].toInt(),
+                at = parts[2].toLong().nanoseconds,
+                publisherNodeId = parts[3].toInt()
             )
 
             else -> throw IllegalArgumentException("Unknown scenario event line: $line")
