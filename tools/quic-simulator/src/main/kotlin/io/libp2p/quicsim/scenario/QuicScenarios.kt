@@ -98,7 +98,7 @@ object QuicScenarios {
             else -> throw IllegalArgumentException("Unknown QUIC scenario: $name")
         }
 
-    private fun createBidirectionalRandomTopology(
+    fun createBidirectionalRandomTopology(
         nodeCount: Int,
         neighboursToConnect: Int,
         seed: Int
@@ -110,18 +110,20 @@ object QuicScenarios {
             "nodeCount * neighboursToConnect must be even for bidirectional topology"
         }
 
+        if (neighboursToConnect == 0) {
+            return (0 until nodeCount).associateWith { emptyList() }
+        }
+
         val random = Random(seed)
-        val permutation = (0 until nodeCount).shuffled(random)
         val adjacency = MutableList(nodeCount) { mutableSetOf<Int>() }
+        val edges = mutableListOf<Pair<Int, Int>>()
 
         val evenDegree = neighboursToConnect and 1.inv()
         val half = evenDegree / 2
-        for (i in permutation.indices) {
-            val a = permutation[i]
+        for (a in 0 until nodeCount) {
             for (step in 1..half) {
-                val b = permutation[(i + step) % nodeCount]
-                adjacency[a] += b
-                adjacency[b] += a
+                val b = (a + step) % nodeCount
+                addTopologyEdge(a, b, adjacency, edges)
             }
         }
 
@@ -129,11 +131,13 @@ object QuicScenarios {
             require(nodeCount % 2 == 0) { "Odd degree requires even nodeCount" }
             val halfNodes = nodeCount / 2
             for (i in 0 until halfNodes) {
-                val a = permutation[i]
-                val b = permutation[(i + halfNodes) % nodeCount]
-                adjacency[a] += b
-                adjacency[b] += a
+                addTopologyEdge(i, i + halfNodes, adjacency, edges)
             }
+        }
+
+        val swapAttempts = maxOf(1_000, edges.size * 20)
+        repeat(swapAttempts) {
+            randomizeTopologyEdgePair(random, adjacency, edges)
         }
 
         check(adjacency.all { it.size == neighboursToConnect }) {
@@ -143,5 +147,55 @@ object QuicScenarios {
         return adjacency
             .mapIndexed { nodeId, peers -> nodeId to peers.toList().sorted() }
             .toMap()
+    }
+
+    private fun addTopologyEdge(
+        a: Int,
+        b: Int,
+        adjacency: MutableList<MutableSet<Int>>,
+        edges: MutableList<Pair<Int, Int>>
+    ) {
+        val edge = if (a < b) a to b else b to a
+        if (adjacency[edge.first].add(edge.second)) {
+            adjacency[edge.second] += edge.first
+            edges += edge
+        }
+    }
+
+    private fun randomizeTopologyEdgePair(
+        random: Random,
+        adjacency: MutableList<MutableSet<Int>>,
+        edges: MutableList<Pair<Int, Int>>
+    ) {
+        if (edges.size < 2) return
+        val firstIndex = random.nextInt(edges.size)
+        var secondIndex = random.nextInt(edges.size - 1)
+        if (secondIndex >= firstIndex) secondIndex++
+
+        val first = edges[firstIndex]
+        val second = edges[secondIndex]
+        val (a, b) = first
+        val (c, d) = second
+        if (setOf(a, b, c, d).size < 4) return
+
+        val candidate = if (random.nextBoolean()) {
+            listOf(a to c, b to d)
+        } else {
+            listOf(a to d, b to c)
+        }.map { (left, right) -> if (left < right) left to right else right to left }
+
+        if (candidate[0] == candidate[1]) return
+        if (candidate.any { (left, right) -> right in adjacency[left] }) return
+
+        adjacency[a] -= b
+        adjacency[b] -= a
+        adjacency[c] -= d
+        adjacency[d] -= c
+        candidate.forEach { (left, right) ->
+            adjacency[left] += right
+            adjacency[right] += left
+        }
+        edges[firstIndex] = candidate[0]
+        edges[secondIndex] = candidate[1]
     }
 }

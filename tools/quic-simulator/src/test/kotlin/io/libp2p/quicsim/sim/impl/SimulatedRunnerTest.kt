@@ -92,18 +92,18 @@ class SimulatedRunnerTest {
     }
 
     @Test
-    fun `simulated runner completes`() {
+    fun sendMessageFromNPublishers() {
         val nodeCount = 100
         val publishersCount = 100
         val neighboursToConnect = 20
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val randomConnectionsByNode: Map<SimNodeId, List<SimNodeId>> =
-            createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = 1234)
+            QuicScenarios.createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = 1234)
 
         val networkBuilder = TestStarNetworkBuilder2()
         (0 until nodeCount).map { networkBuilder.node("node-$it") }
         val qdiscFactory = fifoQDiscFactory(5_000_000L)
-        networkBuilder.linkAllToRouter(Duration.ofMillis(100), qdiscFactory).build()
+        networkBuilder.linkAllToRouter(Duration.ofMillis(10), qdiscFactory).build()
 
         class LoggingUdpNetworkEngineUdp(val delegate: UdpSimNetworkEngine) : UdpSimNetworkEngine by delegate {
             private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
@@ -156,53 +156,6 @@ class SimulatedRunnerTest {
         )
 
         println("Total packet count: " + udpNetworkLogging.packetsCount + ", bytes: " + udpNetworkLogging.throughputBytes)
-    }
-
-    private fun createBidirectionalRandomTopology(
-        nodeCount: Int,
-        neighboursToConnect: Int,
-        seed: Int
-    ): Map<SimNodeId, List<SimNodeId>> {
-        require(neighboursToConnect in 0 until nodeCount) {
-            "neighboursToConnect must be in [0, $nodeCount), got $neighboursToConnect"
-        }
-        require((nodeCount * neighboursToConnect) % 2 == 0) {
-            "nodeCount * neighboursToConnect must be even for bidirectional topology"
-        }
-
-        val random = Random(seed)
-        val permutation = (0 until nodeCount).shuffled(random)
-        val adjacency = MutableList(nodeCount) { mutableSetOf<Int>() }
-
-        val evenDegree = neighboursToConnect and 1.inv()
-        val half = evenDegree / 2
-        for (i in permutation.indices) {
-            val a = permutation[i]
-            for (step in 1..half) {
-                val b = permutation[(i + step) % nodeCount]
-                adjacency[a] += b
-                adjacency[b] += a
-            }
-        }
-
-        if ((neighboursToConnect and 1) == 1) {
-            require(nodeCount % 2 == 0) { "Odd degree requires even nodeCount" }
-            val halfNodes = nodeCount / 2
-            for (i in 0 until halfNodes) {
-                val a = permutation[i]
-                val b = permutation[(i + halfNodes) % nodeCount]
-                adjacency[a] += b
-                adjacency[b] += a
-            }
-        }
-
-        check(adjacency.all { it.size == neighboursToConnect }) {
-            "Failed to generate bidirectional topology: nodeCount=$nodeCount degree=$neighboursToConnect"
-        }
-
-        return adjacency
-            .mapIndexed { nodeId, peers -> nodeId to peers.toList().sorted() }
-            .toMap()
     }
 
     @Test
