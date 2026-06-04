@@ -145,7 +145,7 @@ class SampleGossipNodeProgram(
             }
 
             override fun notifyUnseenMessage(peerId: PeerId, msg: PubsubMessage) {
-                log("[$simNodeId] router unseen from=${peerId.toBase58().take(12)} msgId=${msg.messageId} topics=${msg.topics}")
+//                log("[$simNodeId] router unseen from=${peerId.toBase58().take(12)} msgId=${msg.messageId} topics=${msg.topics}")
             }
 
             override fun notifySeenMessage(
@@ -153,7 +153,7 @@ class SampleGossipNodeProgram(
                 msg: PubsubMessage,
                 validationResult: Optional<ValidationResult>
             ) {
-                log("[$simNodeId] router seen from=${peerId.toBase58().take(12)} msgId=${msg.messageId} result=$validationResult")
+//                log("[$simNodeId] router seen from=${peerId.toBase58().take(12)} msgId=${msg.messageId} result=$validationResult")
             }
 
             override fun notifyUnseenInvalidMessage(peerId: PeerId, msg: PubsubMessage) {
@@ -161,7 +161,7 @@ class SampleGossipNodeProgram(
             }
 
             override fun notifyUnseenValidMessage(peerId: PeerId, msg: PubsubMessage) {
-                log("[$simNodeId] router unseen VALID from=${peerId.toBase58().take(12)} msgId=${msg.messageId} topics=${msg.topics}")
+//                log("[$simNodeId] router unseen VALID from=${peerId.toBase58().take(12)} msgId=${msg.messageId} topics=${msg.topics}")
             }
 
             override fun notifyMeshed(peerId: PeerId, topic: String) {
