@@ -9,8 +9,6 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import kotlin.system.measureTimeMillis
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.nanoseconds
-import kotlin.time.toJavaDuration
 
 class UdpNetworkPerformanceTest {
 
@@ -25,8 +23,8 @@ class UdpNetworkPerformanceTest {
         val builder = TestStarNetworkBuilder2()
         val nodes = List(NODE_COUNT) { index -> builder.node("node-$index") }
         var counter = 0L
-        builder.linkAllToRouter(10.milliseconds.toJavaDuration()) { latency ->
-            FifoUdpSimQueueDiscipline(Bandwidth(50_000 + (++counter)), latency.toNanos().nanoseconds)
+        builder.linkAllToRouter(10.milliseconds) { latency ->
+            FifoUdpSimQueueDiscipline(Bandwidth(50_000 + (++counter)), latency)
         }
         val engine = UdpSimNetworkEngineImpl2(builder.build())
 

@@ -2,8 +2,7 @@ package io.libp2p.quicsim.udpnetwork
 
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimLinks
-import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
-import java.time.Duration
+import kotlin.time.Duration
 
 class TestStarNetworkBuilder2 {
     private val nodes = linkedMapOf<String, UdpSimNode>()
