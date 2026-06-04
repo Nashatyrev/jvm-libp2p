@@ -19,6 +19,7 @@ import io.libp2p.etc.STREAM
 import io.libp2p.etc.types.*
 import io.libp2p.etc.util.MultiaddrUtils
 import io.libp2p.etc.util.netty.nettyInitializer
+import io.libp2p.security.InvalidRemotePubKey
 import io.libp2p.security.tls.Libp2pTrustManager
 import io.libp2p.security.tls.buildCert
 import io.libp2p.security.tls.getJavaKey
@@ -65,6 +66,7 @@ class QuicTransport @JvmOverloads constructor(
 
     private val listeners = mutableMapOf<Multiaddr, Channel>()
     private val channels = mutableListOf<Channel>()
+    private var clientParentChannel: CompletableFuture<Channel>? = null
 
     private var allocator by lazyVar { AdaptiveByteBufAllocator(true) }
     private var multistreamProtocol: MultistreamProtocol = MultistreamProtocolV1
@@ -133,11 +135,16 @@ class QuicTransport @JvmOverloads constructor(
             .map { (_, ch) -> ch }
             .map { it.close().toVoidCompletableFuture() }
 
+        val clientParentClosed = clientParentChannel
+            ?.thenCompose { it.close().toVoidCompletableFuture() }
+
         val channelsClosed = channels
             .toMutableList() // need a copy to avoid potential co-modification problems
             .map { it.close().toVoidCompletableFuture() }
 
-        val everythingThatNeedsToClose = unbindsCompleted.union(channelsClosed)
+        val everythingThatNeedsToClose = unbindsCompleted
+            .union(channelsClosed)
+            .let { if (clientParentClosed == null) it else it + clientParentClosed }
         val allClosed = CompletableFuture.allOf(*everythingThatNeedsToClose.toTypedArray())
 
         return allClosed.thenCompose {
@@ -185,15 +192,10 @@ class QuicTransport @JvmOverloads constructor(
     ): CompletableFuture<Connection> {
         if (closed) throw Libp2pException("Transport is closed")
 
-        val trustManager = Libp2pTrustManager(Optional.ofNullable(addr.getPeerId()))
-        val sslContext = quicSslContext(true, trustManager)
-        val requestsHandler = QuicClientCodecBuilder()
-            .sslEngineProvider { q -> sslContext.newEngine(q.alloc()) }
-            .sslTaskExecutor(null) // IMMEDIATE Executor
-            .quicheConfig(quicheClientConfig)
-            .build()
+        val expectedPeerId = addr.getPeerId()
+            ?: throw Libp2pException("Missing peer id in QUIC dial address $addr")
 
-        return datagramChannelFactory.createClientChannel(requestsHandler)
+        return clientParentChannel()
             .thenCompose {
                 QuicChannel.newBootstrap(it)
                     .streamOption(ChannelOption.ALLOCATOR, allocator)
@@ -211,19 +213,25 @@ class QuicTransport @JvmOverloads constructor(
 
                 connection.setMuxerSession(QuicMuxerSession(quicChannel, connection))
 
-                val pubHash = Multihash.of(addr.getPeerId()!!.bytes.toByteBuf())
+                val peerCertificates = (quicChannel.sslEngine()
+                    ?: throw IllegalStateException("Missing QUIC SSL engine for client channel"))
+                    .session.peerCertificates
+                val remotePeerId = verifyAndExtractPeerId(peerCertificates)
+                if (remotePeerId != expectedPeerId) {
+                    quicChannel.close()
+                    throw InvalidRemotePubKey()
+                }
+
+                val pubHash = Multihash.of(expectedPeerId.bytes.toByteBuf())
                 val remotePubKey = if (pubHash.desc.digest == Multihash.Digest.Identity) {
                     unmarshalPublicKey(pubHash.bytes.toByteArray())
                 } else {
-                    val peerCertificates = (quicChannel.sslEngine()
-                        ?: throw IllegalStateException("Missing QUIC SSL engine for client channel"))
-                        .session.peerCertificates
                     getPublicKeyFromCert(peerCertificates)
                 }
                 connection.setSecureSession(
                     SecureChannel.Session(
                         PeerId.fromPubKey(localKey.publicKey()),
-                        addr.getPeerId()!!,
+                        expectedPeerId,
                         remotePubKey,
                         null
                     )
@@ -236,6 +244,46 @@ class QuicTransport @JvmOverloads constructor(
 
                 connection
             }
+    }
+
+    private fun clientParentChannel(): CompletableFuture<Channel> {
+        val existing = synchronized(this@QuicTransport) {
+            clientParentChannel?.takeUnless { it.isCompletedExceptionally }
+        }
+        if (existing != null) {
+            return existing
+        }
+
+        val created = datagramChannelFactory.createClientChannel(clientTransportBuilder())
+        synchronized(this@QuicTransport) {
+            val current = clientParentChannel
+            if (current != null && !current.isCompletedExceptionally) {
+                created.thenAccept { it.close() }
+                return current
+            }
+
+            clientParentChannel = created
+            created.thenAccept { parent ->
+                parent.closeFuture().addListener {
+                    synchronized(this@QuicTransport) {
+                        if (clientParentChannel === created) {
+                            clientParentChannel = null
+                        }
+                    }
+                }
+            }
+            return created
+        }
+    }
+
+    private fun clientTransportBuilder(): ChannelHandler {
+        val trustManager = Libp2pTrustManager(Optional.empty())
+        val sslContext = quicSslContext(true, trustManager)
+        return QuicClientCodecBuilder()
+            .sslEngineProvider { q -> sslContext.newEngine(q.alloc()) }
+            .sslTaskExecutor(null) // IMMEDIATE Executor
+            .quicheConfig(quicheClientConfig)
+            .build()
     }
 
     private fun registerChannel(ch: Channel) {
