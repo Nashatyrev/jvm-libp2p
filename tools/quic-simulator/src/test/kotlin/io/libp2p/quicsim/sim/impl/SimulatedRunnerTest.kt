@@ -138,7 +138,11 @@ class SimulatedRunnerTest {
                         simNodeId = id,
                         connectToNodeIds = randomConnectionsByNode.getValue(id),
                         publishersCount = publishersCount,
-                        params = GossipParams(),
+                        params = GossipParams(
+//                            // switch off IHAVE
+//                            gossipFactor = 0.0,
+//                            DLazy = 0,
+                            ),
                         randomSeed = id.toLong(),
                         messageSizeBytes = 1024,
                         initialPublishDelay = 30.seconds,
@@ -156,6 +160,7 @@ class SimulatedRunnerTest {
         )
 
         println("Total packet count: " + udpNetworkLogging.packetsCount + ", bytes: " + udpNetworkLogging.throughputBytes)
+        println("Params: neighboursToConnect: $neighboursToConnect")
     }
 
     @Test

@@ -91,7 +91,9 @@ class SampleGossipNodeProgram(
         val publisher = messageApi.createPublisher(networkContext.myHost.privKey)
         publishScheduled = true
         if (simNodeId < publishersCount) {
-            simContext.scheduler.executeAfterDelay(initialPublishDelay) {
+            val elapsedSinceStart = simContext.timer.time() - epoch
+            val publishDelay = (initialPublishDelay - elapsedSinceStart).coerceAtLeast(Duration.ZERO)
+            simContext.scheduler.executeAfterDelay(publishDelay) {
                 publishAttempted = true
                 log("[$simNodeId] publishing to ${testTopic.topic}")
                 publisher.publish(Unpooled.wrappedBuffer(createPayload()), testTopic)
