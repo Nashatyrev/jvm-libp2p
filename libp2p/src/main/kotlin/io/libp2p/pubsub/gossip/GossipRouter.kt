@@ -46,6 +46,7 @@ import kotlin.collections.shuffled
 import kotlin.collections.sortedBy
 import kotlin.collections.take
 import kotlin.collections.toMutableSet
+import kotlin.math.absoluteValue
 import kotlin.math.max
 import kotlin.math.min
 
@@ -112,7 +113,8 @@ open class GossipRouter(
     val mesh: MutableMap<Topic, MutableSet<PeerHandler>> = linkedMapOf()
     val eventBroadcaster = GossipRouterEventBroadcaster()
 
-    open val heartbeatInitialDelay: Duration = params.heartbeatInterval
+    open val heartbeatInitialDelay: Duration = /*params.heartbeatInterval*/
+        (random.nextLong().absoluteValue % params.heartbeatInterval.toMillis()).millis
 
     private val lastPublished = linkedMapOf<Topic, Long>()
     private var heartbeatsCount = 0
