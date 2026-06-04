@@ -65,7 +65,7 @@ class SimulatedRunnerTest {
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val networkBuilder = TestStarNetworkBuilder2()
         (0 until nodeCount).map { networkBuilder.node("node-$it") }
-        val qdiscFactory = fifoQDiscFactory(1_000_000L)
+        val qdiscFactory = fifoQDiscFactory(Bandwidth(1_000_000L))
         networkBuilder.linkAllToRouter(Duration.ofMillis(50), qdiscFactory)
 
         val runner = SimulatedRunner(
@@ -96,14 +96,16 @@ class SimulatedRunnerTest {
         val nodeCount = 100
         val publishersCount = 100
         val neighboursToConnect = 20
+        val bandwidth = Bandwidth(50_000_000L)
+        val halfLatency = 10.milliseconds
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val randomConnectionsByNode: Map<SimNodeId, List<SimNodeId>> =
             QuicScenarios.createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = 1234)
 
         val networkBuilder = TestStarNetworkBuilder2()
         (0 until nodeCount).map { networkBuilder.node("node-$it") }
-        val qdiscFactory = fifoQDiscFactory(5_000_000L)
-        networkBuilder.linkAllToRouter(Duration.ofMillis(10), qdiscFactory).build()
+        val qdiscFactory = fifoQDiscFactory(bandwidth)
+        networkBuilder.linkAllToRouter(halfLatency.toJavaDuration(), qdiscFactory).build()
 
         class LoggingUdpNetworkEngineUdp(val delegate: UdpSimNetworkEngine) : UdpSimNetworkEngine by delegate {
             private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
@@ -160,7 +162,7 @@ class SimulatedRunnerTest {
         )
 
         println("Total packet count: " + udpNetworkLogging.packetsCount + ", bytes: " + udpNetworkLogging.throughputBytes)
-        println("Params: neighboursToConnect: $neighboursToConnect")
+        println("Params: neighboursToConnect: $neighboursToConnect, publishersCount: $publishersCount")
     }
 
     @Test
@@ -225,7 +227,7 @@ class SimulatedRunnerTest {
         (0 until nodeCount).forEach { builder.node("node-$it") }
         builder.linkAllToRouter(
             Duration.ofMillis(10),
-            qdiscFactory = fifoQDiscFactory(1_000_000L)
+            qdiscFactory = fifoQDiscFactory(Bandwidth(1_000_000L))
         )
 
         val runner = SimulatedRunner(
@@ -271,7 +273,7 @@ class SimulatedRunnerTest {
         (0 until nodeCount).forEach { builder.node("node-$it") }
         builder.linkAllToRouter(
             latency = 100.milliseconds.toJavaDuration(),
-            qdiscFactory = fifoQDiscFactory(1_000_000L)
+            qdiscFactory = fifoQDiscFactory(Bandwidth(1_000_000L))
         )
 
         val runner = SimulatedRunner(
@@ -346,7 +348,7 @@ class SimulatedRunnerTest {
         builder.node("node-1")
         builder.linkAllToRouter(
             Duration.ofMillis(100),
-            qdiscFactory = fifoQDiscFactory(10_000L)
+            qdiscFactory = fifoQDiscFactory(Bandwidth(10_000L))
         )
 
         class LoggingUdpNetworkEngineUdp(val delegate: UdpSimNetworkEngine) : UdpSimNetworkEngine by delegate {
@@ -450,7 +452,7 @@ class SimulatedRunnerTest {
         builder.node("node-1")
         builder.linkAllToRouter(
             Duration.ofMillis(linkLatencyMs),
-            qdiscFactory = fifoQDiscFactory(bandwidthBytesPerSec)
+            qdiscFactory = fifoQDiscFactory(Bandwidth(bandwidthBytesPerSec))
         )
 
         val runner = SimulatedRunner(
@@ -500,9 +502,9 @@ class SimulatedRunnerTest {
     }
 
     private companion object {
-        fun fifoQDiscFactory(bandwidthBytesPerSec: Long): (Duration) -> FifoUdpSimQueueDiscipline = { latency ->
+        fun fifoQDiscFactory(bandwidth: Bandwidth): (Duration) -> FifoUdpSimQueueDiscipline = { latency ->
             FifoUdpSimQueueDiscipline(
-                bandwidth = Bandwidth(bandwidthBytesPerSec),
+                bandwidth = bandwidth,
                 latency = latency.toKotlinDuration()
             )
         }
