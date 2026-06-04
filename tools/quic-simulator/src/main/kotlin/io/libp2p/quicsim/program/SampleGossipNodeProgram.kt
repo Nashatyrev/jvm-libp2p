@@ -71,7 +71,7 @@ class SampleGossipNodeProgram(
 
     override fun onAllConnected(simContext: SimContext, networkContext: NetworkContext) {
         expectedNodeIds = networkContext.allNodes.keys.filter { it < publishersCount }.toSet() - simNodeId
-        log("expected senders: $expectedNodeIds")
+        log("[$simNodeId] expected senders: $expectedNodeIds")
         installRouterEventLogger()
 
         messageApi.subscribe(Consumer { msg ->
@@ -86,24 +86,24 @@ class SampleGossipNodeProgram(
                 )
             }
         }, testTopic)
-        log("subscribed to ${testTopic.topic}")
+        log("[$simNodeId] subscribed to ${testTopic.topic}")
 
         val publisher = messageApi.createPublisher(networkContext.myHost.privKey)
         publishScheduled = true
         if (simNodeId < publishersCount) {
             simContext.scheduler.executeAfterDelay(initialPublishDelay) {
                 publishAttempted = true
-                log("publishing to ${testTopic.topic}")
+                log("[$simNodeId] publishing to ${testTopic.topic}")
                 publisher.publish(Unpooled.wrappedBuffer(createPayload()), testTopic)
                     .whenComplete { _, err ->
                         if (err == null) {
                             publishSucceeded = true
                             lastPublishError = null
-                            log("publish succeeded")
+                            log("[$simNodeId] publish succeeded")
                         } else {
                             publishSucceeded = false
                             lastPublishError = err.message
-                            log("publish failed: ${err.message}")
+                            log("[$simNodeId] publish failed: ${err.message}")
                         }
                     }
             }
@@ -135,15 +135,15 @@ class SampleGossipNodeProgram(
         eventsListenerInstalled = true
         gossipRouter.eventBroadcaster.listeners += object : GossipRouterEventListener {
             override fun notifyDisconnected(peerId: PeerId) {
-                log("router disconnected peer=${peerId.toBase58().take(12)}")
+                log("[$simNodeId] router disconnected peer=${peerId.toBase58().take(12)}")
             }
 
             override fun notifyConnected(peerId: PeerId, peerAddress: Multiaddr) {
-                log("router connected peer=${peerId.toBase58().take(12)} addr=$peerAddress")
+                log("[$simNodeId] router connected peer=${peerId.toBase58().take(12)} addr=$peerAddress")
             }
 
             override fun notifyUnseenMessage(peerId: PeerId, msg: PubsubMessage) {
-//                log("router unseen from=${peerId.toBase58().take(12)} msgId=${msg.messageId} topics=${msg.topics}")
+                log("[$simNodeId] router unseen from=${peerId.toBase58().take(12)} msgId=${msg.messageId} topics=${msg.topics}")
             }
 
             override fun notifySeenMessage(
@@ -151,34 +151,34 @@ class SampleGossipNodeProgram(
                 msg: PubsubMessage,
                 validationResult: Optional<ValidationResult>
             ) {
-                log("router seen from=${peerId.toBase58().take(12)} msgId=${msg.messageId} result=$validationResult")
+                log("[$simNodeId] router seen from=${peerId.toBase58().take(12)} msgId=${msg.messageId} result=$validationResult")
             }
 
             override fun notifyUnseenInvalidMessage(peerId: PeerId, msg: PubsubMessage) {
-                log("router unseen INVALID from=${peerId.toBase58().take(12)} msgId=${msg.messageId}")
+                log("[$simNodeId] router unseen INVALID from=${peerId.toBase58().take(12)} msgId=${msg.messageId}")
             }
 
             override fun notifyUnseenValidMessage(peerId: PeerId, msg: PubsubMessage) {
-//                log("router unseen VALID from=${peerId.toBase58().take(12)} msgId=${msg.messageId} topics=${msg.topics}")
+                log("[$simNodeId] router unseen VALID from=${peerId.toBase58().take(12)} msgId=${msg.messageId} topics=${msg.topics}")
             }
 
             override fun notifyMeshed(peerId: PeerId, topic: String) {
                 if (topic == testTopic.topic) {
-                    log("router MESHED peer=${peerId.toBase58().take(12)} topic=$topic")
+                    log("[$simNodeId] router MESHED peer=${peerId.toBase58().take(12)} topic=$topic")
                 }
             }
 
             override fun notifyPruned(peerId: PeerId, topic: String) {
                 if (topic == testTopic.topic) {
-                    log("router PRUNED peer=${peerId.toBase58().take(12)} topic=$topic")
+                    log("[$simNodeId] router PRUNED peer=${peerId.toBase58().take(12)} topic=$topic")
                 }
             }
 
             override fun notifyRouterMisbehavior(peerId: PeerId, count: Int) {
-                log("router MISBEHAVIOR peer=${peerId.toBase58().take(12)} count=$count")
+                log("[$simNodeId] router MISBEHAVIOR peer=${peerId.toBase58().take(12)} count=$count")
             }
         }
-        log("router event listener installed")
+        log("[$simNodeId] router event listener installed")
     }
 
     private fun createPayload(): ByteArray {
