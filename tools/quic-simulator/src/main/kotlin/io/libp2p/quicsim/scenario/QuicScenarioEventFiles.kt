@@ -77,6 +77,27 @@ object QuicScenarioEventFileCodec {
                 event.at.inWholeNanoseconds,
                 event.publisherNodeId
             ).joinToString("\t")
+
+            is QuicScenarioEvent.AttestationAggregatePublished -> listOf(
+                "attestation_aggregate_published",
+                event.nodeId,
+                event.at.inWholeNanoseconds,
+                event.aggregatorId,
+                event.slot,
+                event.attestationPercent,
+                event.ruleId
+            ).joinToString("\t")
+
+            is QuicScenarioEvent.AttestationAggregateReceived -> listOf(
+                "attestation_aggregate_received",
+                event.nodeId,
+                event.at.inWholeNanoseconds,
+                event.publisherNodeId,
+                event.aggregatorId,
+                event.slot,
+                event.attestationPercent,
+                event.ruleId
+            ).joinToString("\t")
         }
 
     fun decode(line: String): QuicScenarioEvent {
@@ -111,6 +132,25 @@ object QuicScenarioEventFileCodec {
                 nodeId = parts[1].toInt(),
                 at = parts[2].toLong().nanoseconds,
                 publisherNodeId = parts[3].toInt()
+            )
+
+            "attestation_aggregate_published" -> QuicScenarioEvent.AttestationAggregatePublished(
+                nodeId = parts[1].toInt(),
+                at = parts[2].toLong().nanoseconds,
+                aggregatorId = parts[3],
+                slot = parts[4].toLong(),
+                attestationPercent = parts[5].toDouble(),
+                ruleId = parts[6]
+            )
+
+            "attestation_aggregate_received" -> QuicScenarioEvent.AttestationAggregateReceived(
+                nodeId = parts[1].toInt(),
+                at = parts[2].toLong().nanoseconds,
+                publisherNodeId = parts[3].toInt(),
+                aggregatorId = parts[4],
+                slot = parts[5].toLong(),
+                attestationPercent = parts[6].toDouble(),
+                ruleId = parts[7]
             )
 
             else -> throw IllegalArgumentException("Unknown scenario event line: $line")

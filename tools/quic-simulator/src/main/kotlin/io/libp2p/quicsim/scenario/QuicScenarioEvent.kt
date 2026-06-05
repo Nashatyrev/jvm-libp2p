@@ -60,4 +60,23 @@ sealed class QuicScenarioEvent {
         override val at: Duration,
         val publisherNodeId: SimNodeId
     ) : QuicScenarioEvent()
+
+    data class AttestationAggregatePublished(
+        override val nodeId: SimNodeId,
+        override val at: Duration,
+        val aggregatorId: String,
+        val slot: Long,
+        val attestationPercent: Double,
+        val ruleId: String,
+    ) : QuicScenarioEvent()
+
+    data class AttestationAggregateReceived(
+        override val nodeId: SimNodeId,
+        override val at: Duration,
+        val publisherNodeId: SimNodeId,
+        val aggregatorId: String,
+        val slot: Long,
+        val attestationPercent: Double,
+        val ruleId: String,
+    ) : QuicScenarioEvent()
 }
