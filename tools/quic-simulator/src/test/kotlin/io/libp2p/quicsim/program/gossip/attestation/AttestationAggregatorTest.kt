@@ -25,7 +25,11 @@ class AttestationAggregatorTest {
                         AttestationArrivalBucket(200.milliseconds, 40.0),
                     )
                 ),
-                rule = PercentThresholdAggregateRule(60.0, id = "sixty-percent"),
+                rule = AggregatePublishRule(
+                    thresholdPercent = 60.0,
+                    timeIntoSlot = 800.milliseconds,
+                    id = "sixty-percent-or-fixed",
+                ),
             ),
             slotCount = 1,
             slotDuration = 12.seconds,
@@ -39,11 +43,11 @@ class AttestationAggregatorTest {
 
         scheduler.advanceAndExecuteAll(100.milliseconds)
         assertEquals(1, emissions.size)
-        assertEquals("sixty-percent", emissions.single().ruleId)
+        assertEquals("sixty-percent-or-fixed", emissions.single().ruleId)
         assertEquals(70.0, emissions.single().attestationPercent)
         assertEquals(200.milliseconds, emissions.single().timeIntoSlot)
 
-        scheduler.advanceAndExecuteAll(10.seconds)
+        scheduler.advanceAndExecuteAll(600.milliseconds)
         assertEquals(1, emissions.size)
     }
 
@@ -62,7 +66,11 @@ class AttestationAggregatorTest {
                         AttestationArrivalBucket(400.milliseconds, 80.0),
                     )
                 ),
-                rule = FixedTimeIntoSlotAggregateRule(250.milliseconds, id = "fixed"),
+                rule = AggregatePublishRule(
+                    thresholdPercent = 100.0,
+                    timeIntoSlot = 250.milliseconds,
+                    id = "complete-or-fixed",
+                ),
             ),
             slotCount = 1,
             slotDuration = 12.seconds,
@@ -75,7 +83,7 @@ class AttestationAggregatorTest {
         scheduler.advanceAndExecuteAll(150.milliseconds)
 
         assertEquals(1, emissions.size)
-        assertEquals("fixed", emissions.single().ruleId)
+        assertEquals("complete-or-fixed", emissions.single().ruleId)
         assertEquals(20.0, emissions.single().attestationPercent)
         assertEquals(250.milliseconds, emissions.single().timeIntoSlot)
 
@@ -98,7 +106,11 @@ class AttestationAggregatorTest {
                         AttestationArrivalBucket(100.milliseconds, 75.0),
                     )
                 ),
-                rule = PercentThresholdAggregateRule(25.0, id = "quarter"),
+                rule = AggregatePublishRule(
+                    thresholdPercent = 25.0,
+                    timeIntoSlot = 1.seconds,
+                    id = "quarter-or-fixed",
+                ),
             ),
             slotCount = 1,
             slotDuration = 12.seconds,
@@ -110,7 +122,7 @@ class AttestationAggregatorTest {
         scheduler.advanceAndExecuteAll(100.milliseconds)
 
         assertEquals(1, emissions.size)
-        assertEquals("quarter", emissions.single().ruleId)
+        assertEquals("quarter-or-fixed", emissions.single().ruleId)
         assertEquals(100.0, emissions.single().attestationPercent)
     }
 
@@ -128,7 +140,11 @@ class AttestationAggregatorTest {
                         AttestationArrivalBucket(1500.milliseconds, 100.0),
                     )
                 ),
-                rule = PercentThresholdAggregateRule(100.0, id = "complete"),
+                rule = AggregatePublishRule(
+                    thresholdPercent = 100.0,
+                    timeIntoSlot = 2.seconds,
+                    id = "complete-or-fixed",
+                ),
             ),
             slotCount = 1,
             slotDuration = 1.seconds,
@@ -163,7 +179,11 @@ class AttestationAggregatorTest {
                         AttestationArrivalBucket(100.milliseconds, 25.0),
                     )
                 ),
-                rule = FixedTimeIntoSlotAggregateRule(1500.milliseconds, id = "late-fixed"),
+                rule = AggregatePublishRule(
+                    thresholdPercent = 100.0,
+                    timeIntoSlot = 1500.milliseconds,
+                    id = "complete-or-late-fixed",
+                ),
             ),
             slotCount = 1,
             slotDuration = 1.seconds,
@@ -181,7 +201,7 @@ class AttestationAggregatorTest {
         scheduler.advanceAndExecuteAll(500.milliseconds)
 
         assertEquals(1, emissions.size)
-        assertEquals("late-fixed", emissions.single().ruleId)
+        assertEquals("complete-or-late-fixed", emissions.single().ruleId)
         assertEquals(1500.milliseconds, emissions.single().emittedAt)
         assertEquals(1500.milliseconds, emissions.single().timeIntoSlot)
         assertEquals(25.0, emissions.single().attestationPercent)
@@ -201,7 +221,11 @@ class AttestationAggregatorTest {
             config = AttestationAggregatorConfig(
                 aggregatorId = "committee-chart",
                 distribution = DiscreteAttestationArrivalDistribution(distributionBuckets),
-                rule = PercentThresholdAggregateRule(thresholdPercent, id = "ninety-percent"),
+                rule = AggregatePublishRule(
+                    thresholdPercent = thresholdPercent,
+                    timeIntoSlot = 12.seconds,
+                    id = "ninety-percent-or-slot-end",
+                ),
             ),
             slotCount = 1,
             slotDuration = 12.seconds,
@@ -230,7 +254,7 @@ class AttestationAggregatorTest {
             "Aggregate emitted at ${formatMillis(emissions.single().timeIntoSlot)}ms " +
                 "with ${formatPercent(emissions.single().attestationPercent)} by ${emissions.single().ruleId}"
         )
-        assertEquals("ninety-percent", emissions.single().ruleId)
+        assertEquals("ninety-percent-or-slot-end", emissions.single().ruleId)
         assertEquals(4200.milliseconds, emissions.single().timeIntoSlot)
         assertTrue(emissions.single().attestationPercent >= thresholdPercent)
         assertTrue(emissions.single().attestationPercent < 95.0)

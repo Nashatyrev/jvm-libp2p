@@ -43,10 +43,8 @@ class AttestationAggregator(
                 }
             }
 
-        config.rule.fixedTimeIntoSlot?.let { timeIntoSlot ->
-            scheduleAt(slotStart + timeIntoSlot) {
-                emitIfNeeded(state, timeIntoSlot, config.rule)
-            }
+        scheduleAt(slotStart + config.rule.timeIntoSlot) {
+            emitIfNeeded(state, config.rule.timeIntoSlot, config.rule)
         }
     }
 
