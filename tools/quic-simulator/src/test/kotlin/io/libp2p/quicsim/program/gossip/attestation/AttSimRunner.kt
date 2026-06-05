@@ -1,13 +1,75 @@
 package io.libp2p.quicsim.program.gossip.attestation
 
+import io.libp2p.quicsim.core.schedule.DeterministicScheduler
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.ZERO
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 class AttSimRunner {
+    fun run(params: AttSimParams): AttSimResult {
+        val scheduler = DeterministicScheduler()
+        val epoch = scheduler.time()
+        val emissions = mutableListOf<AttestationAggregateEmission>()
 
+        params.aggregateRules.forEachIndexed { index, rule ->
+            AttestationAggregator(
+                config = AttestationAggregatorConfig(
+                    aggregatorId = "aggregator-$index",
+                    distribution = params.attestDistribution,
+                    rule = rule,
+                ),
+                slotCount = 1,
+                slotDuration = params.slotDuration,
+                scheduler = scheduler,
+                now = { scheduler.time() - epoch },
+                publishAggregate = emissions::add,
+            ).schedule()
+        }
+
+        val nextSlotEnd = params.slotDuration * 2
+        while (true) {
+            val nextTaskDuration = scheduler.nextTaskDuration() ?: break
+            val nextTaskTime = scheduler.time() - epoch + nextTaskDuration
+            if (nextTaskTime > nextSlotEnd) break
+
+            scheduler.advanceAndExecuteAll(nextTaskDuration)
+        }
+
+        val aggregateEmissions = emissions
+            .map {
+                AttSimAggregateEmission(
+                    aggregatorId = it.aggregatorId,
+                    slot = it.slot,
+                    ruleId = it.ruleId,
+                    emittedAt = it.emittedAt,
+                    timeIntoSlot = it.timeIntoSlot,
+                    attestationPercent = it.attestationPercent,
+                )
+            }
+            .sortedWith(compareBy({ it.emittedAt }, { it.aggregatorId }))
+
+        val bestBySlotEnd = aggregateEmissions.bestBy(params.slotDuration)
+        val bestByNextSlotEnd = aggregateEmissions.bestBy(nextSlotEnd)
+        return AttSimResult(
+            maxAggregatePercentTillSlotEnd = bestBySlotEnd?.attestationPercent ?: 0.0,
+            maxAggregatePercentTillNextSlotEnd = bestByNextSlotEnd?.attestationPercent ?: 0.0,
+            bestAggregateTillSlotEnd = bestBySlotEnd,
+            bestAggregateTillNextSlotEnd = bestByNextSlotEnd,
+            aggregateEmissions = aggregateEmissions,
+        )
+    }
+
+    private fun List<AttSimAggregateEmission>.bestBy(deadline: Duration): AttSimAggregateEmission? =
+        filter { it.emittedAt <= deadline }
+            .maxWithOrNull(
+                compareBy<AttSimAggregateEmission> { it.attestationPercent }
+                    .thenByDescending { it.emittedAt }
+                    .thenBy { it.aggregatorId }
+            )
 
     private val aggregatorsCount = 16
-    private val aggregateRulesCurrent = List(aggregatorsCount) { i ->
+    private val aggregateRulesCurrent = List(aggregatorsCount) {
         AggregatePublishRule(100.0, 8.seconds)
     }
     private val aggregateRulesNew = listOf(
@@ -81,3 +143,31 @@ class AttSimRunner {
         }
     }
 }
+
+data class AttSimParams(
+    val slotDuration: Duration,
+    val attestDistribution: AttestationArrivalDistribution,
+    val aggregateRules: List<AggregatePublishRule>,
+) {
+    init {
+        require(slotDuration > ZERO) { "slotDuration must be positive" }
+        require(aggregateRules.isNotEmpty()) { "aggregateRules must not be empty" }
+    }
+}
+
+data class AttSimResult(
+    val maxAggregatePercentTillSlotEnd: Double,
+    val maxAggregatePercentTillNextSlotEnd: Double,
+    val bestAggregateTillSlotEnd: AttSimAggregateEmission?,
+    val bestAggregateTillNextSlotEnd: AttSimAggregateEmission?,
+    val aggregateEmissions: List<AttSimAggregateEmission>,
+)
+
+data class AttSimAggregateEmission(
+    val aggregatorId: String,
+    val slot: Long,
+    val ruleId: String,
+    val emittedAt: Duration,
+    val timeIntoSlot: Duration,
+    val attestationPercent: Double,
+)
