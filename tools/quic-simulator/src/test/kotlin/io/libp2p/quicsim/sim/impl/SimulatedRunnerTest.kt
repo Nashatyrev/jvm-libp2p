@@ -90,12 +90,12 @@ class SimulatedRunnerTest {
 
     @Test
     fun sendMessageFromNPublishers() {
-        val nodeCount = 100
+        val nodeCount = 1000
         val publishersCount = 100
         val neighboursToConnect = 20
         val bandwidth = Bandwidth(50_000_000L)
         val halfLatency = 10.milliseconds
-        val messageSizeBytes = 128
+        val messageSizeBytes = 1024
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val randomConnectionsByNode: Map<SimNodeId, List<SimNodeId>> =
             QuicScenarios.createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = 1234)
