@@ -4,6 +4,8 @@ import io.libp2p.quicsim.core.schedule.DeterministicScheduler
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.util.Locale
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -113,42 +115,6 @@ class AttestationAggregatorTest {
     }
 
     @Test
-    fun `chart shaped real slot distribution emits near second burst`() {
-        val scheduler = DeterministicScheduler()
-        val epoch = scheduler.time()
-        val emissions = mutableListOf<AttestationAggregateEmission>()
-        val thresholdPercent = 90.0
-
-        AttestationAggregator(
-            config = AttestationAggregatorConfig(
-                aggregatorId = "committee-chart",
-                distribution = DiscreteAttestationArrivalDistribution(realSlotDistributionBuckets()),
-                rule = PercentThresholdAggregateRule(thresholdPercent, id = "ninety-percent"),
-            ),
-            slotCount = 1,
-            slotDuration = 12.seconds,
-            scheduler = scheduler,
-            now = { scheduler.time() - epoch },
-            publishAggregate = emissions::add,
-        ).schedule()
-
-        scheduler.advanceAndExecuteAll(1400.milliseconds)
-        assertTrue(emissions.isEmpty())
-
-        while (emissions.isEmpty()) {
-            val nextTaskDuration = scheduler.nextTaskDuration()
-                ?: error("Expected chart-shaped distribution to reach $thresholdPercent%")
-            scheduler.advanceAndExecuteAll(nextTaskDuration)
-        }
-
-        assertEquals(1, emissions.size)
-        assertEquals("ninety-percent", emissions.single().ruleId)
-        assertEquals(4200.milliseconds, emissions.single().timeIntoSlot)
-        assertTrue(emissions.single().attestationPercent >= thresholdPercent)
-        assertTrue(emissions.single().attestationPercent < 95.0)
-    }
-
-    @Test
     fun `attestations may arrive after slot end`() {
         val scheduler = DeterministicScheduler()
         val epoch = scheduler.time()
@@ -221,6 +187,55 @@ class AttestationAggregatorTest {
         assertEquals(25.0, emissions.single().attestationPercent)
     }
 
+    @Test
+    fun `chart shaped real slot distribution emits near second burst`() {
+        val scheduler = DeterministicScheduler()
+        val epoch = scheduler.time()
+        val emissions = mutableListOf<AttestationAggregateEmission>()
+        val thresholdPercent = 90.0
+        val distributionBuckets = realSlotDistributionBuckets()
+
+        printChartDistribution(distributionBuckets)
+
+        AttestationAggregator(
+            config = AttestationAggregatorConfig(
+                aggregatorId = "committee-chart",
+                distribution = DiscreteAttestationArrivalDistribution(distributionBuckets),
+                rule = PercentThresholdAggregateRule(thresholdPercent, id = "ninety-percent"),
+            ),
+            slotCount = 1,
+            slotDuration = 12.seconds,
+            scheduler = scheduler,
+            now = { scheduler.time() - epoch },
+            publishAggregate = emissions::add,
+        ).schedule()
+
+        scheduler.advanceAndExecuteAll(1400.milliseconds)
+        println("At ${formatMillis(scheduler.time() - epoch)}ms: before first chart bucket, emitted=${emissions.size}")
+        assertTrue(emissions.isEmpty())
+
+        while (emissions.isEmpty()) {
+            val nextTaskDuration = scheduler.nextTaskDuration()
+                ?: error("Expected chart-shaped distribution to reach $thresholdPercent%")
+            val nextTime = scheduler.time() - epoch + nextTaskDuration
+            println("Advancing to ${formatMillis(nextTime)}ms; threshold=$thresholdPercent%")
+            scheduler.advanceAndExecuteAll(nextTaskDuration)
+            if (emissions.isEmpty()) {
+                println("  no aggregate yet")
+            }
+        }
+
+        assertEquals(1, emissions.size)
+        println(
+            "Aggregate emitted at ${formatMillis(emissions.single().timeIntoSlot)}ms " +
+                "with ${formatPercent(emissions.single().attestationPercent)} by ${emissions.single().ruleId}"
+        )
+        assertEquals("ninety-percent", emissions.single().ruleId)
+        assertEquals(4200.milliseconds, emissions.single().timeIntoSlot)
+        assertTrue(emissions.single().attestationPercent >= thresholdPercent)
+        assertTrue(emissions.single().attestationPercent < 95.0)
+    }
+
     private fun realSlotDistributionBuckets(): List<AttestationArrivalBucket> {
         val countLikeWeights = listOf(
             1500 to 10.0,
@@ -272,4 +287,22 @@ class AttestationAggregatorTest {
             AttestationArrivalBucket(timeMillis.milliseconds, weight * 100.0 / totalWeight)
         }
     }
+
+    private fun printChartDistribution(buckets: List<AttestationArrivalBucket>) {
+        println("Chart-shaped attestation distribution (time_ms: bucket_percent -> cumulative_percent):")
+        var cumulativePercent = 0.0
+        buckets.forEach { bucket ->
+            cumulativePercent += bucket.attestationPercent
+            println(
+                "  ${formatMillis(bucket.timeIntoSlot)}ms: " +
+                    "${formatPercent(bucket.attestationPercent)} -> ${formatPercent(cumulativePercent)}"
+            )
+        }
+    }
+
+    private fun formatMillis(duration: Duration): String =
+        duration.inWholeMilliseconds.toString()
+
+    private fun formatPercent(percent: Double): String =
+        String.format(Locale.US, "%.2f%%", percent)
 }
