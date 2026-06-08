@@ -15,14 +15,14 @@ class TestStarNetworkBuilder2 {
     fun linkToRouter(
         node: UdpSimNode,
         latency: Duration,
-        qdiscFactory: (Duration) -> UdpSimQueueDiscipline
+        qdiscFactory: (Duration) -> TestUdpSimQueue
     ): TestStarNetworkBuilder2 = also {
         links.addBiDir(node, router) { qdiscFactory(latency) }
     }
 
     fun linkAllToRouter(
         latency: Duration,
-        qdiscFactory: (Duration) -> UdpSimQueueDiscipline
+        qdiscFactory: (Duration) -> TestUdpSimQueue
     ): TestStarNetworkBuilder2 = also {
         nodes.values.forEach { linkToRouter(it, latency, qdiscFactory) }
     }

@@ -195,7 +195,7 @@ class LatencyWindowSimPacketPump(
         return idToIp.keys.associateWith { nodeId ->
             network.links
                 .filter { it.from.id == nodeId || it.to.id == nodeId }
-                .map { it.qdisc.latency }
+                .map { it.latencyQueue.latency }
                 .minOrNull()
                 ?: error("No link latency found for endpoint $nodeId in nodes $linkedNodeIds")
         }

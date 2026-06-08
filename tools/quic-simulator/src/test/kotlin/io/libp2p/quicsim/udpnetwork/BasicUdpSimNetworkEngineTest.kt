@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import kotlin.time.Duration.Companion.milliseconds
-import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimQueueDiscipline as FifoSimQueueDiscipline2_2
 
 class BasicUdpSimNetworkEngineTest {
 
@@ -21,7 +20,7 @@ class BasicUdpSimNetworkEngineTest {
                 nodes = listOf(nodeA, nodeR, nodeB),
                 links =
                     UdpSimLinks()
-                        .withQDisc { FifoSimQueueDiscipline2_2(Bandwidth(1_000), 10.milliseconds) }
+                        .withQDisc { fifoUdpSimQueue(Bandwidth(1_000), 10.milliseconds) }
                         .addBiDir(nodeA, nodeR)
                         .addBiDir(nodeR, nodeB)
                         .links
@@ -58,7 +57,7 @@ class BasicUdpSimNetworkEngineTest {
                 nodes = listOf(nodeA, nodeR, nodeB),
                 links =
                     UdpSimLinks()
-                        .withQDisc { FifoSimQueueDiscipline2_2(Bandwidth(1_000), 10.milliseconds) }
+                        .withQDisc { fifoUdpSimQueue(Bandwidth(1_000), 10.milliseconds) }
                         .addBiDir(nodeA, nodeR)
                         .addBiDir(nodeR, nodeB)
                         .links
@@ -81,7 +80,7 @@ class BasicUdpSimNetworkEngineTest {
                 nodes = listOf(nodeA, nodeR, nodeB),
                 links =
                     UdpSimLinks()
-                        .withQDisc { FifoSimQueueDiscipline2_2(Bandwidth(1_000), 10.milliseconds) }
+                        .withQDisc { fifoUdpSimQueue(Bandwidth(1_000), 10.milliseconds) }
                         .addBiDir(nodeA, nodeR)
                         .addBiDir(nodeR, nodeB)
                         .links
@@ -112,7 +111,7 @@ class BasicUdpSimNetworkEngineTest {
                 nodes = listOf(nodeA, nodeR, nodeB),
                 links =
                     UdpSimLinks()
-                        .withQDisc { FifoSimQueueDiscipline2_2(Bandwidth(1_000), 10.milliseconds) }
+                        .withQDisc { fifoUdpSimQueue(Bandwidth(1_000), 10.milliseconds) }
                         .addBiDir(nodeA, nodeR)
                         .addBiDir(nodeR, nodeB)
                         .links
@@ -152,7 +151,7 @@ class BasicUdpSimNetworkEngineTest {
                 nodes = listOf(nodeA, nodeR, nodeB, nodeC),
                 links =
                     UdpSimLinks()
-                        .withQDisc { FifoSimQueueDiscipline2_2(Bandwidth(1_000), 10.milliseconds) }
+                        .withQDisc { fifoUdpSimQueue(Bandwidth(1_000), 10.milliseconds) }
                         .addBiDir(nodeA, nodeR)
                         .addBiDir(nodeR, nodeB)
                         .addBiDir(nodeR, nodeC)

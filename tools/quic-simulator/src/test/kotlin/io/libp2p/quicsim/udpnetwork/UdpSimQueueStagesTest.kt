@@ -1,19 +1,17 @@
 package io.libp2p.quicsim.udpnetwork
 
-import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimQueueDiscipline
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimLatencyDelay
-import io.libp2p.quicsim.udpnetwork.impl.UdpSimQueueDisciplineOrder
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import kotlin.time.Duration.Companion.ZERO
 import kotlin.time.Duration.Companion.milliseconds
 
-class FifoUdpSimQueueDisciplineTest {
+class UdpSimQueueStagesTest {
 
     @Test
     fun `dequeues packets in fifo order after service time and latency`() {
-        val qdisc = FifoUdpSimQueueDiscipline(
+        val qdisc = fifoUdpSimQueue(
             bandwidth = Bandwidth(1_000),
             latency = 10.milliseconds
         )
@@ -45,7 +43,7 @@ class FifoUdpSimQueueDisciplineTest {
 
     @Test
     fun `drops packets exceeding max queue wait time`() {
-        val qdisc = FifoUdpSimQueueDiscipline(
+        val qdisc = fifoUdpSimQueue(
             bandwidth = Bandwidth(1_000),
             latency = 10.milliseconds,
             maxQueueWaitTime = 150.milliseconds
@@ -67,7 +65,7 @@ class FifoUdpSimQueueDisciplineTest {
 
     @Test
     fun `accounts for current queue backlog when enqueueing later packets`() {
-        val qdisc = FifoUdpSimQueueDiscipline(
+        val qdisc = fifoUdpSimQueue(
             bandwidth = Bandwidth(1_000),
             latency = 10.milliseconds
         )
@@ -97,7 +95,7 @@ class FifoUdpSimQueueDisciplineTest {
 
     @Test
     fun `dequeues after service time when latency is zero`() {
-        val qdisc = FifoUdpSimQueueDiscipline(
+        val qdisc = fifoUdpSimQueue(
             bandwidth = Bandwidth(1_000),
             latency = ZERO
         )
@@ -116,7 +114,7 @@ class FifoUdpSimQueueDisciplineTest {
 
     @Test
     fun `zero-length packet is delivered after latency without shaping delay`() {
-        val qdisc = FifoUdpSimQueueDiscipline(
+        val qdisc = fifoUdpSimQueue(
             bandwidth = Bandwidth(1_000),
             latency = 10.milliseconds
         )
@@ -158,10 +156,9 @@ class FifoUdpSimQueueDisciplineTest {
 
     @Test
     fun `can apply latency before bandwidth queue`() {
-        val qdisc = FifoUdpSimQueueDiscipline(
+        val qdisc = latencyThenBandwidthUdpSimQueue(
             bandwidth = Bandwidth(1_000),
-            latency = 10.milliseconds,
-            order = UdpSimQueueDisciplineOrder.LATENCY_THEN_BANDWIDTH
+            latency = 10.milliseconds
         )
         val packet = UdpSimPacket(1, 100, "a", "b")
 
@@ -180,7 +177,7 @@ class FifoUdpSimQueueDisciplineTest {
 
     @Test
     fun `test 2 packets`() {
-        val qdisc = FifoUdpSimQueueDiscipline(
+        val qdisc = fifoUdpSimQueue(
             bandwidth = Bandwidth(1_000),
             latency = 200.milliseconds
         )

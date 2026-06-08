@@ -1,6 +1,5 @@
 package io.libp2p.quicsim.udpnetwork
 
-import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimQueueDiscipline
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl2
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -24,7 +23,7 @@ class UdpNetworkPerformanceTest {
         val nodes = List(NODE_COUNT) { index -> builder.node("node-$index") }
         var counter = 0L
         builder.linkAllToRouter(10.milliseconds) { latency ->
-            FifoUdpSimQueueDiscipline(Bandwidth(50_000 + (++counter)), latency)
+            fifoUdpSimQueue(Bandwidth(50_000 + (++counter)), latency)
         }
         val engine = UdpSimNetworkEngineImpl2(builder.build())
 

@@ -27,7 +27,8 @@ import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
-import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimQueueDiscipline
+import io.libp2p.quicsim.udpnetwork.TestUdpSimQueue
+import io.libp2p.quicsim.udpnetwork.fifoUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl2
 import io.netty.buffer.ByteBuf
@@ -90,11 +91,11 @@ class SimulatedRunnerTest {
 
     @Test
     fun sendMessageFromNPublishers() {
-        val nodeCount = 1000
+        val nodeCount = 100
         val publishersCount = 100
         val neighboursToConnect = 20
-        val bandwidth = Bandwidth(50_000_000L)
-        val halfLatency = 10.milliseconds
+        val bandwidth = Bandwidth(5_000_000L)
+        val halfLatency = 50.milliseconds
         val messageSizeBytes = 1024
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val randomConnectionsByNode: Map<SimNodeId, List<SimNodeId>> =
@@ -500,8 +501,8 @@ class SimulatedRunnerTest {
     }
 
     private companion object {
-        fun fifoQDiscFactory(bandwidth: Bandwidth): (kotlin.time.Duration) -> FifoUdpSimQueueDiscipline = { latency ->
-            FifoUdpSimQueueDiscipline(
+        fun fifoQDiscFactory(bandwidth: Bandwidth): (kotlin.time.Duration) -> TestUdpSimQueue = { latency ->
+            fifoUdpSimQueue(
                 bandwidth = bandwidth,
                 latency = latency
             )

@@ -7,12 +7,9 @@ import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.UdpSimLink
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
-import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
-import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimQueueDiscipline
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimLatencyDelay
-import io.libp2p.quicsim.udpnetwork.impl.UdpSimQueueDisciplineOrder
 
 internal fun QuicNetworkTopology.toUdpSimNetwork(): UdpSimNetwork {
     val udpHosts = hosts.associate { it.id to UdpSimNode(it.id) }
@@ -27,7 +24,7 @@ internal fun QuicNetworkTopology.toUdpSimNetwork(): UdpSimNetwork {
             val qdisc = if (link.isNodeOutbound(hostIds))
                 SerialPacketProcessor(listOf(latencyQueue, bandwidthQueue))
             else
-                SerialPacketProcessor(listOf(latencyQueue, bandwidthQueue))
+                SerialPacketProcessor(listOf(bandwidthQueue, latencyQueue))
             UdpSimLink(
                 from = udpNodesById.getValue(link.from),
                 to = udpNodesById.getValue(link.to),
