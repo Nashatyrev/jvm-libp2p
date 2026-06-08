@@ -1,5 +1,9 @@
 package io.libp2p.quicsim.udpnetwork
 
+import io.libp2p.quicsim.core.PacketProcessor
+import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
+import io.libp2p.quicsim.udpnetwork.impl.UdpSimLatencyDelay
+
 
 /**
  * Directed link from one node to another.
@@ -13,6 +17,11 @@ data class UdpSimLink(
     val from: UdpSimNode,
     /** Receiver side of this directed link. */
     val to: UdpSimNode,
-    /** Egress queue discipline applied on this directed link. */
-    val qdisc: UdpSimQueueDiscipline
+
+    val bandwidthQueue: FifoUdpSimBandwidthQueue,
+
+    val latencyQueue: UdpSimLatencyDelay,
+
+    /** Egress queue discipline applied on this directed link. Basically either `bandwidthQueue` -> `latencyQueue` or the opposite order */
+    val qdisc: PacketProcessor<UdpSimPacket>,
 )
