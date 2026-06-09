@@ -31,4 +31,11 @@ class MappingPacketProcessor<TOuter, TInner>(
     }
 
     override fun nextTaskDuration(): Duration? = delegate.nextTaskDuration()
+
+    companion object {
+        fun <TOuter, TInner> PacketProcessor<TInner>.map(
+            mapToInner: (TOuter) -> TInner,
+            mapToOuter: (TInner) -> TOuter
+        ): PacketProcessor<TOuter> = MappingPacketProcessor(this, mapToInner, mapToOuter)
+    }
 }
