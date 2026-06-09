@@ -24,7 +24,7 @@ import kotlin.time.Duration.Companion.ZERO
 class LatencyWindowSimPacketPump(
     private val nodes: List<SimNodeImpl>,
     network: UdpSimNetwork,
-    idAndIp: Collection<SimPacketPump.IdMapEntry>,
+    idAndIp: Collection<AbstractSimPacketBridge.IdMapEntry>,
     parallelism: Int,
 ) : Controllable, AutoCloseable {
 

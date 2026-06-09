@@ -14,8 +14,7 @@ import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 
-class SimPacketPump(
-    simNet: SimNet<DatagramPacket>,
+abstract class AbstractSimPacketBridge(
     udpNet: UdpSimNetworkEngine,
     idAndIp: Collection<IdMapEntry>,
 ) : Controllable {
@@ -54,17 +53,10 @@ class SimPacketPump(
                 )
             })
 
-    val pump = ControllablePacketPump(simNet, udpNetConverted)
-
     override fun advance(advanceDuration: Duration) {
         nanosPassed.updateAndGet { it + advanceDuration.inWholeNanoseconds }
-        pump.advance(advanceDuration)
+        advanceImpl(advanceDuration)
     }
 
-    override fun executePending() {
-        pump.executePending()
-    }
-
-    override fun nextTaskDuration(): Duration? =
-        pump.nextTaskDuration()
+    abstract fun advanceImpl(advanceDuration: Duration)
 }

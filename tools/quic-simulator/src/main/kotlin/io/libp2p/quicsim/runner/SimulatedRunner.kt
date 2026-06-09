@@ -3,7 +3,6 @@ package io.libp2p.quicsim.runner
 import io.libp2p.core.Host
 import io.libp2p.core.crypto.PrivKey
 import io.libp2p.core.dsl.HostBuilder
-import io.libp2p.core.dsl.host
 import io.libp2p.core.multistream.ProtocolBinding
 import io.libp2p.core.transport.Transport
 import io.libp2p.crypto.keys.generateEd25519KeyPair
@@ -141,7 +140,7 @@ class SimulatedRunner(
         val simCoreNet = SimNetImpl(embeddedNodes)
         val idAndIp =
             embeddedNodes.map { node ->
-                SimPacketPump.IdMapEntry(networkEngine.network.nodes[node.nodeId].id, node.ip)
+                AbstractSimPacketBridge.IdMapEntry(networkEngine.network.nodes[node.nodeId].id, node.ip)
             }
         val latencyWindowPump =
             if (latencyWindowParallelism > 0) {
@@ -150,7 +149,7 @@ class SimulatedRunner(
                 null
             }
         val sequentialPacketPump = if (latencyWindowPump == null) {
-            SimPacketPump(simCoreNet, networkEngine, idAndIp)
+            SimpleSimPacketBridge(simCoreNet, networkEngine, idAndIp)
         } else {
             null
         }
