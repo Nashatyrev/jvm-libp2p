@@ -2,6 +2,7 @@ package io.libp2p.quicsim.runner
 
 import io.libp2p.quicsim.core.ControllablePacketPump
 import io.libp2p.quicsim.core.MappingPacketProcessor
+import io.libp2p.quicsim.core.PacketProcessor
 import io.libp2p.quicsim.core.schedule.Controllable
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
 import io.libp2p.quicsim.core.schedule.impl.NanoMonotonicTimer
@@ -19,19 +20,19 @@ abstract class AbstractSimPacketBridge(
     idAndIp: Collection<IdMapEntry>,
 ) : Controllable {
 
-    private var nanosPassed = AtomicLong(0)
-    val monotonicTimer: MonotonicTimer = NanoMonotonicTimer(nanosPassed::get)
-
     data class IdMapEntry(
         val nodeId: String,
         val ip: String
     )
 
-    val idToIp = idAndIp.associate { it.nodeId to it.ip }
-    val ipToId = idAndIp.associate { it.ip to it.nodeId }
+    private var nanosPassed = AtomicLong(0)
+    val monotonicTimer: MonotonicTimer = NanoMonotonicTimer(nanosPassed::get)
 
-    val packetIdCounter = AtomicLong()
-    val udpNetConverted =
+    private val idToIp = idAndIp.associate { it.nodeId to it.ip }
+    private val ipToId = idAndIp.associate { it.ip to it.nodeId }
+
+    private val packetIdCounter = AtomicLong()
+    protected val udpNetConverted: PacketProcessor<DatagramPacket> =
         MappingPacketProcessor<DatagramPacket, UdpSimPacket>(
             udpNet,
             { datagramPacket ->
