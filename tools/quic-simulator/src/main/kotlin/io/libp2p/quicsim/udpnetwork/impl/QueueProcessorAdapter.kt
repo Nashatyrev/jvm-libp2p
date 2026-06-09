@@ -9,16 +9,15 @@ abstract class QueueProcessorAdapter<TPacket> : PacketProcessor<TPacket> {
     val cumulativeAdvance get() = cumulativeAdvanceMutable
     protected val lastQueuedAt: Duration? get() = queue.peekLast()?.deliverAt
 
-    private data class QueuedPacket<TPacket>(
+    protected data class QueuedPacket<TPacket>(
         val packet: TPacket,
         val deliverAt: Duration
     )
 
-    private val queue = ArrayDeque<QueuedPacket<TPacket>>()
+    protected val queue = ArrayDeque<QueuedPacket<TPacket>>()
 
     final override fun deliver(inboundData: List<TPacket>): List<TPacket> {
-        enqueueInbound(inboundData)
-        return drainReady()
+        return deliverAt(inboundData, cumulativeAdvance)
     }
 
     override fun advance(advanceDuration: Duration) {
@@ -29,24 +28,32 @@ abstract class QueueProcessorAdapter<TPacket> : PacketProcessor<TPacket> {
     }
 
     override fun nextTaskDuration(): Duration? =
-        queue.peekFirst()?.let {
-            it.deliverAt - cumulativeAdvance
-        }
+        nextTaskDurationAt(cumulativeAdvance)
 
     protected fun enqueue(packet: TPacket, deliverAt: Duration) {
         queue.addLast(QueuedPacket(packet, deliverAt))
     }
 
-    protected abstract fun enqueueInbound(inboundData: List<TPacket>)
+    protected fun deliverAt(inboundData: List<TPacket>, at: Duration): List<TPacket> {
+        enqueueInbound(inboundData, at)
+        return drainReady(at)
+    }
 
-    private fun drainReady(): List<TPacket> {
+    protected fun nextTaskDurationAt(at: Duration): Duration? =
+        queue.peekFirst()?.let {
+            it.deliverAt - at
+        }
+
+    protected abstract fun enqueueInbound(inboundData: List<TPacket>, at: Duration)
+
+    private fun drainReady(at: Duration): List<TPacket> {
         val ready = mutableListOf<TPacket>()
         while (queue.isNotEmpty()) {
             val packet = queue.peekFirst()
-            if (packet.deliverAt < cumulativeAdvance) {
+            if (packet.deliverAt < at) {
                 throw IllegalStateException("Internal error: Missed packet")
             }
-            if (packet.deliverAt > cumulativeAdvance) {
+            if (packet.deliverAt > at) {
                 break
             }
             ready += queue.removeFirst().packet
