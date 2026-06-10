@@ -1,5 +1,6 @@
 package io.libp2p.quicsim.udpnetwork.impl
 
+import io.libp2p.quicsim.core.ValueSortedMap
 import io.libp2p.quicsim.udpnetwork.RouteResolver
 import io.libp2p.quicsim.udpnetwork.UdpSimLink
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
@@ -12,7 +13,8 @@ import kotlin.time.Duration.Companion.ZERO
 
 class ParallelUdpSimNetworkEngine(
     override val network: UdpSimNetwork,
-    private val routeResolver: RouteResolver = BasicStarRouteResolver(network)
+    private val routeResolver: RouteResolver = BasicStarRouteResolver(network),
+    private val drainEndpointBoundLatency: Boolean = true
 ) : UdpSimNetworkEngine {
 
     private val endpointNodes = network.nodes.toSet()
@@ -20,6 +22,26 @@ class ParallelUdpSimNetworkEngine(
     private val linksMap = network.links.associateBy { it.from to it.to }
     private var cumulativeAdvance: Duration = ZERO
     private var nodeFacingDeliveryFloor: Duration = ZERO
+    private val deliveredReady = mutableListOf<UdpSimPacket>()
+    private val latencyLinksToDrainKeys = network.links
+        .filter { shouldDrainLatency(it) }
+        .map { it.from to it.to }
+
+    private val latencyLinksToDrain = ValueSortedMap(
+        latencyLinksToDrainKeys.associateWith { linksMap.getValue(it) }
+    ) { link ->
+        link.latencyQueue.nextTaskDuration()
+            ?.let { link.latencyQueue.cumulativeAdvance + it }
+            ?: Duration.INFINITE
+    }
+
+    private val bandwidthLinks = ValueSortedMap(
+        network.links.associateBy { it.from to it.to }
+    ) { link ->
+        link.bandwidthQueue.nextTaskDuration()
+            ?.let { link.bandwidthQueue.cumulativeAdvance + it }
+            ?: Duration.INFINITE
+    }
 
     private fun findNextLink(fromLink: UdpSimLink?, packet: UdpSimPacket): UdpSimLink? {
         val srcHopNode = fromLink?.to ?: idToNodeMap.getValue(packet.srcNodeId)
@@ -32,6 +54,8 @@ class ParallelUdpSimNetworkEngine(
 
     override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
         val deliveredPackets = mutableListOf<UdpSimPacket>()
+        deliveredPackets += deliveredReady
+        deliveredReady.clear()
         inboundData.forEach { packet ->
             val link = findNextLink(null, packet)
                 ?: throw IllegalStateException("Direct links from endpoint to endpoint are not supported")
@@ -44,10 +68,6 @@ class ParallelUdpSimNetworkEngine(
     override fun advance(advanceDuration: Duration) {
         require(!advanceDuration.isNegative()) { "advanceDuration must be non-negative" }
         cumulativeAdvance += advanceDuration
-        network.links.forEach { link ->
-            link.latencyQueue.advance(advanceDuration)
-            link.bandwidthQueue.advance(advanceDuration)
-        }
     }
 
     fun advanceAndExecuteUntil(advanceDuration: Duration) {
@@ -55,6 +75,7 @@ class ParallelUdpSimNetworkEngine(
         val previousDeliveryFloor = nodeFacingDeliveryFloor
         nodeFacingDeliveryFloor = deliveryFloor
         try {
+            refreshExternallyUpdatedLatencyQueues()
             var timeLeft = advanceDuration
             while (timeLeft > ZERO) {
                 val nextAdvance = minOf(timeLeft, nextTaskDuration() ?: timeLeft)
@@ -63,73 +84,76 @@ class ParallelUdpSimNetworkEngine(
                 timeLeft -= nextAdvance
             }
         } finally {
+            advanceAllLatencyQueuesToCurrent()
             nodeFacingDeliveryFloor = previousDeliveryFloor.coerceAtLeast(cumulativeAdvance)
         }
     }
 
     override fun executePending() {
-        network.links.forEach { link ->
-            link.latencyQueue.executePending()
-            link.bandwidthQueue.executePending()
-        }
-        drainReady(mutableListOf())
+        drainReady(deliveredReady)
     }
 
     override fun nextTaskDuration(): Duration? =
-        network.links.flatMap { link ->
-            val latencyTask =
-                if (link.from in endpointNodes) {
-                    link.latencyQueue.nextTaskDuration()
-                } else {
-                    null
-                }
-            listOfNotNull(latencyTask, link.bandwidthQueue.nextTaskDuration())
-        }
-            .minOrNull()
+        listOf(
+            latencyLinksToDrain.getFirstOrNull()?.let { latencyTaskDuration(it) },
+            bandwidthLinks.getFirstOrNull()?.let { bandwidthTaskDuration(it) }
+        ).filterNotNull().minOrNull()
 
     private fun drainReady(deliveredPackets: MutableList<UdpSimPacket>) {
         do {
-            var moved = false
-            network.links.forEach { link ->
-                val latencyOut =
-                    if (link.from in endpointNodes) {
-                        link.latencyQueue.deliver(emptyList())
-                    } else {
-                        emptyList()
-                    }
-                if (latencyOut.isNotEmpty()) {
-                    moved = true
-                    latencyOut.forEach { packet ->
+            val movedLatency = drainFirstReadyOutboundLatency(deliveredPackets)
+            val movedBandwidth = drainFirstReadyBandwidth(deliveredPackets)
+        } while (movedLatency || movedBandwidth)
+    }
+
+    private fun drainFirstReadyOutboundLatency(deliveredPackets: MutableList<UdpSimPacket>): Boolean =
+        latencyLinksToDrain.updateFirstOrNull { link ->
+            if (latencyTaskDuration(link) != ZERO) {
+                false
+            } else {
+                advanceLatencyQueueToCurrent(link)
+                link.latencyQueue.deliver(emptyList())
+                    .forEach { packet ->
                         deliverFromLatency(link, packet, deliveredPackets)
                     }
-                }
+                true
+            }
+        } ?: false
 
-                val bandwidthOut = link.bandwidthQueue.deliver(emptyList())
-                if (bandwidthOut.isNotEmpty()) {
-                    moved = true
-                    bandwidthOut.forEach { packet ->
+    private fun drainFirstReadyBandwidth(deliveredPackets: MutableList<UdpSimPacket>): Boolean =
+        bandwidthLinks.updateFirstOrNull { link ->
+            if (bandwidthTaskDuration(link) != ZERO) {
+                false
+            } else {
+                advanceBandwidthQueueToCurrent(link)
+                link.bandwidthQueue.deliver(emptyList())
+                    .forEach { packet ->
                         deliverFromBandwidth(link, packet, deliveredPackets)
                     }
-                }
+                true
             }
-        } while (moved)
-    }
+        } ?: false
 
     private fun deliverToLinkStart(
         link: UdpSimLink,
         packet: UdpSimPacket,
         deliveredPackets: MutableList<UdpSimPacket>
     ) {
-        val ready = if (link.from in endpointNodes) {
-            link.latencyQueue.deliver(listOf(packet))
+        if (link.from in endpointNodes) {
+            latencyLinksToDrain.updateByKey(link.from to link.to) {
+                advanceLatencyQueueToCurrent(it)
+                it.latencyQueue.deliver(listOf(packet))
+                    .forEach { readyPacket ->
+                        deliverFromLatency(it, readyPacket, deliveredPackets)
+                    }
+            }
         } else {
-            link.bandwidthQueue.deliver(listOf(packet))
-        }
-        ready.forEach { readyPacket ->
-            if (link.from in endpointNodes) {
-                deliverFromLatency(link, readyPacket, deliveredPackets)
-            } else {
-                deliverFromBandwidth(link, readyPacket, deliveredPackets)
+            bandwidthLinks.updateByKey(link.from to link.to) {
+                advanceBandwidthQueueToCurrent(it)
+                it.bandwidthQueue.deliver(listOf(packet))
+                    .forEach { readyPacket ->
+                        deliverFromBandwidth(it, readyPacket, deliveredPackets)
+                    }
             }
         }
     }
@@ -142,8 +166,13 @@ class ParallelUdpSimNetworkEngine(
         if (link.to in endpointNodes) {
             deliveredPackets += packet
         } else {
-            link.bandwidthQueue.deliver(listOf(packet))
-                .forEach { deliverFromBandwidth(link, it, deliveredPackets) }
+            bandwidthLinks.updateByKey(link.from to link.to) {
+                advanceBandwidthQueueToCurrent(it)
+                it.bandwidthQueue.deliver(listOf(packet))
+                    .forEach { readyPacket ->
+                        deliverFromBandwidth(it, readyPacket, deliveredPackets)
+                    }
+            }
         }
     }
 
@@ -153,7 +182,14 @@ class ParallelUdpSimNetworkEngine(
         deliveredPackets: MutableList<UdpSimPacket>
     ) {
         if (link.to in endpointNodes) {
-            link.latencyQueue.enqueueInboundWithDeliveryFloor(listOf(packet), nodeFacingDeliveryFloor)
+            if (drainEndpointBoundLatency) {
+                latencyLinksToDrain.updateByKey(link.from to link.to) {
+                    advanceLatencyQueueToCurrent(it)
+                    it.latencyQueue.enqueueInboundWithDeliveryFloor(listOf(packet), nodeFacingDeliveryFloor)
+                }
+            } else {
+                link.latencyQueue.enqueueInboundWithDeliveryFloor(listOf(packet), nodeFacingDeliveryFloor)
+            }
         } else {
             val nextLink = findNextLink(link, packet)
             if (nextLink == null) {
@@ -161,6 +197,48 @@ class ParallelUdpSimNetworkEngine(
             } else {
                 deliverToLinkStart(nextLink, packet, deliveredPackets)
             }
+        }
+    }
+
+    private fun shouldDrainLatency(link: UdpSimLink): Boolean =
+        link.from in endpointNodes || (drainEndpointBoundLatency && link.to in endpointNodes)
+
+    private fun refreshExternallyUpdatedLatencyQueues() {
+        latencyLinksToDrainKeys.forEach { key ->
+            latencyLinksToDrain.updateByKey(key) {
+            }
+        }
+    }
+
+    private fun latencyTaskDuration(link: UdpSimLink): Duration? =
+        link.latencyQueue.nextTaskDuration()
+            ?.let { link.latencyQueue.cumulativeAdvance + it - cumulativeAdvance }
+            ?.coerceAtLeast(ZERO)
+
+    private fun bandwidthTaskDuration(link: UdpSimLink): Duration? =
+        link.bandwidthQueue.nextTaskDuration()
+            ?.let { link.bandwidthQueue.cumulativeAdvance + it - cumulativeAdvance }
+            ?.coerceAtLeast(ZERO)
+
+    private fun advanceAllLatencyQueuesToCurrent() {
+        network.links.forEach { link ->
+            advanceLatencyQueueToCurrent(link)
+        }
+    }
+
+    private fun advanceLatencyQueueToCurrent(link: UdpSimLink) {
+        val advanceDuration = cumulativeAdvance - link.latencyQueue.cumulativeAdvance
+        require(!advanceDuration.isNegative()) { "Latency queue advanced past engine time" }
+        if (advanceDuration > ZERO) {
+            link.latencyQueue.advance(advanceDuration)
+        }
+    }
+
+    private fun advanceBandwidthQueueToCurrent(link: UdpSimLink) {
+        val advanceDuration = cumulativeAdvance - link.bandwidthQueue.cumulativeAdvance
+        require(!advanceDuration.isNegative()) { "Bandwidth queue advanced past engine time" }
+        if (advanceDuration > ZERO) {
+            link.bandwidthQueue.advance(advanceDuration)
         }
     }
 }

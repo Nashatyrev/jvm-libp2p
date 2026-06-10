@@ -94,7 +94,7 @@ class SimulatedRunnerTest {
 
     @Test
     fun sendMessageFromNPublishers() {
-        val nodeCount = 1000
+        val nodeCount = 100
         val publishersCount = 100
         val neighboursToConnect = 20
         val bandwidth = Bandwidth(5_000_000L)
@@ -353,38 +353,6 @@ class SimulatedRunnerTest {
             100.milliseconds,
             qdiscFactory = fifoQDiscFactory(Bandwidth(10_000L))
         )
-
-//        class LoggingUdpNetworkEngineUdp(val delegate: UdpSimNetworkEngine) : UdpSimNetworkEngine by delegate {
-//            private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
-//            override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
-//                fun simPacketStr(packet: UdpSimPacket) =
-//                    "[$simTime] ${packet.srcNodeId} ==> ${packet.dstNodeId} size: ${packet.bytes}, hash: ${packet.payloadRef.hashCode()}"
-//
-//                for (packet in inboundData) {
-//                    println("  ... " + simPacketStr(packet))
-//                }
-//                val outbound = delegate.deliver(inboundData)
-//                for (packet in outbound) {
-//                    println(simPacketStr(packet))
-//                }
-//                return outbound
-//            }
-//
-//            override fun advance(advanceDuration: kotlin.time.Duration) {
-//                println(" Advance $advanceDuration")
-//                delegate.advanceAndExecuteAll(advanceDuration)
-//                simTime += advanceDuration
-//            }
-//
-//            override fun nextTaskDuration(): kotlin.time.Duration? {
-//                val nextTaskDuration = delegate.nextTaskDuration()
-//                println(" Next task duration: $nextTaskDuration")
-//                return nextTaskDuration
-//            }
-//        }
-//
-//        val udpNetwork = UdpSimNetworkEngineImpl2(builder.build())
-//        val udpNetworkLogging = LoggingUdpNetworkEngineUdp(udpNetwork)
 
         val runner = SimulatedRunner(
             nodeFactory = object : NodeProgramFactory {

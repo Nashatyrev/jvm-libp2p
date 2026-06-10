@@ -62,4 +62,15 @@ class ValueSortedMap<K, V, TValueKey : Comparable<TValueKey>>(
 
     fun getFirst(): V = valueSortedMap.firstEntry()!!.value
 
+    fun <R> updateFirstOrNull(updater: (V) -> R): R? {
+        val (oldK, v) = valueSortedMap.firstEntry() ?: return null
+        val ret = updater(v)
+        valueSortedMap -= oldK
+        val newK = SortKey(valueKeyExtractor(v), oldK.id)
+        valueSortedMap[newK] = v
+        return ret
+    }
+
+    fun getFirstOrNull(): V? = valueSortedMap.firstEntry()?.value
+
 }

@@ -3,13 +3,11 @@ package io.libp2p.quicsim.runner
 import io.libp2p.quicsim.core.ControllablePacketPump
 import io.libp2p.quicsim.core.InOutProcessor
 import io.libp2p.quicsim.core.MappingPacketProcessor.Companion.map
-import io.libp2p.quicsim.core.schedule.AggregateControllable
 import io.libp2p.quicsim.core.schedule.Controllable
 import io.libp2p.quicsim.core.schedule.Controllable.Companion.advanceAndExecuteUntil
 import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.sim.SimNode
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
-import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.libp2p.quicsim.udpnetwork.impl.ParallelUdpSimNetworkEngine
@@ -29,7 +27,7 @@ class ParallelSimPacketBridge(
 
     val latency = calcLatency()
     val allNodes = createAllNodes()
-    private val parallelUdpNet = ParallelUdpSimNetworkEngine(udpNet)
+    private val parallelUdpNet = ParallelUdpSimNetworkEngine(udpNet, drainEndpointBoundLatency = false)
 
     private fun calcLatency(): Duration {
         val latencies = udpNet.links.map { it.latencyQueue.latency }.distinct()
@@ -64,7 +62,7 @@ class ParallelSimPacketBridge(
 
     override fun advanceImpl(advanceDuration: Duration) {
         require(advanceDuration == latency || advanceDuration == Duration.ZERO)
-        allNodes.forEach {
+        allNodes.parallelStream().forEach {
             it.pump.advanceAndExecuteUntil(advanceDuration)
         }
         parallelUdpNet.advanceAndExecuteUntil(advanceDuration)
