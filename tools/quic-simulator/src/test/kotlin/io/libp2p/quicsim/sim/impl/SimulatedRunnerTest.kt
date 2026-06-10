@@ -94,7 +94,7 @@ class SimulatedRunnerTest {
 
     @Test
     fun sendMessageFromNPublishers() {
-        val nodeCount = 100
+        val nodeCount = 1000
         val publishersCount = 100
         val neighboursToConnect = 20
         val bandwidth = Bandwidth(5_000_000L)

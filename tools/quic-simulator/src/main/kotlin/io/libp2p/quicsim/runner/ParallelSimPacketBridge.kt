@@ -53,7 +53,7 @@ class ParallelSimPacketBridge(
         val outboundUdpLink = udpNet.links.first { it.from == udpNode }
 
         val inboundAheadProcessor = inboundUdpLink.latencyQueue.aheadProcessor
-        val outboundAheadProcessor = outboundUdpLink.latencyQueue.aheadProcessor
+        val outboundAheadProcessor = outboundUdpLink.latencyQueue.aheadEnqueueProcessor
 
         val aheadProcessor = InOutProcessor(inboundAheadProcessor, outboundAheadProcessor)
         val aheadProcessorSim =

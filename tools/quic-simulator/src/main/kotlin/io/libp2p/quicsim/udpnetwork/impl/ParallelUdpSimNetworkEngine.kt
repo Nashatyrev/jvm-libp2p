@@ -8,6 +8,7 @@ import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import kotlin.collections.plusAssign
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.ZERO
 
 class ParallelUdpSimNetworkEngine(
     override val network: UdpSimNetwork,
@@ -17,6 +18,8 @@ class ParallelUdpSimNetworkEngine(
     private val endpointNodes = network.nodes.toSet()
     private val idToNodeMap = network.nodes.associateBy { it.id }
     private val linksMap = network.links.associateBy { it.from to it.to }
+    private var cumulativeAdvance: Duration = ZERO
+    private var nodeFacingDeliveryFloor: Duration = ZERO
 
     private fun findNextLink(fromLink: UdpSimLink?, packet: UdpSimPacket): UdpSimLink? {
         val srcHopNode = fromLink?.to ?: idToNodeMap.getValue(packet.srcNodeId)
@@ -40,9 +43,27 @@ class ParallelUdpSimNetworkEngine(
 
     override fun advance(advanceDuration: Duration) {
         require(!advanceDuration.isNegative()) { "advanceDuration must be non-negative" }
+        cumulativeAdvance += advanceDuration
         network.links.forEach { link ->
             link.latencyQueue.advance(advanceDuration)
             link.bandwidthQueue.advance(advanceDuration)
+        }
+    }
+
+    fun advanceAndExecuteUntil(advanceDuration: Duration) {
+        val deliveryFloor = cumulativeAdvance + advanceDuration
+        val previousDeliveryFloor = nodeFacingDeliveryFloor
+        nodeFacingDeliveryFloor = deliveryFloor
+        try {
+            var timeLeft = advanceDuration
+            while (timeLeft > ZERO) {
+                val nextAdvance = minOf(timeLeft, nextTaskDuration() ?: timeLeft)
+                advance(nextAdvance)
+                executePending()
+                timeLeft -= nextAdvance
+            }
+        } finally {
+            nodeFacingDeliveryFloor = previousDeliveryFloor.coerceAtLeast(cumulativeAdvance)
         }
     }
 
@@ -132,7 +153,7 @@ class ParallelUdpSimNetworkEngine(
         deliveredPackets: MutableList<UdpSimPacket>
     ) {
         if (link.to in endpointNodes) {
-            link.latencyQueue.deliver(listOf(packet))
+            link.latencyQueue.enqueueInboundWithDeliveryFloor(listOf(packet), nodeFacingDeliveryFloor)
         } else {
             val nextLink = findNextLink(link, packet)
             if (nextLink == null) {
