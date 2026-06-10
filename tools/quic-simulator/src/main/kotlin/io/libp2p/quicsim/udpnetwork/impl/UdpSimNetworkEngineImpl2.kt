@@ -86,8 +86,9 @@ class UdpSimNetworkEngineImpl2(
 
     override fun advance(advanceDuration: Duration) {
         cumulativeAdvanceMutable += advanceDuration
-
     }
+
+    override fun executePending() {}
 
     override fun nextTaskDuration(): Duration? =
         linksMap.getFirst().wrapper.nextTaskPoint?.let { it - cumulativeAdvanceMutable }

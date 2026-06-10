@@ -48,8 +48,11 @@ class MappingPacketProcessorTest {
             return inboundData.map { it * 10 }
         }
 
-        override fun advanceAndExecuteAll(advanceDuration: Duration) {
+        override fun advance(advanceDuration: Duration) {
             advanceCalls += advanceDuration
+        }
+
+        override fun executePending() {
         }
 
         override fun nextTaskDuration(): Duration? = nextTask

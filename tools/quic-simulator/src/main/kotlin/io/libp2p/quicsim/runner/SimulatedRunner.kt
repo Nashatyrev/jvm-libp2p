@@ -142,19 +142,13 @@ class SimulatedRunner(
             embeddedNodes.map { node ->
                 AbstractSimPacketBridge.IdMapEntry(networkEngine.network.nodes[node.nodeId].id, node.ip)
             }
-        val latencyWindowPump =
+        val simPacketPump =
             if (latencyWindowParallelism > 0) {
-                LatencyWindowSimPacketPump(embeddedNodes, networkEngine.network, idAndIp, latencyWindowParallelism)
+                ParallelSimPacketBridge(simCoreNet, networkEngine, idAndIp)
             } else {
-                null
+                SimpleSimPacketBridge(simCoreNet, networkEngine, idAndIp)
             }
-        val sequentialPacketPump = if (latencyWindowPump == null) {
-            SimpleSimPacketBridge(simCoreNet, networkEngine, idAndIp)
-        } else {
-            null
-        }
-        val simPacketPump = latencyWindowPump ?: sequentialPacketPump!!
-        simTimer = latencyWindowPump?.monotonicTimer ?: sequentialPacketPump!!.monotonicTimer
+        simTimer = simPacketPump.monotonicTimer
         val logger = SimLogger(simTimer)
         logger.log("Starting hosts...")
 //        startHosts(nodesStuff.map { it.host })
@@ -213,7 +207,7 @@ class SimulatedRunner(
             logger.log("Exception: $e")
             throw e
         } finally {
-            latencyWindowPump?.close()
+            simPacketPump.close()
         }
     }
 

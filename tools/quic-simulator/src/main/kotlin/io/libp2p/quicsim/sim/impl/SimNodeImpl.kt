@@ -18,7 +18,7 @@ import kotlin.time.Duration
 
 class SimNodeImpl(
     val nodeId: SimNodeId,
-    val ip: String,
+    override val ip: String,
     val scheduler: DeterministicScheduler
 ) : SimNode<DatagramPacket> {
 

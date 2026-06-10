@@ -1,5 +1,6 @@
 package io.libp2p.quicsim.core.schedule
 
+import com.google.common.collect.Comparators.min
 import kotlin.time.Duration
 
 interface Controllable {
@@ -7,14 +8,12 @@ interface Controllable {
     /**
      * Advances local time without executing tasks scheduled at the new time.
      */
-    fun advance(advanceDuration: Duration) {
-    }
+    fun advance(advanceDuration: Duration)
 
     /**
      * Executes tasks which are pending at the already advanced local time.
      */
-    fun executePending() {
-    }
+    fun executePending()
 
     /**
      * Advances the time by [advanceDuration] and execute all tasks (if any) scheduled at this time point.
@@ -26,4 +25,19 @@ interface Controllable {
     }
 
     fun nextTaskDuration(): Duration?
+
+    companion object {
+
+        fun Controllable.advanceAndExecuteUntil(advanceDuration: Duration) {
+            var timeLeft = advanceDuration
+            while (timeLeft > Duration.ZERO) {
+                val nextAdvance = min(timeLeft, nextTaskDuration() ?: timeLeft)
+                advance(nextAdvance)
+                executePending()
+                timeLeft -= nextAdvance
+            }
+        }
+
+    }
 }
+

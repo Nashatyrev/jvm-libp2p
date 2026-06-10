@@ -183,9 +183,11 @@ class DispatchingPacketProcessorTest {
             return inboundData.map { it.copy(payload = outboundPrefix + it.payload) }
         }
 
-        override fun advanceAndExecuteAll(advanceDuration: Duration) {
+        override fun advance(advanceDuration: Duration) {
             advanceCalls += advanceDuration
         }
+
+        override fun executePending() {}
 
         override fun nextTaskDuration(): Duration? = nextTask
     }

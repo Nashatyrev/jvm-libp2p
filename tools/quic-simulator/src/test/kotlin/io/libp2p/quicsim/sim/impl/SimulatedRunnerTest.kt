@@ -413,7 +413,8 @@ class SimulatedRunnerTest {
 
                     }
             },
-            networkEngine = udpNetworkLogging
+            networkEngine = udpNetworkLogging,
+            latencyWindowParallelism = 8
         )
 
         runner.run()

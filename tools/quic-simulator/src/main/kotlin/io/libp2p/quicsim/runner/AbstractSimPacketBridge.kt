@@ -19,11 +19,11 @@ abstract class AbstractSimPacketBridge(
         val ip: String
     )
 
-    private var nanosPassed = AtomicLong(0)
+    protected var nanosPassed = AtomicLong(0)
     val monotonicTimer: MonotonicTimer = NanoMonotonicTimer(nanosPassed::get)
 
-    private val idToIp = idAndIp.associate { it.nodeId to it.ip }
-    private val ipToId = idAndIp.associate { it.ip to it.nodeId }
+    protected val idToIp = idAndIp.associate { it.nodeId to it.ip }
+    protected val ipToId = idAndIp.associate { it.ip to it.nodeId }
 
     private val packetIdCounter = AtomicLong()
     protected val nettyDatagramToSimUdpPacketConverter: (DatagramPacket) -> UdpSimPacket =
@@ -53,4 +53,5 @@ abstract class AbstractSimPacketBridge(
     }
 
     abstract fun advanceImpl(advanceDuration: Duration)
+    fun close() {}
 }
