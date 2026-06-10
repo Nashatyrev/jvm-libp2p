@@ -2,6 +2,8 @@ package io.libp2p.quicsim.sim.impl
 
 import io.libp2p.etc.types.toCompletableFuture
 import io.libp2p.quicsim.core.DispatchingPacketProcessor
+import io.libp2p.quicsim.core.PacketProcessor
+import io.libp2p.quicsim.core.PacketProcessorVisitor
 import io.libp2p.quicsim.core.schedule.AggregateControllable
 import io.libp2p.quicsim.core.schedule.DeterministicScheduler
 import io.libp2p.quicsim.core.schedule.impl.NettyTicker
@@ -19,7 +21,8 @@ import kotlin.time.Duration
 class SimNodeImpl(
     val nodeId: SimNodeId,
     override val ip: String,
-    val scheduler: DeterministicScheduler
+    val scheduler: DeterministicScheduler,
+    val nodeVisitor: PacketProcessorVisitor<DatagramPacket> = PacketProcessorVisitor.none()
 ) : SimNode<DatagramPacket> {
 
     private var nextClientPort = 35000
@@ -29,7 +32,6 @@ class SimNodeImpl(
         DispatchingPacketProcessor(channelsByPort) { it.recipient().port }
     private val aggregateControllable =
         AggregateControllable(listOf(scheduler, dispatchingPacketProcessor))
-    private val nettyTicker = NettyTicker(scheduler)
     private var cachedNextTaskDuration: Duration? = null
 
     fun bindServerParent(bindAddress: SocketAddress,handler: ChannelHandler): CompletableFuture<Channel> =
@@ -50,23 +52,30 @@ class SimNodeImpl(
 
     override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
         cachedNextTaskDuration = null
-        return dispatchingPacketProcessor.deliver(inboundData)
+        inboundData.forEach { nodeVisitor.onDeliverInbound(it)}
+
+        val ret = dispatchingPacketProcessor.deliver(inboundData)
+        ret.forEach { nodeVisitor.onDeliverOutbound(it)}
+        return ret
     }
 
     override fun advance(advanceDuration: Duration) {
         cachedNextTaskDuration = null
         aggregateControllable.advance(advanceDuration)
+        nodeVisitor.onAdvance(advanceDuration)
     }
 
     override fun executePending() {
         cachedNextTaskDuration = null
         aggregateControllable.executePending()
+        nodeVisitor.onExecutePending()
     }
 
     override fun nextTaskDuration(): Duration? {
         if (cachedNextTaskDuration == null) {
             cachedNextTaskDuration = aggregateControllable.nextTaskDuration()
         }
+        nodeVisitor.onNextTaskDuration(cachedNextTaskDuration)
         return cachedNextTaskDuration
     }
 

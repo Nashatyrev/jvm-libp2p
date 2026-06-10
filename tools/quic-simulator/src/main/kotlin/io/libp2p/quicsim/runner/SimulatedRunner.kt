@@ -8,6 +8,7 @@ import io.libp2p.core.transport.Transport
 import io.libp2p.crypto.keys.generateEd25519KeyPair
 import io.libp2p.etc.types.forward
 import io.libp2p.quicsim.SimLogger
+import io.libp2p.quicsim.core.PacketProcessorVisitor
 import io.libp2p.quicsim.core.schedule.DeterministicScheduler
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
 import io.libp2p.quicsim.program.NodeProgram
@@ -15,12 +16,14 @@ import io.libp2p.quicsim.program.NodeProgramFactory
 import io.libp2p.quicsim.sim.NetworkContext
 import io.libp2p.quicsim.sim.SimContext
 import io.libp2p.quicsim.sim.SimNodeId
+import io.libp2p.quicsim.sim.SimNodeVisitorFactory
 import io.libp2p.quicsim.sim.impl.SimNetImpl
 import io.libp2p.quicsim.sim.impl.SimNodeImpl
 import io.libp2p.quicsim.sim.impl.netty.SimNodeDatagramChannelFactory
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.transport.quic.QuicTransport
+import io.netty.channel.socket.DatagramPacket
 import java.security.SecureRandom
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -38,6 +41,8 @@ class SimulatedRunner(
     val maxSimulatedRunDuration: Duration = 1.minutes,
     val random: SecureRandom = SecureRandom(byteArrayOf(100)),
     val latencyWindowParallelism: Int = 0,
+    val nodeVisitorFactory: SimNodeVisitorFactory<DatagramPacket> =
+        SimNodeVisitorFactory { PacketProcessorVisitor.none() }
 ) {
     val nodeCount: Int = udpNetwork.nodes.size
 
@@ -67,10 +72,12 @@ class SimulatedRunner(
             val scheduler = DeterministicScheduler()
             scheduler.executeAfterDelay(Duration.ZERO, stuff::startProgram)
             stuff.nodeScheduler = scheduler
+            val ip = ipManager.getIP(simNodeId)
             stuff.simNodeImpl = SimNodeImpl(
                 nodeId = simNodeId,
                 scheduler = scheduler,
-                ip = ipManager.getIP(simNodeId)
+                ip = ip,
+                nodeVisitor = nodeVisitorFactory.create(ip)
             )
             stuff.simContext = SimContext(scheduler, scheduler)
             stuff

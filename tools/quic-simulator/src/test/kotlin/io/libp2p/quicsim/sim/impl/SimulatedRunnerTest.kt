@@ -9,6 +9,7 @@ import io.libp2p.etc.types.toByteBuf
 import io.libp2p.protocol.ProtocolHandler
 import io.libp2p.protocol.ProtocolMessageHandler
 import io.libp2p.pubsub.gossip.GossipParams
+import io.libp2p.quicsim.core.PacketProcessorVisitor
 import io.libp2p.quicsim.core.schedule.impl.submitAfterDelay
 import io.libp2p.quicsim.program.DataChunkMetrics
 import io.libp2p.quicsim.program.DataChunkNodeProgramFactory
@@ -32,6 +33,7 @@ import io.libp2p.quicsim.udpnetwork.fifoUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl2
 import io.netty.buffer.ByteBuf
+import io.netty.channel.socket.DatagramPacket
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -42,6 +44,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -79,7 +82,7 @@ class SimulatedRunnerTest {
                         initialPublishDelay = 5.seconds
                     ).also { nodePrograms += it }
             },
-            networkEngine = UdpSimNetworkEngineImpl(networkBuilder.build())
+            udpNetwork = networkBuilder.build()
         )
 
         runner.run()
@@ -105,31 +108,32 @@ class SimulatedRunnerTest {
         (0 until nodeCount).map { networkBuilder.node("node-$it") }
         val qdiscFactory = fifoQDiscFactory(bandwidth)
         networkBuilder.linkAllToRouter(halfLatency, qdiscFactory).build()
+        val udpNetwork = networkBuilder.build()
 
-        class LoggingUdpNetworkEngineUdp(val delegate: UdpSimNetworkEngine) : UdpSimNetworkEngine by delegate {
-            private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
-            var packetsCount = 0L
-            var throughputBytes = 0L
-            override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
-                val outbound = delegate.deliver(inboundData)
-                packetsCount += outbound.size
-                throughputBytes += outbound.sumOf { it.bytes }
-                return outbound
-            }
-
-            override fun advanceAndExecuteAll(advanceDuration: kotlin.time.Duration) {
-                delegate.advanceAndExecuteAll(advanceDuration)
-                simTime += advanceDuration
-            }
-
-            override fun nextTaskDuration(): kotlin.time.Duration? {
-                val nextTaskDuration = delegate.nextTaskDuration()
-                return nextTaskDuration
-            }
-        }
-
-        val udpNetwork = UdpSimNetworkEngineImpl2(networkBuilder.build())
-        val udpNetworkLogging = LoggingUdpNetworkEngineUdp(udpNetwork)
+//        class LoggingUdpNetworkEngineUdp(val delegate: UdpSimNetworkEngine) : UdpSimNetworkEngine by delegate {
+//            private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
+//            var packetsCount = 0L
+//            var throughputBytes = 0L
+//            override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
+//                val outbound = delegate.deliver(inboundData)
+//                packetsCount += outbound.size
+//                throughputBytes += outbound.sumOf { it.bytes }
+//                return outbound
+//            }
+//
+//            override fun advanceAndExecuteAll(advanceDuration: kotlin.time.Duration) {
+//                delegate.advanceAndExecuteAll(advanceDuration)
+//                simTime += advanceDuration
+//            }
+//
+//            override fun nextTaskDuration(): kotlin.time.Duration? {
+//                val nextTaskDuration = delegate.nextTaskDuration()
+//                return nextTaskDuration
+//            }
+//        }
+//
+//        val udpNetwork = UdpSimNetworkEngineImpl2(networkBuilder.build())
+//        val udpNetworkLogging = LoggingUdpNetworkEngineUdp(udpNetwork)
 
 
         val runner = SimulatedRunner(
@@ -149,9 +153,9 @@ class SimulatedRunnerTest {
                         initialPublishDelay = 30.seconds,
                     ).also { nodePrograms += it }
             },
-            networkEngine = udpNetworkLogging,
+            udpNetwork = udpNetwork,
             maxSimulatedRunDuration = 10.minutes,
-            latencyWindowParallelism = 0
+            latencyWindowParallelism = 1
         )
 
         runner.run()
@@ -160,7 +164,7 @@ class SimulatedRunnerTest {
             "Expected all sample gossip node programs to complete in 1000-node scenario"
         )
 
-        println("Total packet count: " + udpNetworkLogging.packetsCount + ", bytes: " + udpNetworkLogging.throughputBytes)
+//        println("Total packet count: " + udpNetworkLogging.packetsCount + ", bytes: " + udpNetworkLogging.throughputBytes)
         println("Params: neighboursToConnect: $neighboursToConnect, publishersCount: $publishersCount")
     }
 
@@ -231,7 +235,7 @@ class SimulatedRunnerTest {
 
         val runner = SimulatedRunner(
             nodeFactory = factory,
-            networkEngine = UdpSimNetworkEngineImpl(builder.build()),
+            udpNetwork = builder.build(),
             maxSimulatedRunDuration = 5.seconds
         )
 
@@ -277,7 +281,7 @@ class SimulatedRunnerTest {
 
         val runner = SimulatedRunner(
             nodeFactory = factory,
-            networkEngine = UdpSimNetworkEngineImpl(builder.build()),
+            udpNetwork = builder.build(),
             maxSimulatedRunDuration = 100.seconds
         )
 
@@ -350,37 +354,37 @@ class SimulatedRunnerTest {
             qdiscFactory = fifoQDiscFactory(Bandwidth(10_000L))
         )
 
-        class LoggingUdpNetworkEngineUdp(val delegate: UdpSimNetworkEngine) : UdpSimNetworkEngine by delegate {
-            private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
-            override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
-                fun simPacketStr(packet: UdpSimPacket) =
-                    "[$simTime] ${packet.srcNodeId} ==> ${packet.dstNodeId} size: ${packet.bytes}, hash: ${packet.payloadRef.hashCode()}"
-
-                for (packet in inboundData) {
-                    println("  ... " + simPacketStr(packet))
-                }
-                val outbound = delegate.deliver(inboundData)
-                for (packet in outbound) {
-                    println(simPacketStr(packet))
-                }
-                return outbound
-            }
-
-            override fun advanceAndExecuteAll(advanceDuration: kotlin.time.Duration) {
-                println(" Advance $advanceDuration")
-                delegate.advanceAndExecuteAll(advanceDuration)
-                simTime += advanceDuration
-            }
-
-            override fun nextTaskDuration(): kotlin.time.Duration? {
-                val nextTaskDuration = delegate.nextTaskDuration()
-                println(" Next task duration: $nextTaskDuration")
-                return nextTaskDuration
-            }
-        }
-
-        val udpNetwork = UdpSimNetworkEngineImpl(builder.build())
-        val udpNetworkLogging = LoggingUdpNetworkEngineUdp(udpNetwork)
+//        class LoggingUdpNetworkEngineUdp(val delegate: UdpSimNetworkEngine) : UdpSimNetworkEngine by delegate {
+//            private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
+//            override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
+//                fun simPacketStr(packet: UdpSimPacket) =
+//                    "[$simTime] ${packet.srcNodeId} ==> ${packet.dstNodeId} size: ${packet.bytes}, hash: ${packet.payloadRef.hashCode()}"
+//
+//                for (packet in inboundData) {
+//                    println("  ... " + simPacketStr(packet))
+//                }
+//                val outbound = delegate.deliver(inboundData)
+//                for (packet in outbound) {
+//                    println(simPacketStr(packet))
+//                }
+//                return outbound
+//            }
+//
+//            override fun advance(advanceDuration: kotlin.time.Duration) {
+//                println(" Advance $advanceDuration")
+//                delegate.advanceAndExecuteAll(advanceDuration)
+//                simTime += advanceDuration
+//            }
+//
+//            override fun nextTaskDuration(): kotlin.time.Duration? {
+//                val nextTaskDuration = delegate.nextTaskDuration()
+//                println(" Next task duration: $nextTaskDuration")
+//                return nextTaskDuration
+//            }
+//        }
+//
+//        val udpNetwork = UdpSimNetworkEngineImpl2(builder.build())
+//        val udpNetworkLogging = LoggingUdpNetworkEngineUdp(udpNetwork)
 
         val runner = SimulatedRunner(
             nodeFactory = object : NodeProgramFactory {
@@ -413,8 +417,9 @@ class SimulatedRunnerTest {
 
                     }
             },
-            networkEngine = udpNetworkLogging,
-            latencyWindowParallelism = 8
+            udpNetwork = builder.build(),
+            nodeVisitorFactory = { NodeLogger(it) },
+            latencyWindowParallelism = 0
         )
 
         runner.run()
@@ -471,7 +476,7 @@ class SimulatedRunnerTest {
                         PassiveEchoNodeProgram(simNodeId = id)
                     }
             },
-            networkEngine = UdpSimNetworkEngineImpl(builder.build()),
+            udpNetwork = builder.build(),
             latencyWindowParallelism = latencyWindowParallelism,
         )
 
@@ -632,6 +637,34 @@ class SimulatedRunnerTest {
                 stream.writeAndFlush(payload.toByteBuf())
                 return pending
             }
+        }
+    }
+
+    class NodeLogger(val nodeIdentifier: String) : PacketProcessorVisitor<DatagramPacket> {
+        var nodeTime: Duration = Duration.ZERO
+        var onNextTaskDurationMutedAt: Duration = Duration.ZERO - 1.seconds
+
+        override fun onAdvance(advanceDuration: Duration) {
+            val oldNodeTime = nodeTime
+            nodeTime += advanceDuration
+            println("[$nodeIdentifier] [$nodeTime] advance by $advanceDuration ($oldNodeTime -> $nodeTime)" )
+        }
+
+        override fun onNextTaskDuration(nextTaskDuration: Duration?) {
+            if (nodeTime > onNextTaskDurationMutedAt) {
+                println("[$nodeIdentifier] [$nodeTime] next task duration: $nextTaskDuration (at ${nodeTime + (nextTaskDuration ?: Duration.INFINITE)})")
+                onNextTaskDurationMutedAt = nodeTime
+            }
+        }
+
+        override fun onDeliverInbound(inboundPacket: DatagramPacket) {
+            println("[$nodeIdentifier] [$nodeTime]   ==> received packet of size " +
+                    "${inboundPacket.content().readableBytes()} from ${inboundPacket.sender().hostString}" )
+        }
+
+        override fun onDeliverOutbound(outboundPacket: DatagramPacket) {
+            println("[$nodeIdentifier] [$nodeTime] <==   sent packet of size " +
+                    "${outboundPacket.content().readableBytes()} to ${outboundPacket.recipient().hostString}" )
         }
     }
 }

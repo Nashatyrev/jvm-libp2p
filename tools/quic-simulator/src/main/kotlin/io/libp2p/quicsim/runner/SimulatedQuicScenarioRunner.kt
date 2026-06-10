@@ -18,7 +18,7 @@ class SimulatedQuicScenarioRunner(
         val nodeProgramFactory = scenario.createNodeProgramFactory()
         val runner = SimulatedRunner(
             nodeFactory = nodeProgramFactory,
-            networkEngine = UdpSimNetworkEngineImpl2(scenario.network.toUdpSimNetwork()),
+            udpNetwork = scenario.network.toUdpSimNetwork(),
             ipManager = ipManager,
             listenPortStartRange = listenPortStartRange,
             maxSimulatedRunDuration = scenario.maxRunDuration,
