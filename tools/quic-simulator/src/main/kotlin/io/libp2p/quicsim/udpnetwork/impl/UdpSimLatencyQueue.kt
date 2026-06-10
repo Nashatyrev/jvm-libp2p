@@ -1,12 +1,10 @@
 package io.libp2p.quicsim.udpnetwork.impl
 
-import com.google.common.collect.Comparators.max
 import io.libp2p.quicsim.core.PacketProcessor
-import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import kotlin.time.Duration
 
-class UdpSimLatencyDelay(
+class UdpSimLatencyQueue(
     val latency: Duration
 ) : QueueProcessorAdapter<UdpSimPacket>() {
 
@@ -22,8 +20,8 @@ class UdpSimLatencyDelay(
         private var cumulativeAdvanceMutable: Duration = cumulativeAdvance
         private val cumulativeAdvance: Duration
             get() {
-                if (cumulativeAdvanceMutable < this@UdpSimLatencyDelay.cumulativeAdvance) {
-                    cumulativeAdvanceMutable = this@UdpSimLatencyDelay.cumulativeAdvance
+                if (cumulativeAdvanceMutable < this@UdpSimLatencyQueue.cumulativeAdvance) {
+                    cumulativeAdvanceMutable = this@UdpSimLatencyQueue.cumulativeAdvance
                 }
                 return cumulativeAdvanceMutable
             }
@@ -34,7 +32,7 @@ class UdpSimLatencyDelay(
         override fun advance(advanceDuration: Duration) {
             require(!advanceDuration.isNegative()) { "advanceDuration must be non-negative" }
             val nextTime = cumulativeAdvance + advanceDuration
-            val maxAheadTime = this@UdpSimLatencyDelay.cumulativeAdvance + latency
+            val maxAheadTime = this@UdpSimLatencyQueue.cumulativeAdvance + latency
             require(nextTime <= maxAheadTime) {
                 "Ahead latency processor cannot advance past latency bound $maxAheadTime"
             }
@@ -46,23 +44,5 @@ class UdpSimLatencyDelay(
 
         override fun nextTaskDuration(): Duration? =
             nextTaskDurationAt(cumulativeAdvance)
-    }
-}
-
-class FifoUdpSimBandwidthQueue(
-    val bandwidth: Bandwidth,
-    // unbound queue by default
-    val maxQueueWaitTime: Duration = Duration.INFINITE,
-) : QueueProcessorAdapter<UdpSimPacket>() {
-
-    override fun enqueueInbound(inboundData: List<UdpSimPacket>, at: Duration) {
-        var lastDequeueAt = max(lastQueuedAt ?: at, at)
-        inboundData.forEach { packet ->
-            val dequeueTime = lastDequeueAt + bandwidth.durationToTransfer(packet.bytes)
-            if (dequeueTime - at <= maxQueueWaitTime) {
-                enqueue(packet, dequeueTime)
-                lastDequeueAt = dequeueTime
-            } // else packet is dropped
-        }
     }
 }

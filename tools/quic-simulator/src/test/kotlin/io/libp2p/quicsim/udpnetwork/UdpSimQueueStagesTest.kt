@@ -1,7 +1,7 @@
 package io.libp2p.quicsim.udpnetwork
 
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
-import io.libp2p.quicsim.udpnetwork.impl.UdpSimLatencyDelay
+import io.libp2p.quicsim.udpnetwork.impl.UdpSimLatencyQueue
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
@@ -131,7 +131,7 @@ class UdpSimQueueStagesTest {
 
     @Test
     fun `latency delay stage delivers packets after latency`() {
-        val latencyDelay = UdpSimLatencyDelay(10.milliseconds)
+        val latencyDelay = UdpSimLatencyQueue(10.milliseconds)
         val packet = UdpSimPacket(1, 100, "a", "b")
 
         assertEquals(emptyList<UdpSimPacket>(), latencyDelay.deliver(listOf(packet)))
@@ -144,7 +144,7 @@ class UdpSimQueueStagesTest {
 
     @Test
     fun `latency ahead processor can read packets before normal processor time advances`() {
-        val latencyDelay = UdpSimLatencyDelay(100.milliseconds)
+        val latencyDelay = UdpSimLatencyQueue(100.milliseconds)
         val ahead = latencyDelay.aheadProcessor
         val packet = UdpSimPacket(1, 100, "a", "b")
 
@@ -160,7 +160,7 @@ class UdpSimQueueStagesTest {
 
     @Test
     fun `latency ahead processor can write packets before normal processor time advances`() {
-        val latencyDelay = UdpSimLatencyDelay(100.milliseconds)
+        val latencyDelay = UdpSimLatencyQueue(100.milliseconds)
         val ahead = latencyDelay.aheadProcessor
         val packet = UdpSimPacket(1, 100, "a", "b")
 
@@ -178,7 +178,7 @@ class UdpSimQueueStagesTest {
 
     @Test
     fun `latency ahead processor cannot advance past latency bound`() {
-        val latencyDelay = UdpSimLatencyDelay(100.milliseconds)
+        val latencyDelay = UdpSimLatencyQueue(100.milliseconds)
         val ahead = latencyDelay.aheadProcessor
 
         assertThrows(IllegalArgumentException::class.java) {
