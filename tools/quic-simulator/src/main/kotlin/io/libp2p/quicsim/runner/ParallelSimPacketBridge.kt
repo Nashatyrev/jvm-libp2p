@@ -8,17 +8,17 @@ import io.libp2p.quicsim.core.schedule.Controllable
 import io.libp2p.quicsim.core.schedule.Controllable.Companion.advanceAndExecuteUntil
 import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.sim.SimNode
+import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
+import io.libp2p.quicsim.udpnetwork.impl.ParallelUdpSimNetworkEngine
 import io.netty.channel.socket.DatagramPacket
-import java.util.concurrent.Executors
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.nanoseconds
 
 class ParallelSimPacketBridge(
     val simNet: SimNet<DatagramPacket>,
-    val udpNet: UdpSimNetworkEngine,
+    val udpNet: UdpSimNetwork,
     val idAndIp: Collection<IdMapEntry>,
 ) : AbstractSimPacketBridge(idAndIp) {
 
@@ -29,16 +29,17 @@ class ParallelSimPacketBridge(
 
     val latency = calcLatency()
     val allNodes = createAllNodes()
+    private val parallelUdpNet = ParallelUdpSimNetworkEngine(udpNet)
 
     private fun calcLatency(): Duration {
-        val latencies = udpNet.network.links.map { it.latencyQueue.latency }.distinct()
+        val latencies = udpNet.links.map { it.latencyQueue.latency }.distinct()
         require(latencies.size == 1) { "All nodes must have the same latency" }
         return latencies.first()
     }
 
     private fun createAllNodes(): List<SimNodeWithUdpLinks> {
         val simNodeByIp = simNet.allNodes.associateBy { it.ip }
-        val udpNodeById = udpNet.network.nodes.associateBy { it.id }
+        val udpNodeById = udpNet.nodes.associateBy { it.id }
         val nodesWithLinks = idAndIp.map { (id, ip) ->
             val simNode = simNodeByIp[ip]!!
             val udpNode = udpNodeById[id]!!
@@ -48,8 +49,8 @@ class ParallelSimPacketBridge(
     }
 
     private fun createSimNodeWithUdpLinks(simNode: SimNode<DatagramPacket>, udpNode: UdpSimNode): SimNodeWithUdpLinks {
-        val inboundUdpLink = udpNet.network.links.first { it.to == udpNode }
-        val outboundUdpLink = udpNet.network.links.first { it.from == udpNode }
+        val inboundUdpLink = udpNet.links.first { it.to == udpNode }
+        val outboundUdpLink = udpNet.links.first { it.from == udpNode }
 
         val inboundAheadProcessor = inboundUdpLink.latencyQueue.aheadProcessor
         val outboundAheadProcessor = outboundUdpLink.latencyQueue.aheadProcessor
@@ -66,7 +67,7 @@ class ParallelSimPacketBridge(
         allNodes.forEach {
             it.pump.advanceAndExecuteUntil(advanceDuration)
         }
-        udpNet.advanceAndExecuteUntil(advanceDuration)
+        parallelUdpNet.advanceAndExecuteUntil(advanceDuration)
     }
 
     override fun executePending() {

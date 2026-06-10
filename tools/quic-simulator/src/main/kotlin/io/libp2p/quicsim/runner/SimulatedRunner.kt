@@ -18,6 +18,7 @@ import io.libp2p.quicsim.sim.SimNodeId
 import io.libp2p.quicsim.sim.impl.SimNetImpl
 import io.libp2p.quicsim.sim.impl.SimNodeImpl
 import io.libp2p.quicsim.sim.impl.netty.SimNodeDatagramChannelFactory
+import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.transport.quic.QuicTransport
 import java.security.SecureRandom
@@ -31,14 +32,14 @@ import kotlin.time.Duration.Companion.seconds
 
 class SimulatedRunner(
     val nodeFactory: NodeProgramFactory,
-    val networkEngine: UdpSimNetworkEngine,
+    val udpNetwork: UdpSimNetwork,
     val ipManager: IPManager = IPManager.Default,
     val listenPortStartRange: Int = 17000,
     val maxSimulatedRunDuration: Duration = 1.minutes,
     val random: SecureRandom = SecureRandom(byteArrayOf(100)),
     val latencyWindowParallelism: Int = 0,
 ) {
-    val nodeCount: Int = networkEngine.network.nodes.size
+    val nodeCount: Int = udpNetwork.nodes.size
 
     lateinit var simTimer: MonotonicTimer
 
@@ -140,13 +141,13 @@ class SimulatedRunner(
         val simCoreNet = SimNetImpl(embeddedNodes)
         val idAndIp =
             embeddedNodes.map { node ->
-                AbstractSimPacketBridge.IdMapEntry(networkEngine.network.nodes[node.nodeId].id, node.ip)
+                AbstractSimPacketBridge.IdMapEntry(udpNetwork.nodes[node.nodeId].id, node.ip)
             }
         val simPacketPump =
             if (latencyWindowParallelism > 0) {
-                ParallelSimPacketBridge(simCoreNet, networkEngine, idAndIp)
+                ParallelSimPacketBridge(simCoreNet, udpNetwork, idAndIp)
             } else {
-                SimpleSimPacketBridge(simCoreNet, networkEngine, idAndIp)
+                SimpleSimPacketBridge(simCoreNet, udpNetwork, idAndIp)
             }
         simTimer = simPacketPump.monotonicTimer
         val logger = SimLogger(simTimer)
