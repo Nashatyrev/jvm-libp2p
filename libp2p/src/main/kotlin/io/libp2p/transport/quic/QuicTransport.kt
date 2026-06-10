@@ -29,6 +29,7 @@ import io.libp2p.transport.implementation.ConnectionOverNetty
 import io.libp2p.transport.implementation.NettyTransport
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.AdaptiveByteBufAllocator
+import io.netty.buffer.ByteBufAllocator
 import io.netty.buffer.ByteBuf
 import io.netty.channel.*
 import io.netty.channel.epoll.Epoll
@@ -54,7 +55,8 @@ class QuicTransport @JvmOverloads constructor(
     private val localKey: PrivKey,
     private val certAlgorithm: String,
     private val protocols: List<ProtocolBinding<*>>,
-    private val datagramChannelFactory: DatagramChannelFactory = DefaultDatagramChannelFactory()
+    private val datagramChannelFactory: DatagramChannelFactory = DefaultDatagramChannelFactory(),
+    private val allocator: ByteBufAllocator = AdaptiveByteBufAllocator(true)
 ) : NettyTransport {
 
     private val deterministicRandom = SecureRandom(localKey.publicKey().bytes())
@@ -68,7 +70,6 @@ class QuicTransport @JvmOverloads constructor(
     private val channels = mutableListOf<Channel>()
     private var clientParentChannel: CompletableFuture<Channel>? = null
 
-    private var allocator by lazyVar { AdaptiveByteBufAllocator(true) }
     private var multistreamProtocol: MultistreamProtocol = MultistreamProtocolV1
     private var incomingMultistreamProtocol: MultistreamProtocol by lazyVar { multistreamProtocol }
 
@@ -409,6 +410,9 @@ class QuicTransport @JvmOverloads constructor(
                     )
                 }
             )
+//            .streamOption(ChannelOption.ALLOCATOR, allocator)
+//            .option(ChannelOption.AUTO_READ, true)
+//            .option(ChannelOption.ALLOCATOR, allocator)
             .initialMaxData(1 shl 20)
             .initialMaxStreamsBidirectional(64)
             .initialMaxStreamDataBidirectionalRemote(1 shl 18)

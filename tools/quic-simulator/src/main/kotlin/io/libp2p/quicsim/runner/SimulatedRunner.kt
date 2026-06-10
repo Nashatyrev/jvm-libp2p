@@ -23,6 +23,7 @@ import io.libp2p.quicsim.sim.impl.netty.SimNodeDatagramChannelFactory
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.transport.quic.QuicTransport
+import io.netty.buffer.UnpooledByteBufAllocator
 import io.netty.channel.socket.DatagramPacket
 import java.security.SecureRandom
 import java.util.concurrent.CompletableFuture
@@ -112,7 +113,8 @@ class SimulatedRunner(
                 key,
                 "ECDSA",
                 selectedProtocols,
-                datagramChannelFactory = SimNodeDatagramChannelFactory(node)
+                datagramChannelFactory = SimNodeDatagramChannelFactory(node),
+                allocator = simulatedQuicAllocator
             )
         }
 
@@ -233,5 +235,9 @@ class SimulatedRunner(
                 true
             } else false
         }
+    }
+
+    companion object {
+        private val simulatedQuicAllocator = UnpooledByteBufAllocator(true)
     }
 }
