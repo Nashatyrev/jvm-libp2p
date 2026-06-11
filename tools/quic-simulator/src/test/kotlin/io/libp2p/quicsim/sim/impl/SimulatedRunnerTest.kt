@@ -88,7 +88,7 @@ class SimulatedRunnerTest {
 
         runner.run()
         assertTrue(
-            nodePrograms.all { it.isComplete() },
+            nodePrograms.all { it.completeFuture.isDone },
             "Expected all sample gossip node programs to complete"
         )
     }
@@ -137,7 +137,7 @@ class SimulatedRunnerTest {
 
         runner.run()
         assertTrue(
-            nodePrograms.all { it.isComplete() },
+            nodePrograms.all { it.completeFuture.isDone },
             "Expected all sample gossip node programs to complete in 1000-node scenario"
         )
 
@@ -337,6 +337,7 @@ class SimulatedRunnerTest {
                 override fun createNode(id: SimNodeId): NodeProgram =
                     object : NodeProgram {
                         override val simNodeId: SimNodeId = id
+                        override val completeFuture: CompletableFuture<Unit> = CompletableFuture()
                         private var myHost: Host? = null
 
                         override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> {
@@ -351,14 +352,14 @@ class SimulatedRunnerTest {
                             return if (simNodeId == 0) {
                                 networkContext.myHost.network
                                     .connect(networkContext.allNodes[1]!!)
-                                    .thenApply { Unit }
+                                    .thenApply {
+                                        completeFuture.complete(Unit)
+                                        Unit
+                                    }
                             } else {
+                                completeFuture.complete(Unit)
                                 CompletableFuture.completedFuture(Unit)
                             }
-                        }
-
-                        override fun isComplete(): Boolean {
-                            return myHost?.network?.connections?.isNotEmpty() ?: false
                         }
 
                     }
@@ -438,18 +439,15 @@ class SimulatedRunnerTest {
     private class SimpleConnectNodeProgram(
         override val simNodeId: SimNodeId
     ) : NodeProgram {
-        @Volatile
-        private var complete = false
+        override val completeFuture: CompletableFuture<Unit> = CompletableFuture()
 
         override fun createProtocols(context: SimContext) = emptyList<io.libp2p.core.multistream.ProtocolBinding<*>>()
 
         override fun start(simContext: SimContext, networkContext: NetworkContext): CompletableFuture<Unit> {
             return simContext.scheduler.submitAfterDelay(100.milliseconds) {
-                complete = true
+                completeFuture.complete(Unit)
             }
         }
-
-        override fun isComplete(): Boolean = complete
     }
 
     private companion object {
@@ -469,10 +467,8 @@ class SimulatedRunnerTest {
         private val receivedAtSimMillis: AtomicLong,
         private val receivedSize: CompletableFuture<Int>
     ) : NodeProgram {
+        override val completeFuture: CompletableFuture<Unit> = CompletableFuture()
         private lateinit var binding: SizeEchoBinding
-
-        @Volatile
-        private var complete = false
 
         override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> {
             binding = SizeEchoBinding(SizeEchoProtocol())
@@ -496,31 +492,26 @@ class SimulatedRunnerTest {
                     if (err == null) {
                         receivedAtSimMillis.set((simContext.timer.time() - epoch).inWholeMilliseconds)
                         receivedSize.complete(echoedBytes.size)
-                        complete = true
+                        completeFuture.complete(Unit)
                     } else {
-                        complete = false
+                        completeFuture.completeExceptionally(err)
                     }
                 }
         }
-
-        override fun isComplete(): Boolean = complete
     }
 
     private class PassiveEchoNodeProgram(
         override val simNodeId: SimNodeId
     ) : NodeProgram {
-        @Volatile
-        private var started = false
+        override val completeFuture: CompletableFuture<Unit> = CompletableFuture()
 
         override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> =
             listOf(SizeEchoBinding(SizeEchoProtocol()))
 
         override fun start(simContext: SimContext, networkContext: NetworkContext): CompletableFuture<Unit> {
-            started = true
+            completeFuture.complete(Unit)
             return CompletableFuture.completedFuture(Unit)
         }
-
-        override fun isComplete(): Boolean = started
     }
 
     private interface SizeEchoController {

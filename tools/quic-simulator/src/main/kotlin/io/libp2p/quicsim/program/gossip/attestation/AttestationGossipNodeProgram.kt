@@ -47,6 +47,7 @@ class AttestationGossipNodeProgram(
             AttestationAggregateMessageCodec.decode(msg.data)?.let { aggregate ->
                 if (aggregate.publisherNodeId == simNodeId) return@let
                 receivedAggregateKeys += aggregate.key
+                completeIfReady()
                 eventSink.record(
                     QuicScenarioEvent.AttestationAggregateReceived(
                         nodeId = simNodeId,
@@ -85,21 +86,34 @@ class AttestationGossipNodeProgram(
                         if (error == null) {
                             emittedAggregateKeys += aggregate.key
                             eventSink.record(aggregate.toPublishedEvent())
+                            completeIfReady()
                         } else {
                             publishFailures += error
+                            completeFuture.completeExceptionally(error)
                         }
                     }
                 },
             ).schedule()
         }
+        completeIfReady()
     }
 
-    override fun isComplete(): Boolean {
+    private fun isComplete(): Boolean {
         publishFailures.peek()?.let { error ->
             throw IllegalStateException("Attestation aggregate publish failed", error)
         }
         return emittedAggregateKeys.size >= nodeConfig.aggregators.size * nodeConfig.slotCount &&
             receivedAggregateKeys.containsAll(expectedRemoteAggregates)
+    }
+
+    private fun completeIfReady() {
+        runCatching {
+            if (isComplete()) {
+                completeFuture.complete(Unit)
+            }
+        }.onFailure {
+            completeFuture.completeExceptionally(it)
+        }
     }
 
     fun debugState(): String {

@@ -17,5 +17,5 @@ interface NodeProgram {
 
     fun start(simContext: SimContext, networkContext: NetworkContext): CompletableFuture<Unit>
 
-    fun isComplete(): Boolean
+    val completeFuture: CompletableFuture<Unit>
 }

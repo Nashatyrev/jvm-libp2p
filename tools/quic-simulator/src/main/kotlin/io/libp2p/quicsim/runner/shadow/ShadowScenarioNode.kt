@@ -91,7 +91,7 @@ private class ShadowScenarioNodeApp(
             val deadline = System.nanoTime() + scenario.maxRunDuration.toLongNanosecondsSaturating()
             var complete = false
             while (System.nanoTime() <= deadline) {
-                if (!complete && nodeProgram.isComplete()) {
+                if (!complete && nodeProgram.completeFuture.isDone) {
                     complete = true
                 }
                 Thread.sleep(args.pollMillis)

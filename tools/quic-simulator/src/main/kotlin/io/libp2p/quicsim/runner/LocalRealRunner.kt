@@ -100,7 +100,7 @@ class LocalRealRunner(
         while (true) {
             Thread.sleep(1000)
             ticks += 1
-            val completeCount = nodePrograms.count { it.isComplete() }
+            val completeCount = nodePrograms.count { it.completeFuture.isDone }
             if (completeCount == nodeCount) {
                 break
             }
@@ -133,7 +133,7 @@ class LocalRealRunner(
                     val status = if (program is SampleGossipNodeProgram) {
                         program.debugState()
                     } else {
-                        "complete=${program.isComplete()}"
+                        "complete=${program.completeFuture.isDone}"
                     }
                     log("node=${program.simNodeId} connections=$connections remotes=$connectionDetails $status")
                 }

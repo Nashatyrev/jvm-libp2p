@@ -10,6 +10,7 @@ abstract class AbstractNodeProgram(
     override val simNodeId: SimNodeId,
     val connectToNodeIds: List<SimNodeId>,
 ) : NodeProgram {
+    override val completeFuture: CompletableFuture<Unit> = CompletableFuture()
 
     override fun start(simContext: SimContext, networkContext: NetworkContext): CompletableFuture<Unit> {
         val connectAll = connectAll(networkContext)

@@ -190,7 +190,7 @@ class SimulatedRunner(
                 val maybeNextAdvance = simPacketPump.nextTaskDuration()
 
                 if (maybeNextAdvance == null || isCompleteCheck.shouldRun(simTime)) {
-                    completeCount = nodePrograms.count { it.isComplete() }
+                    completeCount = nodePrograms.count { it.completeFuture.isDone }
                     if (completeCount == nodePrograms.size) {
                         break
                     }
@@ -206,8 +206,8 @@ class SimulatedRunner(
                 if (simTime > maxSimulatedRunDuration) {
                     throw IllegalStateException(
                         "Simulation exceeded limit: simulated=${simTime.inWholeMilliseconds}ms " +
-                                "limit=${maxSimulatedRunDuration.inWholeMilliseconds}ms " +
-                                "completed=$completeCount/${nodePrograms.size}"
+                            "limit=${maxSimulatedRunDuration.inWholeMilliseconds}ms " +
+                            "completed=$completeCount/${nodePrograms.size}"
                     )
                 }
             }

@@ -181,6 +181,7 @@ class DataChunkNodeProgramFactory(
         private lateinit var networkContext: NetworkContext
         private lateinit var epoch: TimePoint
         private val connections = ConcurrentHashMap<SimNodeId, Connection>()
+        override val completeFuture: CompletableFuture<Unit> = CompletableFuture()
 
         override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> {
             binding = DataChunkBinding(
@@ -188,8 +189,14 @@ class DataChunkNodeProgramFactory(
                     localNodeId = simNodeId,
                     packetSizeBytes = packetSizeBytes,
                     now = { now() },
-                    recordReceipt = ::recordReceipt,
-                    recordFailure = ::recordFailure,
+                    recordReceipt = {
+                        recordReceipt(it)
+                        completeIfReady()
+                    },
+                    recordFailure = {
+                        recordFailure(it)
+                        completeFuture.completeExceptionally(it)
+                    },
                 )
             )
             return listOf(binding)
@@ -216,6 +223,7 @@ class DataChunkNodeProgramFactory(
                                     remoteNodeId = nodeId
                                 )
                             )
+                            completeIfReady()
                         }
                 }
 
@@ -226,7 +234,7 @@ class DataChunkNodeProgramFactory(
                 }
         }
 
-        override fun isComplete(): Boolean {
+        private fun isComplete(): Boolean {
             throwIfFailed()
             val expectedConnections = nodeCount - 1
             if (connectedNodeIds[simNodeId].size < expectedConnections) return false
@@ -239,6 +247,16 @@ class DataChunkNodeProgramFactory(
                 }
 
             return sendsComplete && receivesComplete
+        }
+
+        private fun completeIfReady() {
+            runCatching {
+                if (isComplete()) {
+                    completeFuture.complete(Unit)
+                }
+            }.onFailure {
+                completeFuture.completeExceptionally(it)
+            }
         }
 
         private fun scheduleConfiguredSends() {
@@ -258,6 +276,7 @@ class DataChunkNodeProgramFactory(
                     ?: throw IllegalStateException("Node $simNodeId is not connected to node $target")
                 val sentAt = now()
                 sentChunkIndices += indexedChunk.index
+                completeIfReady()
                 eventSink.record(
                     QuicScenarioEvent.DataChunkSent(
                         nodeId = simNodeId,

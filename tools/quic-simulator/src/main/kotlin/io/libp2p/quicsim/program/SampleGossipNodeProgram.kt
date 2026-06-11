@@ -77,6 +77,7 @@ class SampleGossipNodeProgram(
         messageApi.subscribe(Consumer { msg ->
             parseSenderNodeId(msg.data)?.let { publisherNodeId ->
                 receivedNodeIds += publisherNodeId
+                completeIfReady()
                 eventSink.record(
                     QuicScenarioEvent.GossipMessageReceived(
                         nodeId = simNodeId,
@@ -87,6 +88,7 @@ class SampleGossipNodeProgram(
             }
         }, testTopic)
         log("[$simNodeId] subscribed to ${testTopic.topic}")
+        completeIfReady()
 
         val publisher = messageApi.createPublisher(networkContext.myHost.privKey)
         publishScheduled = true
@@ -112,8 +114,14 @@ class SampleGossipNodeProgram(
         }
     }
 
-    override fun isComplete(): Boolean =
+    private fun isComplete(): Boolean =
         expectedNodeIds.isNotEmpty() && receivedNodeIds.containsAll(expectedNodeIds)
+
+    private fun completeIfReady() {
+        if (isComplete()) {
+            completeFuture.complete(Unit)
+        }
+    }
 
     fun debugState(): String {
         val received = receivedNodeIds.toSortedSet().toList()
@@ -129,7 +137,7 @@ class SampleGossipNodeProgram(
         return "scheduled=$publishScheduled attempted=$publishAttempted " +
             "publishSucceeded=$publishSucceeded lastPublishError=${lastPublishError ?: "-"} " +
             "meshPeers=$meshPeers fanoutPeers=$fanoutPeers " +
-            "expected=$expectedNodeIds received=$received missing=$missing complete=${isComplete()}"
+            "expected=$expectedNodeIds received=$received missing=$missing complete=${completeFuture.isDone}"
     }
 
     private fun installRouterEventLogger() {

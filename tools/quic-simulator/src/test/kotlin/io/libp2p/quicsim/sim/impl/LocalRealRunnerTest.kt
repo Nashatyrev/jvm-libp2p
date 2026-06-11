@@ -60,7 +60,7 @@ class LocalRealRunnerTest {
         }
 
         assertTrue(
-            nodePrograms.all { it.isComplete() },
+            nodePrograms.all { it.completeFuture.isDone },
             "Expected all sample gossip node programs to complete"
         )
     }
