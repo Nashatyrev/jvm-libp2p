@@ -28,6 +28,8 @@ import io.netty.channel.socket.DatagramPacket
 import java.security.SecureRandom
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import java.util.function.BiFunction
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -59,8 +61,14 @@ class SimulatedRunner(
         lateinit var networkContext: NetworkContext
         lateinit var host: Host
         val startFuture: CompletableFuture<Unit> = CompletableFuture()
+        val completeTimeFuture: CompletableFuture<Duration> = CompletableFuture()
 
         fun startProgram() {
+            nodeProgram.completeFuture
+                .thenApply {
+                    simNodeImpl.nodeTime.elapsedTime()
+                }
+                .forward(completeTimeFuture)
             val startFut = nodeProgram.start(simContext, networkContext)
             startFut.forward(startFuture)
         }
@@ -176,43 +184,44 @@ class SimulatedRunner(
         logger.log("Running simulated event loop...")
 
         val startSimT = simTimer.time()
-        var ticksCount = 0L
-        var nextAdvance: Duration = Duration.Companion.ZERO
+        var nextAdvance: Duration = Duration.ZERO
         try {
             val isCompleteCheck = OncePerPeriod(1.milliseconds)
             val statusPrint = OncePerPeriod(1.seconds)
-            var completeCount = 0
+            val completedCount = AtomicInteger(0)
+            val lastCompleteTime = AtomicReference(Duration.ZERO)
+            nodesStuff.forEach { node ->
+                node.completeTimeFuture.thenAccept {
+                    completedCount.incrementAndGet()
+                    lastCompleteTime.set(it)
+                }
+            }
+
             while (true) {
                 simPacketPump.advanceAndExecuteAll(nextAdvance)
                 val simTime = simTimer.time() - startSimT
-                ticksCount++
 
                 val maybeNextAdvance = simPacketPump.nextTaskDuration()
 
-                if (maybeNextAdvance == null || isCompleteCheck.shouldRun(simTime)) {
-                    completeCount = nodePrograms.count { it.completeFuture.isDone }
-                    if (completeCount == nodePrograms.size) {
-                        break
-                    }
+                if (maybeNextAdvance == null || completedCount.get()  == nodePrograms.size) {
+                    break
                 }
-
                 nextAdvance = maybeNextAdvance
-                    ?: throw IllegalStateException("Simulation stalled: no pending tasks but only $completeCount/$nodeCount programs completed")
 
                 statusPrint.run(simTime) {
-                    logger.log("Nodes complete $completeCount of $nodeCount in $ticksCount ticks")
+                    logger.log("Nodes complete $completedCount of $nodeCount")
                 }
 
                 if (simTime > maxSimulatedRunDuration) {
                     throw IllegalStateException(
                         "Simulation exceeded limit: simulated=${simTime.inWholeMilliseconds}ms " +
                             "limit=${maxSimulatedRunDuration.inWholeMilliseconds}ms " +
-                            "completed=$completeCount/${nodePrograms.size}"
+                            "completed=$completedCount/${nodePrograms.size}"
                     )
                 }
             }
 
-            logger.log("All complete in $ticksCount ticks")
+            logger.log("Last Node complete at $lastCompleteTime")
         } catch (e: Exception) {
             logger.log("Exception: $e")
             throw e

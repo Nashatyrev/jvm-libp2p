@@ -68,5 +68,7 @@ class DeterministicScheduler : Controllable, SimpleScheduler, MonotonicTimer {
         return if (untilNext.isNegative()) ZERO else untilNext
     }
 
+    override val startTime: TimePoint = DeterministicTimePoint(ZERO)
+
     override fun time(): TimePoint = DeterministicTimePoint(currentTime)
 }

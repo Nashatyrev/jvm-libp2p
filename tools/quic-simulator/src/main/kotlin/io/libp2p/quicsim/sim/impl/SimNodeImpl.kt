@@ -6,6 +6,7 @@ import io.libp2p.quicsim.core.PacketProcessor
 import io.libp2p.quicsim.core.PacketProcessorVisitor
 import io.libp2p.quicsim.core.schedule.AggregateControllable
 import io.libp2p.quicsim.core.schedule.DeterministicScheduler
+import io.libp2p.quicsim.core.schedule.MonotonicTimer
 import io.libp2p.quicsim.core.schedule.impl.NettyTicker
 import io.libp2p.quicsim.sim.SimNode
 import io.libp2p.quicsim.sim.SimNodeId
@@ -85,4 +86,6 @@ class SimNodeImpl(
             channelsByPort.remove(address.port)
         }
     }
+
+    override val nodeTime: MonotonicTimer get() = scheduler
 }

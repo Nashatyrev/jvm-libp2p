@@ -9,6 +9,8 @@ import kotlin.time.Duration.Companion.nanoseconds
 class NanoMonotonicTimer(
     val nanoSupplier: () -> Long
 ) : MonotonicTimer {
+    override val startTime: TimePoint = NanoTimePoint(nanoSupplier())
+
     override fun time(): TimePoint = NanoTimePoint(nanoSupplier())
 
     companion object {
