@@ -366,7 +366,7 @@ class SimulatedRunnerTest {
             },
             udpNetwork = builder.build(),
             nodeVisitorFactory = { NodeLogger(it) },
-            latencyWindowParallelism = 0
+            latencyWindowParallelism = 1
         )
 
         runner.run()

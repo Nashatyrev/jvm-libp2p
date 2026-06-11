@@ -188,6 +188,7 @@ class ParallelUdpSimNetworkEngine(
                     it.latencyQueue.enqueueInboundWithDeliveryFloor(listOf(packet), nodeFacingDeliveryFloor)
                 }
             } else {
+                advanceLatencyQueueToCurrent(link)
                 link.latencyQueue.enqueueInboundWithDeliveryFloor(listOf(packet), nodeFacingDeliveryFloor)
             }
         } else {
