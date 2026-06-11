@@ -111,32 +111,6 @@ class SimulatedRunnerTest {
         networkBuilder.linkAllToRouter(halfLatency, qdiscFactory).build()
         val udpNetwork = networkBuilder.build()
 
-//        class LoggingUdpNetworkEngineUdp(val delegate: UdpSimNetworkEngine) : UdpSimNetworkEngine by delegate {
-//            private var simTime: kotlin.time.Duration = kotlin.time.Duration.ZERO
-//            var packetsCount = 0L
-//            var throughputBytes = 0L
-//            override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
-//                val outbound = delegate.deliver(inboundData)
-//                packetsCount += outbound.size
-//                throughputBytes += outbound.sumOf { it.bytes }
-//                return outbound
-//            }
-//
-//            override fun advanceAndExecuteAll(advanceDuration: kotlin.time.Duration) {
-//                delegate.advanceAndExecuteAll(advanceDuration)
-//                simTime += advanceDuration
-//            }
-//
-//            override fun nextTaskDuration(): kotlin.time.Duration? {
-//                val nextTaskDuration = delegate.nextTaskDuration()
-//                return nextTaskDuration
-//            }
-//        }
-//
-//        val udpNetwork = UdpSimNetworkEngineImpl2(networkBuilder.build())
-//        val udpNetworkLogging = LoggingUdpNetworkEngineUdp(udpNetwork)
-
-
         val runner = SimulatedRunner(
             nodeFactory = object : NodeProgramFactory {
                 override fun createNode(id: SimNodeId): NodeProgram =
