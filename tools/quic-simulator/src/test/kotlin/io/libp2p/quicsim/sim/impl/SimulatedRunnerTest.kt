@@ -101,6 +101,7 @@ class SimulatedRunnerTest {
         val halfLatency = 50.milliseconds
         val messageSizeBytes = 1024
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
+        val packetStats = PacketStatsNodeVisitorFactory()
         val randomConnectionsByNode: Map<SimNodeId, List<SimNodeId>> =
             QuicScenarios.createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = 1234)
 
@@ -155,7 +156,8 @@ class SimulatedRunnerTest {
             },
             udpNetwork = udpNetwork,
             maxSimulatedRunDuration = 10.minutes,
-            latencyWindowParallelism = 1
+            latencyWindowParallelism = 1,
+            nodeVisitorFactory = packetStats
         )
 
         runner.run()
@@ -166,6 +168,7 @@ class SimulatedRunnerTest {
 
 //        println("Total packet count: " + udpNetworkLogging.packetsCount + ", bytes: " + udpNetworkLogging.throughputBytes)
         println("Params: neighboursToConnect: $neighboursToConnect, publishersCount: $publishersCount")
+        println("Packet stats: ${packetStats.snapshot()}")
     }
 
     @Test
@@ -634,5 +637,80 @@ class SimulatedRunnerTest {
             println("[$nodeIdentifier] [$nodeTime] <==   sent packet of size " +
                     "${outboundPacket.content().readableBytes()} to ${outboundPacket.recipient().hostString}" )
         }
+    }
+
+    class PacketStatsNodeVisitorFactory : io.libp2p.quicsim.sim.SimNodeVisitorFactory<DatagramPacket> {
+        private val outboundPackets = AtomicLong()
+        private val inboundPackets = AtomicLong()
+        private val outboundBytes = AtomicLong()
+        private val inboundBytes = AtomicLong()
+        private val inFlightPackets = AtomicLong()
+        private val inFlightBytes = AtomicLong()
+        private val maxInFlightPackets = AtomicLong()
+        private val maxInFlightBytes = AtomicLong()
+        private val peakPauseTriggered = java.util.concurrent.atomic.AtomicBoolean()
+        private val pauseAtInFlightBytes =
+            System.getProperty("quicsim.profile.pauseAtInFlightBytes")?.toLongOrNull()
+
+        override fun create(ip: String): PacketProcessorVisitor<DatagramPacket> =
+            object : PacketProcessorVisitor<DatagramPacket> {
+                override fun onDeliverOutbound(outboundPacket: DatagramPacket) {
+                    val packetBytes = outboundPacket.content().readableBytes().toLong()
+                    outboundPackets.incrementAndGet()
+                    outboundBytes.addAndGet(packetBytes)
+                    updateMax(maxInFlightPackets, inFlightPackets.incrementAndGet())
+                    val newInFlightBytes = inFlightBytes.addAndGet(packetBytes)
+                    updateMax(maxInFlightBytes, newInFlightBytes)
+                    pauseAtPeakIfNeeded(newInFlightBytes)
+                }
+
+                override fun onDeliverInbound(inboundPacket: DatagramPacket) {
+                    val packetBytes = inboundPacket.content().readableBytes().toLong()
+                    inboundPackets.incrementAndGet()
+                    inboundBytes.addAndGet(packetBytes)
+                    inFlightPackets.addAndGet(-1)
+                    inFlightBytes.addAndGet(-packetBytes)
+                }
+            }
+
+        fun snapshot(): Snapshot =
+            Snapshot(
+                outboundPackets = outboundPackets.get(),
+                inboundPackets = inboundPackets.get(),
+                outboundBytes = outboundBytes.get(),
+                inboundBytes = inboundBytes.get(),
+                inFlightPackets = inFlightPackets.get(),
+                inFlightBytes = inFlightBytes.get(),
+                maxInFlightPackets = maxInFlightPackets.get(),
+                maxInFlightBytes = maxInFlightBytes.get()
+            )
+
+        private fun updateMax(maxValue: AtomicLong, candidate: Long) {
+            while (true) {
+                val current = maxValue.get()
+                if (candidate <= current || maxValue.compareAndSet(current, candidate)) {
+                    return
+                }
+            }
+        }
+
+        private fun pauseAtPeakIfNeeded(inFlightBytes: Long) {
+            val threshold = pauseAtInFlightBytes ?: return
+            if (inFlightBytes >= threshold && peakPauseTriggered.compareAndSet(false, true)) {
+                println("Packet stats profiling pause at inFlightBytes=$inFlightBytes")
+                Thread.sleep(120_000)
+            }
+        }
+
+        data class Snapshot(
+            val outboundPackets: Long,
+            val inboundPackets: Long,
+            val outboundBytes: Long,
+            val inboundBytes: Long,
+            val inFlightPackets: Long,
+            val inFlightBytes: Long,
+            val maxInFlightPackets: Long,
+            val maxInFlightBytes: Long
+        )
     }
 }

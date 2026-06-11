@@ -410,9 +410,9 @@ class QuicTransport @JvmOverloads constructor(
                     )
                 }
             )
-//            .streamOption(ChannelOption.ALLOCATOR, allocator)
-//            .option(ChannelOption.AUTO_READ, true)
-//            .option(ChannelOption.ALLOCATOR, allocator)
+            .streamOption(ChannelOption.ALLOCATOR, allocator)
+            .option(ChannelOption.AUTO_READ, true)
+            .option(ChannelOption.ALLOCATOR, allocator)
             .initialMaxData(1 shl 20)
             .initialMaxStreamsBidirectional(64)
             .initialMaxStreamDataBidirectionalRemote(1 shl 18)
