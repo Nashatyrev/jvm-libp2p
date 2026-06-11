@@ -40,6 +40,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -604,12 +605,26 @@ class SimulatedRunnerTest {
 
         override fun onDeliverInbound(inboundPacket: DatagramPacket) {
             println("[$nodeIdentifier] [$nodeTime]   ==> received packet of size " +
-                    "${inboundPacket.content().readableBytes()} from ${inboundPacket.sender().hostString}" )
+                    "${inboundPacket.content().readableBytes()} " +
+                    "hash ${packetContentHashHex(inboundPacket)} " +
+                    "from ${inboundPacket.sender().hostString}" )
         }
 
         override fun onDeliverOutbound(outboundPacket: DatagramPacket) {
             println("[$nodeIdentifier] [$nodeTime] <==   sent packet of size " +
-                    "${outboundPacket.content().readableBytes()} to ${outboundPacket.recipient().hostString}" )
+                    "${outboundPacket.content().readableBytes()} " +
+                    "hash ${packetContentHashHex(outboundPacket)} " +
+                    "to ${outboundPacket.recipient().hostString}" )
+        }
+
+        private fun packetContentHashHex(packet: DatagramPacket): String {
+            val content = packet.content()
+            val bytes = ByteArray(content.readableBytes())
+            content.getBytes(content.readerIndex(), bytes)
+            return MessageDigest.getInstance("SHA-256")
+                .digest(bytes)
+                .take(4)
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
         }
     }
 
