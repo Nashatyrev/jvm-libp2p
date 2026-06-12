@@ -197,27 +197,34 @@ class SimulatedRunner(
                 }
             }
 
-            while (true) {
-                simPacketPump.advanceAndExecuteAll(nextAdvance)
-                val simTime = simTimer.time() - startSimT
+            if (latencyWindowParallelism > 0) {
+                val parallelBridge = simPacketPump as ParallelSimPacketBridge
+                parallelBridge.advanceWhile { completedCount.get() < nodePrograms.size && simTimer.elapsedTime() < maxSimulatedRunDuration }
 
-                val maybeNextAdvance = simPacketPump.nextTaskDuration()
+            } else {
 
-                if (maybeNextAdvance == null || completedCount.get()  == nodePrograms.size) {
-                    break
-                }
-                nextAdvance = maybeNextAdvance
+                while (true) {
+                    simPacketPump.advanceAndExecuteAll(nextAdvance)
+                    val simTime = simTimer.time() - startSimT
 
-                statusPrint.run(simTime) {
-                    logger.log("Nodes complete $completedCount of $nodeCount")
-                }
+                    val maybeNextAdvance = simPacketPump.nextTaskDuration()
 
-                if (simTime > maxSimulatedRunDuration) {
-                    throw IllegalStateException(
-                        "Simulation exceeded limit: simulated=${simTime.inWholeMilliseconds}ms " +
-                            "limit=${maxSimulatedRunDuration.inWholeMilliseconds}ms " +
-                            "completed=$completedCount/${nodePrograms.size}"
-                    )
+                    if (maybeNextAdvance == null || completedCount.get() == nodePrograms.size) {
+                        break
+                    }
+                    nextAdvance = maybeNextAdvance
+
+                    statusPrint.run(simTime) {
+                        logger.log("Nodes complete $completedCount of $nodeCount")
+                    }
+
+                    if (simTime > maxSimulatedRunDuration) {
+                        throw IllegalStateException(
+                            "Simulation exceeded limit: simulated=${simTime.inWholeMilliseconds}ms " +
+                                    "limit=${maxSimulatedRunDuration.inWholeMilliseconds}ms " +
+                                    "completed=$completedCount/${nodePrograms.size}"
+                        )
+                    }
                 }
             }
 
@@ -228,6 +235,7 @@ class SimulatedRunner(
         } finally {
             simPacketPump.close()
         }
+
     }
 
     class OncePerPeriod(val period: Duration) {

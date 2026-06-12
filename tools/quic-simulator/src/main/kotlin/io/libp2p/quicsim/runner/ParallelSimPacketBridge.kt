@@ -12,6 +12,9 @@ import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.libp2p.quicsim.udpnetwork.impl.ParallelUdpSimNetworkEngine
 import io.netty.channel.socket.DatagramPacket
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 
 class ParallelSimPacketBridge(
@@ -61,11 +64,101 @@ class ParallelSimPacketBridge(
     }
 
     override fun advanceImpl(advanceDuration: Duration) {
-        require(advanceDuration == latency || advanceDuration == Duration.ZERO)
-        allNodes.parallelStream().forEach {
-            it.pump.advanceAndExecuteUntil(advanceDuration)
+//        require(advanceDuration == latency || advanceDuration == Duration.ZERO)
+//        allNodes.parallelStream().forEach {
+//            it.pump.advanceAndExecuteUntil(advanceDuration)
+//        }
+//        parallelUdpNet.advanceAndExecuteUntil(advanceDuration)
+    }
+
+    fun advanceWhile(predicate: () -> Boolean) {
+        val executor = Executors.newFixedThreadPool(1)
+
+        val lock = Object()
+        val inFlightTasks = AtomicInteger()
+        val failure = AtomicReference<Throwable>()
+
+        fun submit(task: () -> Unit) {
+            inFlightTasks.incrementAndGet()
+            executor.execute {
+                try {
+                    task()
+                } catch (t: Throwable) {
+                    failure.compareAndSet(null, t)
+                } finally {
+                    synchronized(lock) {
+                        if (inFlightTasks.decrementAndGet() == 0) {
+                            lock.notifyAll()
+                        }
+                    }
+                }
+            }
         }
-        parallelUdpNet.advanceAndExecuteUntil(advanceDuration)
+
+        fun awaitQuiescence() = synchronized(lock) {
+            while (inFlightTasks.get() > 0) {
+                lock.wait()
+            }
+        }
+
+        class Task(
+            val name: String,
+            var currentTime: Duration,
+            val linkedTasks: MutableList<Task> = mutableListOf<Task>(),
+            val advanceAction: () -> Unit,
+        ) {
+            var pendingTime: Duration = currentTime
+
+            fun canAdvance() = synchronized(lock) {
+                linkedTasks.all { it.currentTime >= this.pendingTime }
+            }
+            fun advance() = synchronized(lock) {
+                println("-- [$name] Scheduled advance $pendingTime -> ${pendingTime + latency}")
+                pendingTime += latency
+                submit {
+                    if (predicate()) {
+                        println("---- [$name] Advancing $currentTime -> ${currentTime + latency}")
+                        advanceAction()
+                        println("---- [$name] Advance complete $currentTime -> ${currentTime + latency}")
+                        onAdvanced()
+                    }
+                }
+            }
+
+            fun onAdvanced()  = synchronized(lock) {
+                currentTime += latency
+                linkedTasks.forEach { it.advanceIfPossible() }
+            }
+
+            fun advanceIfPossible(): Unit = synchronized(lock) {
+                if (predicate() && canAdvance()) {
+                    advance()
+                }
+            }
+        }
+
+        val udpNetTask = Task("udpNet", parallelUdpNet.currentTime) {
+            parallelUdpNet.advanceAndExecuteUntil(latency)
+            // just to increase the timer
+            advance(latency)
+        }
+
+        val allNodesTasks = allNodes.map {
+            Task(it.simNode.ip,it.simNode.nodeTime.elapsedTime(), mutableListOf(udpNetTask)) {
+                it.pump.advanceAndExecuteUntil(latency)
+            }
+        }
+
+        udpNetTask.linkedTasks += allNodesTasks
+
+
+        (listOf<Task>(udpNetTask) + allNodesTasks).forEach {
+            it.advanceIfPossible()
+        }
+
+        awaitQuiescence()
+        executor.shutdown()
+        failure.get()?.let { throw it }
     }
 
     override fun executePending() {

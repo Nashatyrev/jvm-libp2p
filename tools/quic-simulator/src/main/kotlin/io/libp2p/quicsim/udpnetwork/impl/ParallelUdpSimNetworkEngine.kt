@@ -21,6 +21,7 @@ class ParallelUdpSimNetworkEngine(
     private val idToNodeMap = network.nodes.associateBy { it.id }
     private val linksMap = network.links.associateBy { it.from to it.to }
     private var cumulativeAdvance: Duration = ZERO
+    val currentTime get() = cumulativeAdvance
     private var nodeFacingDeliveryFloor: Duration = ZERO
     private val deliveredReady = mutableListOf<UdpSimPacket>()
     private val latencyLinksToDrainKeys = network.links

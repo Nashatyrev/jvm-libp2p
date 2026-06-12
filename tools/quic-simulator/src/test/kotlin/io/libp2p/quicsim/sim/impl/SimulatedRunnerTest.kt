@@ -584,7 +584,7 @@ class SimulatedRunnerTest {
         override fun onAdvance(advanceDuration: Duration) {
             val oldNodeTime = nodeTime
             nodeTime += advanceDuration
-            println("[$nodeIdentifier] [$nodeTime] advance by $advanceDuration ($oldNodeTime -> $nodeTime)" )
+            println("[$nodeIdentifier] [$nodeTime] advanced by $advanceDuration ($oldNodeTime -> $nodeTime)" )
         }
 
         override fun onNextTaskDuration(nextTaskDuration: Duration?) {
