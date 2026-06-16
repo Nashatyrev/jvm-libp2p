@@ -8,4 +8,14 @@ interface UdpSimNetwork {
     val nodes: List<UdpSimNode>
     /** Directed links between nodes. */
     val links: List<UdpSimLink>
+
+    companion object {
+        fun UdpSimNetwork.findEndpoints(): Set<UdpSimNode> =
+            links
+                .map { it.from }
+                .groupingBy { it }
+                .eachCount()
+                .filter { it.value == 1 }
+                .keys
+    }
 }

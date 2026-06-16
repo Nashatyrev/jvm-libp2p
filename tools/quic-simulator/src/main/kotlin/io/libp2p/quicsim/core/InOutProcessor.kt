@@ -3,28 +3,27 @@ package io.libp2p.quicsim.core
 import kotlin.time.Duration
 
 class InOutProcessor<TPacket>(
-    val inProcessor: PacketProcessor<TPacket>,
-    val outProcessor: PacketProcessor<TPacket>,
+    val emitter: PacketEmitter<TPacket>,
+    val receiver: PacketReceiver<TPacket>,
 ) : PacketProcessor<TPacket> {
 
     override fun deliver(inboundData: List<TPacket>): List<TPacket> {
         if (inboundData.isNotEmpty()) {
-            val shouldBeEmpty = outProcessor.deliver(inboundData)
-            check(shouldBeEmpty.isEmpty())
+            receiver.receivePackets(inboundData)
         }
-        return inProcessor.deliver(emptyList())
+        return emitter.emitPackets()
     }
 
     override fun advance(advanceDuration: Duration) {
-        inProcessor.advance(advanceDuration)
-        outProcessor.advance(advanceDuration)
+        emitter.advance(advanceDuration)
+        receiver.advance(advanceDuration)
     }
 
     override fun executePending() {
-        inProcessor.executePending()
-        outProcessor.executePending()
+        emitter.executePending()
+        receiver.executePending()
     }
 
     override fun nextTaskDuration(): Duration? =
-        inProcessor.nextTaskDuration()
+        emitter.nextTaskDuration()
 }

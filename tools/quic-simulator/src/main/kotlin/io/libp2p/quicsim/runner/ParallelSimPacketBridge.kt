@@ -33,7 +33,7 @@ class ParallelSimPacketBridge(
     private val parallelUdpNet = ParallelUdpSimNetworkEngine(udpNet, drainEndpointBoundLatency = false)
 
     private fun calcLatency(): Duration {
-        val latencies = udpNet.links.map { it.latencyQueue.latency }.distinct()
+        val latencies = udpNet.links.map { it.latencyQueue.minimalLatency }.distinct()
         require(latencies.size == 1) { "All nodes must have the same latency" }
         return latencies.first()
     }
@@ -53,10 +53,10 @@ class ParallelSimPacketBridge(
         val inboundUdpLink = udpNet.links.first { it.to == udpNode }
         val outboundUdpLink = udpNet.links.first { it.from == udpNode }
 
-        val inboundAheadProcessor = inboundUdpLink.latencyQueue.aheadProcessor
-        val outboundAheadProcessor = outboundUdpLink.latencyQueue.aheadEnqueueProcessor
+        val inboundEmitter = inboundUdpLink.latencyQueue.emitter
+        val outboundReceiver = outboundUdpLink.latencyQueue.receiver
 
-        val aheadProcessor = InOutProcessor(inboundAheadProcessor, outboundAheadProcessor)
+        val aheadProcessor = InOutProcessor(inboundEmitter, outboundReceiver)
         val aheadProcessorSim =
             aheadProcessor.map(nettyDatagramToSimUdpPacketConverter, simUdpPacketToNettyDatagramConverter)
         val controllable = ControllablePacketPump(simNode, aheadProcessorSim)
