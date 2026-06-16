@@ -3,14 +3,12 @@ package io.libp2p.quicsim.runner
 import io.libp2p.quicsim.core.ControllablePacketPump
 import io.libp2p.quicsim.core.InOutProcessor
 import io.libp2p.quicsim.core.MappingPacketProcessor.Companion.map
-import io.libp2p.quicsim.core.schedule.Controllable
 import io.libp2p.quicsim.core.schedule.Controllable.Companion.advanceAndExecuteUntil
 import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.sim.SimNode
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
-import io.libp2p.quicsim.udpnetwork.UdpSimPacket
-import io.libp2p.quicsim.udpnetwork.impl.ParallelUdpSimNetworkEngine
+import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl3
 import io.netty.channel.socket.DatagramPacket
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
@@ -30,7 +28,7 @@ class ParallelSimPacketBridge(
 
     val latency = calcLatency()
     val allNodes = createAllNodes()
-    private val parallelUdpNet = ParallelUdpSimNetworkEngine(udpNet, drainEndpointBoundLatency = false)
+    private val parallelUdpNet = UdpSimNetworkEngineImpl3(udpNet)
 
     private fun calcLatency(): Duration {
         val latencies = udpNet.links.map { it.latencyQueue.minimalLatency }.distinct()
@@ -138,7 +136,7 @@ class ParallelSimPacketBridge(
         }
 
         val udpNetTask = Task("udpNet", parallelUdpNet.currentTime) {
-            parallelUdpNet.advanceAndExecuteUntil(latency)
+            parallelUdpNet.advanceUntil(latency)
             // just to increase the timer
             advance(latency)
         }
