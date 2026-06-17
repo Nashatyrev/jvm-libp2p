@@ -17,22 +17,24 @@ class UdpSimQueuePipelineTest {
         val packet2 = UdpSimPacket(2, 100, "a", "b")
 
         assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(listOf(packet1, packet2)))
-        assertEquals(10.milliseconds, qdisc.nextTaskDuration())
+        assertEquals(100.milliseconds, qdisc.nextTaskDuration())
+        assertEquals(10.milliseconds, qdisc.latencyQueue.emitter.nextTaskDuration())
 
-        qdisc.advanceAndExecuteAll(9.milliseconds)
+        qdisc.latencyQueue.emitter.advanceAndExecuteAll(9.milliseconds)
+        assertEquals(emptyList<UdpSimPacket>(), qdisc.latencyQueue.emitter.emitPackets())
+
+        qdisc.latencyQueue.emitter.advanceAndExecuteAll(1.milliseconds)
+        assertEquals(listOf(packet1), qdisc.latencyQueue.emitter.emitPackets())
+        assertEquals(100.milliseconds, qdisc.nextTaskDuration())
+
+        qdisc.advanceAndExecuteAll(100.milliseconds)
         assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(emptyList()))
-
-        qdisc.advanceAndExecuteAll(1.milliseconds)
-        assertEquals(listOf(packet1), qdisc.deliver(emptyList()))
-        assertEquals(90.milliseconds, qdisc.nextTaskDuration())
-
-        qdisc.advanceAndExecuteAll(90.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(emptyList()))
-        assertEquals(10.milliseconds, qdisc.nextTaskDuration())
-
-        qdisc.advanceAndExecuteAll(10.milliseconds)
-        assertEquals(listOf(packet2), qdisc.deliver(emptyList()))
         assertEquals(null, qdisc.nextTaskDuration())
+        assertEquals(100.milliseconds, qdisc.latencyQueue.emitter.nextTaskDuration())
+
+        qdisc.latencyQueue.emitter.advanceAndExecuteAll(100.milliseconds)
+        assertEquals(listOf(packet2), qdisc.latencyQueue.emitter.emitPackets())
+        assertEquals(null, qdisc.latencyQueue.emitter.nextTaskDuration())
     }
 
     @Test
@@ -46,11 +48,12 @@ class UdpSimQueuePipelineTest {
         val packet2 = UdpSimPacket(2, 100, "a", "b")
 
         assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(listOf(packet1, packet2)))
-        assertEquals(10.milliseconds, qdisc.nextTaskDuration())
-
-        qdisc.advanceAndExecuteAll(10.milliseconds)
-        assertEquals(listOf(packet1), qdisc.deliver(emptyList()))
         assertEquals(null, qdisc.nextTaskDuration())
+        assertEquals(10.milliseconds, qdisc.latencyQueue.emitter.nextTaskDuration())
+
+        qdisc.latencyQueue.emitter.advanceAndExecuteAll(10.milliseconds)
+        assertEquals(listOf(packet1), qdisc.latencyQueue.emitter.emitPackets())
+        assertEquals(null, qdisc.latencyQueue.emitter.nextTaskDuration())
     }
 
     @Test
@@ -61,8 +64,10 @@ class UdpSimQueuePipelineTest {
         )
         val packet = UdpSimPacket(1, 100, "a", "b")
 
-        assertEquals(listOf(packet), qdisc.deliver(listOf(packet)))
+        assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(listOf(packet)))
         assertEquals(null, qdisc.nextTaskDuration())
+        assertEquals(0.milliseconds, qdisc.latencyQueue.emitter.nextTaskDuration())
+        assertEquals(listOf(packet), qdisc.latencyQueue.emitter.emitPackets())
     }
 
     @Test
@@ -74,11 +79,12 @@ class UdpSimQueuePipelineTest {
         val packet = UdpSimPacket(1, 0, "a", "b")
 
         assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(listOf(packet)))
-        assertEquals(10.milliseconds, qdisc.nextTaskDuration())
-
-        qdisc.advanceAndExecuteAll(10.milliseconds)
-        assertEquals(listOf(packet), qdisc.deliver(emptyList()))
         assertEquals(null, qdisc.nextTaskDuration())
+        assertEquals(10.milliseconds, qdisc.latencyQueue.emitter.nextTaskDuration())
+
+        qdisc.latencyQueue.emitter.advanceAndExecuteAll(10.milliseconds)
+        assertEquals(listOf(packet), qdisc.latencyQueue.emitter.emitPackets())
+        assertEquals(null, qdisc.latencyQueue.emitter.nextTaskDuration())
     }
 
     @Test
@@ -89,7 +95,7 @@ class UdpSimQueuePipelineTest {
         )
         val packet = UdpSimPacket(1, 100, "a", "b")
 
-        assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(listOf(packet)))
+        qdisc.latencyQueue.receiver.receivePackets(listOf(packet))
         assertEquals(10.milliseconds, qdisc.nextTaskDuration())
 
         qdisc.advanceAndExecuteAll(10.milliseconds)
@@ -106,19 +112,21 @@ class UdpSimQueuePipelineTest {
         val packet1 = UdpSimPacket(1, 100, "a", "b")
 
         qdisc.deliver(listOf(packet1))
-        assertEquals(200.milliseconds, qdisc.nextTaskDuration())
+        assertEquals(null, qdisc.nextTaskDuration())
+        assertEquals(200.milliseconds, qdisc.latencyQueue.emitter.nextTaskDuration())
 
         qdisc.advanceAndExecuteAll(150.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), qdisc.deliver(emptyList()))
-        assertEquals(50.milliseconds, qdisc.nextTaskDuration())
+        qdisc.latencyQueue.emitter.advanceAndExecuteAll(150.milliseconds)
+        assertEquals(emptyList<UdpSimPacket>(), qdisc.latencyQueue.emitter.emitPackets())
+        assertEquals(50.milliseconds, qdisc.latencyQueue.emitter.nextTaskDuration())
 
         val packet2 = UdpSimPacket(2, 100, "a", "b")
 
         qdisc.deliver(listOf(packet2))
 
-        qdisc.advanceAndExecuteAll(50.milliseconds)
-        assertEquals(listOf(packet1), qdisc.deliver(emptyList()))
+        qdisc.latencyQueue.emitter.advanceAndExecuteAll(50.milliseconds)
+        assertEquals(listOf(packet1), qdisc.latencyQueue.emitter.emitPackets())
 
-        assertEquals(150.milliseconds, qdisc.nextTaskDuration())
+        assertEquals(150.milliseconds, qdisc.latencyQueue.emitter.nextTaskDuration())
     }
 }

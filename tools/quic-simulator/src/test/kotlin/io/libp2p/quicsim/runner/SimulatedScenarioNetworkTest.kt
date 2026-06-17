@@ -15,14 +15,15 @@ class SimulatedScenarioNetworkTest {
             latency = 10.milliseconds,
             bandwidthBytesPerSecond = 1_000
         ).toUdpSimNetwork()
-        val outbound = network.links.single { it.from.id == "node-0" && it.to.id == "router-0" }.qdisc
-        val inbound = network.links.single { it.from.id == "router-0" && it.to.id == "node-0" }.qdisc
+        val outbound = network.links.single { it.from.id == "node-0" && it.to.id == "router-0" }
+        val inbound = network.links.single { it.from.id == "router-0" && it.to.id == "node-0" }
         val packet = UdpSimPacket(1, 100, "node-0", "router-0")
 
-        outbound.deliver(listOf(packet))
-        assertEquals(10.milliseconds, outbound.nextTaskDuration())
+        outbound.latencyQueue.receiver.receivePackets(listOf(packet))
+        assertEquals(10.milliseconds, outbound.qdisc.nextTaskDuration())
 
-        inbound.deliver(listOf(packet))
-        assertEquals(100.milliseconds, inbound.nextTaskDuration())
+        inbound.qdisc.deliver(listOf(packet))
+        assertEquals(null, inbound.qdisc.nextTaskDuration())
+        assertEquals(10.milliseconds, inbound.latencyQueue.emitter.nextTaskDuration())
     }
 }
