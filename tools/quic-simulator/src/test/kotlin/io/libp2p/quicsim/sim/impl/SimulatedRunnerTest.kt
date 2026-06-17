@@ -98,8 +98,8 @@ class SimulatedRunnerTest {
 
     @Test
     fun sendMessageFromNPublishers() {
-        val nodeCount = 100
-        val publishersCount = 100
+        val nodeCount = 1000
+        val publishersCount = 400
         val neighboursToConnect = 20
         val bandwidth = Bandwidth(5_000_000L)
         val halfLatency = 50.milliseconds
@@ -134,7 +134,7 @@ class SimulatedRunnerTest {
             },
             udpNetwork = udpNetwork,
             maxSimulatedRunDuration = 10.minutes,
-            latencyWindowParallelism = 8,
+            latencyWindowParallelism = 20,
             nodeVisitorFactory = packetStats
         )
 

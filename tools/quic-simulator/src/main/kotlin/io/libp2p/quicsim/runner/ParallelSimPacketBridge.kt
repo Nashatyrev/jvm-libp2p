@@ -10,8 +10,11 @@ import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl3
 import io.netty.channel.socket.DatagramPacket
-import java.util.concurrent.Executors
+import java.util.concurrent.PriorityBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 
@@ -74,15 +77,38 @@ class ParallelSimPacketBridge(
     }
 
     fun advanceWhile(predicate: () -> Boolean) {
-        val executor = Executors.newFixedThreadPool(parallelism)
-
         val lock = Object()
         val inFlightTasks = AtomicInteger()
         val failure = AtomicReference<Throwable>()
+        val submitSequence = AtomicLong()
 
-        fun submit(task: () -> Unit) {
+        class PrioritizedRunnable(
+            val priority: Int,
+            val sequence: Long,
+            val delegate: () -> Unit
+        ) : Runnable {
+            override fun run() {
+                delegate()
+            }
+        }
+
+        val executor = ThreadPoolExecutor(
+            parallelism,
+            parallelism,
+            0L,
+            TimeUnit.MILLISECONDS,
+            PriorityBlockingQueue<Runnable>(
+                11,
+                compareBy<Runnable>(
+                    { (it as PrioritizedRunnable).priority },
+                    { (it as PrioritizedRunnable).sequence }
+                )
+            )
+        )
+
+        fun submit(priority: Int, task: () -> Unit) {
             inFlightTasks.incrementAndGet()
-            executor.execute {
+            executor.execute(PrioritizedRunnable(priority, submitSequence.getAndIncrement()) {
                 try {
                     task()
                 } catch (t: Throwable) {
@@ -94,7 +120,7 @@ class ParallelSimPacketBridge(
                         }
                     }
                 }
-            }
+            })
         }
 
         fun awaitQuiescence() = synchronized(lock) {
@@ -105,6 +131,7 @@ class ParallelSimPacketBridge(
 
         class Task(
             val name: String,
+            val priority: Int,
             var currentTime: Duration,
             val linkedTasks: MutableList<Task> = mutableListOf<Task>(),
             val advanceAction: () -> Unit,
@@ -119,7 +146,7 @@ class ParallelSimPacketBridge(
 //                println("-- [$name] Scheduled advance $pendingTime -> ${pendingTime + latency}")
                 pendingTime += latency
                 running = true
-                submit {
+                submit(priority) {
                     if (predicate()) {
 //                        println("---- [$name] Advancing $currentTime -> ${currentTime + latency}")
                         advanceAction()
@@ -143,14 +170,14 @@ class ParallelSimPacketBridge(
             }
         }
 
-        val udpNetTask = Task("udpNet", parallelUdpNet.currentTime) {
+        val udpNetTask = Task("udpNet", 0, parallelUdpNet.currentTime) {
             parallelUdpNet.advanceUntil(latency)
             // just to increase the timer
             advance(latency)
         }
 
         val allNodesTasks = allNodes.map {
-            Task(it.simNode.ip,it.simNode.nodeTime.elapsedTime(), mutableListOf(udpNetTask)) {
+            Task(it.simNode.ip, 1, it.simNode.nodeTime.elapsedTime(), mutableListOf(udpNetTask)) {
                 it.pump.advanceAndExecuteUntil(latency)
             }
         }
