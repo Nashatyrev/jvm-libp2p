@@ -25,6 +25,9 @@ class UdpSimNetworkEngineImpl3(
         val link: UdpSimLink,
         val wrapper: PacketProcessorB<UdpSimPacket> = PacketProcessorB(link.qdisc)
     )
+    private val wrappedLinks = network.links
+        .map { WrappedLink(it) }
+        .associateBy { it.link.from to it.link.to }
     private lateinit var linksMap: ValueSortedMap<Pair<UdpSimNode, UdpSimNode>, WrappedLink, Duration>
 
 //    private val endpoints = network.findEndpoints()
@@ -34,12 +37,11 @@ class UdpSimNetworkEngineImpl3(
 
     private fun recreateLinksMap() {
         linksMap = ValueSortedMap(
-            network.links
-                .map { WrappedLink(it) }
-                .associateBy { it.link.from to it.link.to }
+            wrappedLinks
         ) { value ->
             value.wrapper.nextTaskPoint ?: Duration.INFINITE
-        }    }
+        }
+    }
 
     private fun findNextLink(fromLink: UdpSimLink?, packet: UdpSimPacket): Pair<UdpSimNode, UdpSimNode>? {
         val srcHopNode = fromLink?.to ?: idToNodeMap[packet.srcNodeId]!!
