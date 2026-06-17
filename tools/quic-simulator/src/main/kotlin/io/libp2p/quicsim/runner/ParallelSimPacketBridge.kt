@@ -19,7 +19,11 @@ class ParallelSimPacketBridge(
     val simNet: SimNet<DatagramPacket>,
     val udpNet: UdpSimNetwork,
     val idAndIp: Collection<IdMapEntry>,
+    val parallelism: Int,
 ) : AbstractSimPacketBridge(idAndIp) {
+    init {
+        require(parallelism > 0) { "parallelism must be positive" }
+    }
 
     data class SimNodeWithUdpLinks(
         val simNode: SimNode<DatagramPacket>,
@@ -70,7 +74,7 @@ class ParallelSimPacketBridge(
     }
 
     fun advanceWhile(predicate: () -> Boolean) {
-        val executor = Executors.newFixedThreadPool(1)
+        val executor = Executors.newFixedThreadPool(parallelism)
 
         val lock = Object()
         val inFlightTasks = AtomicInteger()
@@ -106,13 +110,15 @@ class ParallelSimPacketBridge(
             val advanceAction: () -> Unit,
         ) {
             var pendingTime: Duration = currentTime
+            var running: Boolean = false
 
             fun canAdvance() = synchronized(lock) {
-                linkedTasks.all { it.currentTime >= this.pendingTime }
+                !running && linkedTasks.all { it.currentTime >= this.pendingTime }
             }
             fun advance() = synchronized(lock) {
 //                println("-- [$name] Scheduled advance $pendingTime -> ${pendingTime + latency}")
                 pendingTime += latency
+                running = true
                 submit {
                     if (predicate()) {
 //                        println("---- [$name] Advancing $currentTime -> ${currentTime + latency}")
@@ -125,6 +131,8 @@ class ParallelSimPacketBridge(
 
             fun onAdvanced()  = synchronized(lock) {
                 currentTime += latency
+                running = false
+                advanceIfPossible()
                 linkedTasks.forEach { it.advanceIfPossible() }
             }
 

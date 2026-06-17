@@ -162,7 +162,7 @@ class SimulatedRunner(
             }
         val simPacketPump =
             if (latencyWindowParallelism > 0) {
-                ParallelSimPacketBridge(simCoreNet, udpNetwork, idAndIp)
+                ParallelSimPacketBridge(simCoreNet, udpNetwork, idAndIp, latencyWindowParallelism)
             } else {
                 SimpleSimPacketBridge(simCoreNet, udpNetwork, idAndIp)
             }

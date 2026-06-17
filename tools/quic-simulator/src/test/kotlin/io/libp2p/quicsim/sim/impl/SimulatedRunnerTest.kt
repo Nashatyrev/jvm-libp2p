@@ -134,7 +134,7 @@ class SimulatedRunnerTest {
             },
             udpNetwork = udpNetwork,
             maxSimulatedRunDuration = 10.minutes,
-            latencyWindowParallelism = 1,
+            latencyWindowParallelism = 8,
             nodeVisitorFactory = packetStats
         )
 
@@ -263,7 +263,8 @@ class SimulatedRunnerTest {
         val runner = SimulatedRunner(
             nodeFactory = factory,
             udpNetwork = builder.build(),
-            maxSimulatedRunDuration = 100.seconds
+            maxSimulatedRunDuration = 100.seconds,
+            latencyWindowParallelism = 8
         )
 
         try {
