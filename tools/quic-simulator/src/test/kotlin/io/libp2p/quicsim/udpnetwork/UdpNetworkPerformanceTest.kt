@@ -22,8 +22,13 @@ class UdpNetworkPerformanceTest {
         val builder = TestStarNetworkBuilder2()
         val nodes = List(NODE_COUNT) { index -> builder.node("node-$index") }
         var counter = 0L
-        builder.linkAllToRouter(10.milliseconds) { latency ->
-            fifoUdpSimQueue(Bandwidth(50_000 + (++counter)), latency)
+        builder.linkAllToRouter(10.milliseconds) { latency, isFromEndpoint ->
+            val bandwidth = Bandwidth(50_000 + (++counter))
+            if (isFromEndpoint) {
+                latencyThenBandwidthUdpSimQueue(bandwidth, latency)
+            } else {
+                fifoUdpSimQueue(bandwidth, latency)
+            }
         }
         val engine = UdpSimNetworkEngineImpl2(builder.build())
 

@@ -111,13 +111,13 @@ class ParallelSimPacketBridge(
                 linkedTasks.all { it.currentTime >= this.pendingTime }
             }
             fun advance() = synchronized(lock) {
-                println("-- [$name] Scheduled advance $pendingTime -> ${pendingTime + latency}")
+//                println("-- [$name] Scheduled advance $pendingTime -> ${pendingTime + latency}")
                 pendingTime += latency
                 submit {
                     if (predicate()) {
-                        println("---- [$name] Advancing $currentTime -> ${currentTime + latency}")
+//                        println("---- [$name] Advancing $currentTime -> ${currentTime + latency}")
                         advanceAction()
-                        println("---- [$name] Advance complete $currentTime -> ${currentTime + latency}")
+//                        println("---- [$name] Advance complete $currentTime -> ${currentTime + latency}")
                         onAdvanced()
                     }
                 }

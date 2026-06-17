@@ -4,6 +4,8 @@ import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimLinks
 import kotlin.time.Duration
 
+typealias TestQDiscFactory = (latency: Duration, isFromEndpoint: Boolean) -> TestUdpSimQueue
+
 class TestStarNetworkBuilder2 {
     private val nodes = linkedMapOf<String, UdpSimNode>()
     private val links = UdpSimLinks()
@@ -15,14 +17,16 @@ class TestStarNetworkBuilder2 {
     fun linkToRouter(
         node: UdpSimNode,
         latency: Duration,
-        qdiscFactory: (Duration) -> TestUdpSimQueue
+        qdiscFactory: TestQDiscFactory
     ): TestStarNetworkBuilder2 = also {
-        links.addBiDir(node, router) { qdiscFactory(latency) }
+        links
+            .addUniDir(node, router, qdiscFactory(latency, true))
+            .addUniDir(router, node, qdiscFactory(latency, false))
     }
 
     fun linkAllToRouter(
         latency: Duration,
-        qdiscFactory: (Duration) -> TestUdpSimQueue
+        qdiscFactory: TestQDiscFactory
     ): TestStarNetworkBuilder2 = also {
         nodes.values.forEach { linkToRouter(it, latency, qdiscFactory) }
     }

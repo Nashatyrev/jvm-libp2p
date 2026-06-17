@@ -1,6 +1,7 @@
 package io.libp2p.quicsim.sim.impl
 
 import io.libp2p.core.Host
+import io.libp2p.core.ConnectionHandler
 import io.libp2p.core.Stream
 import io.libp2p.core.multistream.ProtocolBinding
 import io.libp2p.core.multistream.StrictProtocolBinding
@@ -29,7 +30,9 @@ import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.TestUdpSimQueue
+import io.libp2p.quicsim.udpnetwork.TestQDiscFactory
 import io.libp2p.quicsim.udpnetwork.fifoUdpSimQueue
+import io.libp2p.quicsim.udpnetwork.latencyThenBandwidthUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl2
 import io.netty.buffer.ByteBuf
@@ -331,6 +334,8 @@ class SimulatedRunnerTest {
             100.milliseconds,
             qdiscFactory = fifoQDiscFactory(Bandwidth(10_000L))
         )
+        val dialerConnected = CompletableFuture<Unit>()
+        val listenerConnected = CompletableFuture<Unit>()
 
         val runner = SimulatedRunner(
             nodeFactory = object : NodeProgramFactory {
@@ -350,15 +355,24 @@ class SimulatedRunnerTest {
                         ): CompletableFuture<Unit> {
                             myHost = networkContext.myHost
                             return if (simNodeId == 0) {
+                                val expectedRemotePeerId = networkContext.allNodes[1]!!.getPeerId()
                                 networkContext.myHost.network
                                     .connect(networkContext.allNodes[1]!!)
-                                    .thenApply {
+                                    .thenApply { connection ->
+                                        assertEquals(expectedRemotePeerId, connection.secureSession().remoteId)
+                                        dialerConnected.complete(Unit)
                                         completeFuture.complete(Unit)
                                         Unit
                                     }
                             } else {
-                                completeFuture.complete(Unit)
-                                CompletableFuture.completedFuture(Unit)
+                                val expectedRemotePeerId = networkContext.allNodes[0]!!.getPeerId()
+                                networkContext.myHost.addConnectionHandler(ConnectionHandler.create { connection ->
+                                    if (connection.secureSession().remoteId == expectedRemotePeerId) {
+                                        listenerConnected.complete(Unit)
+                                        completeFuture.complete(Unit)
+                                    }
+                                })
+                                completeFuture
                             }
                         }
 
@@ -370,6 +384,8 @@ class SimulatedRunnerTest {
         )
 
         runner.run()
+        assertTrue(dialerConnected.isDone, "Expected dialer to establish a QUIC connection")
+        assertTrue(listenerConnected.isDone, "Expected listener to observe inbound QUIC connection")
     }
 
     @Test
@@ -451,11 +467,18 @@ class SimulatedRunnerTest {
     }
 
     private companion object {
-        fun fifoQDiscFactory(bandwidth: Bandwidth): (kotlin.time.Duration) -> TestUdpSimQueue = { latency ->
-            fifoUdpSimQueue(
-                bandwidth = bandwidth,
-                latency = latency
-            )
+        fun fifoQDiscFactory(bandwidth: Bandwidth): TestQDiscFactory = { latency, isFromEndpoint ->
+            if (isFromEndpoint) {
+                latencyThenBandwidthUdpSimQueue(
+                    bandwidth = bandwidth,
+                    latency = latency
+                )
+            } else {
+                fifoUdpSimQueue(
+                    bandwidth = bandwidth,
+                    latency = latency
+                )
+            }
         }
     }
 
