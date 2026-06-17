@@ -22,26 +22,38 @@ internal fun QuicNetworkTopology.toUdpSimNetwork(): UdpSimNetwork {
     return BasicUdpSimNetwork(
         nodes = hosts.map { udpHosts.getValue(it.id) },
         links = links.map { link ->
-            val bandwidthQueue = FifoUdpSimBandwidthQueue(Bandwidth(link.bandwidthBytesPerSecond), link.maxQueueWaitTime)
-            val latencyQueue = LatencyQueueImpl<UdpSimPacket>(link.latency)
-            val qdisc = if (link.isNodeOutbound(hostIds))
-                SerialPacketProcessor(listOf(
-                    latencyQueue.emitter.createPacketProcessorAdapter(),
-                    bandwidthQueue
-                ))
-            else
-                SerialPacketProcessor(listOf(
-                    bandwidthQueue,
-                    latencyQueue.receiver.createPacketProcessorAdapter()
-                ))
-            UdpSimLink(
+            link.toUdpSimLink(
                 from = udpNodesById.getValue(link.from),
                 to = udpNodesById.getValue(link.to),
-                bandwidthQueue = bandwidthQueue,
-                latencyQueue = latencyQueue,
-                qdisc = qdisc
+                isFromEndpoint = link.isNodeOutbound(hostIds)
             )
         }
+    )
+}
+
+fun QuicNetworkLink.toUdpSimLink(from: UdpSimNode, to: UdpSimNode, isFromEndpoint: Boolean): UdpSimLink {
+    val bandwidthQueue = FifoUdpSimBandwidthQueue(Bandwidth(this.bandwidthBytesPerSecond), this.maxQueueWaitTime)
+    val latencyQueue = LatencyQueueImpl<UdpSimPacket>(this.latency)
+    val qdisc = if (isFromEndpoint)
+        SerialPacketProcessor(
+            listOf(
+                latencyQueue.emitter.createPacketProcessorAdapter(),
+                bandwidthQueue
+            )
+        )
+    else
+        SerialPacketProcessor(
+            listOf(
+                bandwidthQueue,
+                latencyQueue.receiver.createPacketProcessorAdapter()
+            )
+        )
+    return UdpSimLink(
+        from = from,
+        to = to,
+        bandwidthQueue = bandwidthQueue,
+        latencyQueue = latencyQueue,
+        qdisc = qdisc
     )
 }
 
