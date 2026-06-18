@@ -30,6 +30,10 @@ class UdpSimNetworkEngineImpl3(
         .associateBy { it.link.from to it.link.to }
     private lateinit var linksMap: ValueSortedMap<Pair<UdpSimNode, UdpSimNode>, WrappedLink, Duration>
 
+    var innerPacketsCounter = 0L
+    var deliveredPacketsCounter = 0L
+    val totalPacketCount get() = innerPacketsCounter + deliveredPacketsCounter
+
 //    private val endpoints = network.findEndpoints()
 //    // links from nodes
 //    private val inboundLinks = network.links.filter { it.from in endpoints }
@@ -59,11 +63,13 @@ class UdpSimNetworkEngineImpl3(
         val linkKey = findNextLink(fromLink, packet)
         if (linkKey == null) {
             deliveredPackets += packet
+            deliveredPacketsCounter++
         } else {
             linksMap.updateByKey(linkKey) {
                 it.wrapper.advanceTillAndExecute(currentTime)
                 it.wrapper.deliverInbound(listOf(packet))
             }
+            innerPacketsCounter++
         }
     }
 

@@ -8,7 +8,7 @@ import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.sim.SimNode
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
-import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl3
+import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl4
 import io.netty.channel.socket.DatagramPacket
 import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -35,7 +35,7 @@ class ParallelSimPacketBridge(
 
     val latency = calcLatency()
     val allNodes = createAllNodes()
-    private val parallelUdpNet = UdpSimNetworkEngineImpl3(udpNet)
+    private val parallelUdpNet = UdpSimNetworkEngineImpl4(udpNet)
 
     private fun calcLatency(): Duration {
         val latencies = udpNet.links.map { it.latencyQueue.minimalLatency }.distinct()
@@ -149,8 +149,12 @@ class ParallelSimPacketBridge(
                 submit(priority) {
                     if (predicate()) {
 //                        println("---- [$name] Advancing $currentTime -> ${currentTime + latency}")
+                        val s = System.nanoTime()
+                        val cntBefore = parallelUdpNet.totalPacketCount
                         advanceAction()
-//                        println("---- [$name] Advance complete $currentTime -> ${currentTime + latency}")
+                        val t = (System.nanoTime() - s) / 1000 / 1000.0
+                        val d = parallelUdpNet.totalPacketCount - cntBefore
+//                        println("---- [$name] Advance complete $currentTime -> ${currentTime + latency} in $t ms, packets: $d")
                         onAdvanced()
                     }
                 }

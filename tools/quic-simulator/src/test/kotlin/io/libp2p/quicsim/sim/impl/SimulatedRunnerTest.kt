@@ -98,11 +98,11 @@ class SimulatedRunnerTest {
 
     @Test
     fun sendMessageFromNPublishers() {
-        val nodeCount = 1000
+        val nodeCount = 2000
         val publishersCount = 400
         val neighboursToConnect = 20
         val bandwidth = Bandwidth(5_000_000L)
-        val halfLatency = 50.milliseconds
+        val halfLatency = 20.milliseconds
         val messageSizeBytes = 1024
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val packetStats = PacketStatsNodeVisitorFactory()

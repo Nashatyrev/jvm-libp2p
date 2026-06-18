@@ -12,11 +12,17 @@ import kotlin.time.Duration
 class LatencyQueueImpl<TPacket>(
     val latency: Duration
 ) : LatencyQueue<TPacket> {
+    data class TimedPackets<TPacket>(
+        val at: Duration,
+        val packets: List<TPacket>
+    )
+
     init {
         require(!latency.isNegative()) { "latency must be non-negative" }
     }
 
     private val lock = Any()
+    private val primaryEmitter = Emitter()
     private val primaryReceiver = Receiver()
 
     private data class QueuedPacket<TPacket>(
@@ -34,9 +40,61 @@ class LatencyQueueImpl<TPacket>(
             block()
         }
 
-    override val emitter: PacketEmitter<TPacket> = Emitter()
+    override val emitter: PacketEmitter<TPacket> = primaryEmitter
 
     override val receiver: PacketReceiver<TPacket> = primaryReceiver
+
+    fun emitPacketsUntil(targetTime: Duration): List<TimedPackets<TPacket>> =
+        locked {
+            check(targetTime >= primaryEmitter.emitterTime)
+            val emitted = mutableListOf<TimedPackets<TPacket>>()
+            while (queue.isNotEmpty()) {
+                val queuedPacket = queue.peekFirst()
+                if (queuedPacket.emitAt > targetTime) {
+                    break
+                }
+                primaryEmitter.emitterTime = queuedPacket.emitAt
+                emitted += TimedPackets(primaryEmitter.emitterTime, drainReady(primaryEmitter.emitterTime))
+            }
+            primaryEmitter.emitterTime = targetTime
+            emitted
+        }
+
+    fun receivePacketsAt(packets: List<TPacket>, at: Duration) {
+        if (packets.isEmpty()) {
+            return
+        }
+        locked {
+            check(at >= primaryReceiver.receiverTime)
+            primaryReceiver.receiverTime = at
+            packets.forEach { packet ->
+                queue.addLast(QueuedPacket(packet, primaryReceiver.receiverTime + latency))
+            }
+        }
+    }
+
+    fun <TInput> receiveTimedPackets(
+        packets: List<TInput>,
+        timeExtractor: (TInput) -> Duration,
+        packetExtractor: (TInput) -> TPacket
+    ) {
+        if (packets.isEmpty()) {
+            return
+        }
+        locked {
+            packets.forEach { input ->
+                val at = timeExtractor(input)
+                check(at >= primaryReceiver.receiverTime)
+                primaryReceiver.receiverTime = at
+                queue.addLast(QueuedPacket(packetExtractor(input), primaryReceiver.receiverTime + latency))
+            }
+        }
+    }
+
+    fun nextEmitTime(): Duration? =
+        locked {
+            queue.peekFirst()?.emitAt
+        }
 
     private fun drainReady(at: Duration): List<TPacket> {
         val ready = mutableListOf<TPacket>()
@@ -54,7 +112,7 @@ class LatencyQueueImpl<TPacket>(
     }
 
     private inner class Emitter : PacketEmitter<TPacket> {
-        private var emitterTime: Duration = Duration.Companion.ZERO
+        var emitterTime: Duration = Duration.Companion.ZERO
 
         override fun emitPackets(): List<TPacket> =
             locked {
@@ -84,7 +142,6 @@ class LatencyQueueImpl<TPacket>(
 
     private inner class Receiver : PacketReceiver<TPacket> {
         var receiverTime: Duration = Duration.Companion.ZERO
-            private set
 
         override fun receivePackets(packets: List<TPacket>) {
             locked {
