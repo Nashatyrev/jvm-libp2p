@@ -14,6 +14,7 @@ import kotlin.time.Duration.Companion.seconds
 object QuicScenarios {
     const val SLOW_START = "quic-slow-start"
     const val SAMPLE_GOSSIP_100 = "quic-sample-gossip-100"
+    const val SAMPLE_GOSSIP_100_128K_10MS_5_PUBLISHERS = "quic-sample-gossip-100-128k-10ms-5pub"
 
     fun slowStart(
         eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
@@ -52,18 +53,58 @@ object QuicScenarios {
 
     fun sampleGossip100(
         eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
+    ): QuicScenario<NodeProgramFactory> =
+        sampleGossip(
+            name = SAMPLE_GOSSIP_100,
+            nodeCount = 100,
+            publishersCount = 100,
+            neighboursToConnect = 20,
+            latency = 100.milliseconds,
+            messageSizeBytes = 180,
+            eventSink = eventSink
+        )
+
+    fun sampleGossip100LargeMessages(
+        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
+    ): QuicScenario<NodeProgramFactory> =
+        sampleGossip(
+            name = SAMPLE_GOSSIP_100_128K_10MS_5_PUBLISHERS,
+            nodeCount = 100,
+            publishersCount = 5,
+            neighboursToConnect = 20,
+            latency = 10.milliseconds,
+            messageSizeBytes = 128 * 1024,
+            eventSink = eventSink
+        )
+
+    fun byName(
+        name: String,
+        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
+    ): QuicScenario<NodeProgramFactory> =
+        when (name) {
+            SLOW_START -> slowStart(eventSink)
+            SAMPLE_GOSSIP_100 -> sampleGossip100(eventSink)
+            SAMPLE_GOSSIP_100_128K_10MS_5_PUBLISHERS -> sampleGossip100LargeMessages(eventSink)
+            else -> throw IllegalArgumentException("Unknown QUIC scenario: $name")
+        }
+
+    private fun sampleGossip(
+        name: String,
+        nodeCount: Int,
+        publishersCount: Int,
+        neighboursToConnect: Int,
+        latency: kotlin.time.Duration,
+        messageSizeBytes: Int,
+        eventSink: QuicScenarioEventSink
     ): QuicScenario<NodeProgramFactory> {
-        val nodeCount = 100
-        val publishersCount = 100
-        val neighboursToConnect = 20
         val randomConnectionsByNode =
             createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = 1234)
 
         return QuicScenario(
-            name = SAMPLE_GOSSIP_100,
+            name = name,
             network = QuicNetworkTopology.star(
                 hostCount = nodeCount,
-                latency = 100.milliseconds,
+                latency = latency,
                 bandwidthBytesPerSecond = 5_000_000L
             ),
             maxRunDuration = 10.minutes,
@@ -76,7 +117,7 @@ object QuicScenarios {
                             publishersCount = publishersCount,
                             params = GossipParams(),
                             randomSeed = id.toLong(),
-                            messageSizeBytes = 180,
+                            messageSizeBytes = messageSizeBytes,
                             initialPublishDelay = 30.seconds,
                             eventSink = eventSink
                         )
@@ -87,16 +128,6 @@ object QuicScenarios {
             }
         )
     }
-
-    fun byName(
-        name: String,
-        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
-    ): QuicScenario<NodeProgramFactory> =
-        when (name) {
-            SLOW_START -> slowStart(eventSink)
-            SAMPLE_GOSSIP_100 -> sampleGossip100(eventSink)
-            else -> throw IllegalArgumentException("Unknown QUIC scenario: $name")
-        }
 
     fun createBidirectionalRandomTopology(
         nodeCount: Int,

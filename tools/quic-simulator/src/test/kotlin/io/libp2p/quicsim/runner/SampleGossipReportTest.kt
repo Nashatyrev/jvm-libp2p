@@ -36,6 +36,28 @@ class SampleGossipReportTest {
         )
     }
 
+    @Test
+    fun `write simulated sample gossip large message receipt csv`() {
+        writeMessageReceiptCsv(
+            result = SimulatedQuicScenarioRunner().run(QuicScenarios.sampleGossip100LargeMessages()),
+            outputPath = outputDir().resolve("sample-gossip-128k-10ms-5pub-simulated-message-receipts.csv")
+        )
+    }
+
+    @Test
+    fun `write shadow sample gossip large message receipt csv`() {
+        val shadowPath = System.getProperty("shadow.path")
+        assumeTrue(!shadowPath.isNullOrBlank(), "Set -Dshadow.path=/path/to/shadow to run Shadow report")
+
+        writeMessageReceiptCsv(
+            result = ShadowQuicScenarioRunner(
+                shadowPath = Path(shadowPath),
+                workDir = Files.createTempDirectory("quic-shadow-sample-gossip-large-report-")
+            ).run(QuicScenarios.sampleGossip100LargeMessages()),
+            outputPath = outputDir().resolve("sample-gossip-128k-10ms-5pub-shadow-message-receipts.csv")
+        )
+    }
+
     private fun writeMessageReceiptCsv(
         result: QuicScenarioResult<*>,
         outputPath: Path
