@@ -14,6 +14,7 @@ import kotlin.time.Duration.Companion.seconds
 object QuicScenarios {
     const val SLOW_START = "quic-slow-start"
     const val SAMPLE_GOSSIP_100 = "quic-sample-gossip-100"
+    const val SAMPLE_GOSSIP_20_SYNC_PUBLISH = "quic-sample-gossip-20-sync-publish"
     const val SAMPLE_GOSSIP_100_128K_10MS_5_PUBLISHERS = "quic-sample-gossip-100-128k-10ms-5pub"
 
     fun slowStart(
@@ -52,15 +53,34 @@ object QuicScenarios {
     }
 
     fun sampleGossip100(
-        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
+        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink(),
+        topologySeed: Int = 1234,
+        gossipSeedBase: Long = 0
     ): QuicScenario<NodeProgramFactory> =
         sampleGossip(
             name = SAMPLE_GOSSIP_100,
             nodeCount = 100,
             publishersCount = 100,
             neighboursToConnect = 20,
+            topologySeed = topologySeed,
+            gossipSeedBase = gossipSeedBase,
             latency = 100.milliseconds,
             messageSizeBytes = 180,
+            eventSink = eventSink
+        )
+
+    fun sampleGossip20SyncPublish(
+        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
+    ): QuicScenario<NodeProgramFactory> =
+        sampleGossip(
+            name = SAMPLE_GOSSIP_20_SYNC_PUBLISH,
+            nodeCount = 20,
+            publishersCount = 20,
+            connectToNodeIds = directedRingTopology(nodeCount = 20),
+            latency = 100.milliseconds,
+            messageSizeBytes = 180,
+            initialPublishDelay = 30.seconds,
+            maxRunDuration = 60.seconds,
             eventSink = eventSink
         )
 
@@ -84,6 +104,7 @@ object QuicScenarios {
         when (name) {
             SLOW_START -> slowStart(eventSink)
             SAMPLE_GOSSIP_100 -> sampleGossip100(eventSink)
+            SAMPLE_GOSSIP_20_SYNC_PUBLISH -> sampleGossip20SyncPublish(eventSink)
             SAMPLE_GOSSIP_100_128K_10MS_5_PUBLISHERS -> sampleGossip100LargeMessages(eventSink)
             else -> throw IllegalArgumentException("Unknown QUIC scenario: $name")
         }
@@ -93,32 +114,58 @@ object QuicScenarios {
         nodeCount: Int,
         publishersCount: Int,
         neighboursToConnect: Int,
+        topologySeed: Int = 1234,
+        gossipSeedBase: Long = 0,
         latency: kotlin.time.Duration,
         messageSizeBytes: Int,
+        initialPublishDelay: kotlin.time.Duration = 30.seconds,
+        maxRunDuration: kotlin.time.Duration = 10.minutes,
         eventSink: QuicScenarioEventSink
-    ): QuicScenario<NodeProgramFactory> {
-        val randomConnectionsByNode =
-            createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = 1234)
+    ): QuicScenario<NodeProgramFactory> =
+        sampleGossip(
+            name = name,
+            nodeCount = nodeCount,
+            publishersCount = publishersCount,
+            connectToNodeIds = createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = topologySeed),
+            gossipSeedBase = gossipSeedBase,
+            latency = latency,
+            messageSizeBytes = messageSizeBytes,
+            initialPublishDelay = initialPublishDelay,
+            maxRunDuration = maxRunDuration,
+            eventSink = eventSink
+        )
 
-        return QuicScenario(
+    private fun sampleGossip(
+        name: String,
+        nodeCount: Int,
+        publishersCount: Int,
+        connectToNodeIds: Map<SimNodeId, List<SimNodeId>>,
+        gossipSeedBase: Long = 0,
+        latency: kotlin.time.Duration,
+        messageSizeBytes: Int,
+        initialPublishDelay: kotlin.time.Duration = 30.seconds,
+        maxRunDuration: kotlin.time.Duration = 10.minutes,
+        eventSink: QuicScenarioEventSink
+    ): QuicScenario<NodeProgramFactory> =
+        QuicScenario(
             name = name,
             network = QuicNetworkTopology.star(
                 hostCount = nodeCount,
                 latency = latency,
                 bandwidthBytesPerSecond = 5_000_000L
             ),
-            maxRunDuration = 10.minutes,
+            maxRunDuration = maxRunDuration,
             createNodeProgramFactory = {
                 object : NodeProgramFactory, QuicScenarioEventSource {
                     override fun createNode(id: SimNodeId): NodeProgram =
                         SampleGossipNodeProgram(
                             simNodeId = id,
-                            connectToNodeIds = randomConnectionsByNode.getValue(id),
+                            connectToNodeIds = connectToNodeIds.getValue(id),
                             publishersCount = publishersCount,
                             params = GossipParams(),
-                            randomSeed = id.toLong(),
+                            randomSeed = gossipSeedBase + id.toLong(),
                             messageSizeBytes = messageSizeBytes,
-                            initialPublishDelay = 30.seconds,
+                            initialPublishDelay = initialPublishDelay,
                             eventSink = eventSink
                         )
 
@@ -127,7 +174,6 @@ object QuicScenarios {
                 }
             }
         )
-    }
 
     fun createBidirectionalRandomTopology(
         nodeCount: Int,
@@ -178,6 +224,13 @@ object QuicScenarios {
         return adjacency
             .mapIndexed { nodeId, peers -> nodeId to peers.toList().sorted() }
             .toMap()
+    }
+
+    private fun directedRingTopology(nodeCount: Int): Map<SimNodeId, List<SimNodeId>> {
+        require(nodeCount > 1) { "nodeCount must be greater than 1" }
+        return (0 until nodeCount).associateWith { nodeId ->
+            listOf((nodeId + 1) % nodeCount)
+        }
     }
 
     private fun addTopologyEdge(

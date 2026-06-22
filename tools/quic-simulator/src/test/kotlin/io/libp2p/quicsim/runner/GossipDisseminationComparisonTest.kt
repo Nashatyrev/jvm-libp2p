@@ -8,6 +8,7 @@ import java.nio.file.Path
 import java.util.Locale
 import kotlin.io.path.Path
 import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.readLines
 import kotlin.io.path.writeText
@@ -32,6 +33,8 @@ class GossipDisseminationComparisonTest {
         val right = readMessageReceiptCsv(rightPath)
         val comparison = GossipMetrics.compareDissemination(left, right)
         val outputDir = outputDir().also { it.createDirectories() }
+        outputDir.resolve("gossip-dissemination-pair-deltas.csv").deleteIfExists()
+        outputDir.resolve("gossip-dissemination-cdf-deltas.csv").deleteIfExists()
 
         writeSummaryCsv(
             comparison = comparison,
@@ -39,15 +42,10 @@ class GossipDisseminationComparisonTest {
             rightPath = rightPath,
             outputPath = outputDir.resolve("gossip-dissemination-comparison-summary.csv")
         )
-        writePairDeltaCsv(
+        writeIntegralDeltaCsv(
             left = left,
             right = right,
-            outputPath = outputDir.resolve("gossip-dissemination-pair-deltas.csv")
-        )
-        writeCdfDeltaCsv(
-            left = left,
-            right = right,
-            outputPath = outputDir.resolve("gossip-dissemination-cdf-deltas.csv")
+            outputPath = outputDir.resolve("gossip-dissemination-integral-deltas.csv")
         )
     }
 
@@ -87,74 +85,24 @@ class GossipDisseminationComparisonTest {
                 appendMetric("left_file", leftPath)
                 appendMetric("right_file", rightPath)
                 appendMetric("difference_score_ms", comparison.differenceScoreMs)
-                appendMetric("cdf_difference_score_ms", comparison.cdfDifferenceScoreMs)
-                appendMetric("pair_difference_score_ms", comparison.pairDifferenceScoreMs)
+                appendMetric("integral_difference_ms", comparison.integralDifferenceMs)
                 appendMetric("left_receipt_count", comparison.leftReceiptCount)
                 appendMetric("right_receipt_count", comparison.rightReceiptCount)
-                appendMetric("matched_pair_count", comparison.matchedPairCount)
-                appendMetric("left_only_pair_count", comparison.leftOnlyPairCount)
-                appendMetric("right_only_pair_count", comparison.rightOnlyPairCount)
-                appendMetric("pair_mean_signed_delta_ms", comparison.pairMeanSignedDeltaMs)
-                appendMetric("pair_mean_absolute_delta_ms", comparison.pairMeanAbsoluteDeltaMs)
-                appendMetric("pair_root_mean_square_delta_ms", comparison.pairRootMeanSquareDeltaMs)
-                appendMetric("pair_p50_absolute_delta_ms", comparison.pairP50AbsoluteDeltaMs)
-                appendMetric("pair_p95_absolute_delta_ms", comparison.pairP95AbsoluteDeltaMs)
-                appendMetric("pair_max_absolute_delta_ms", comparison.pairMaxAbsoluteDeltaMs)
-                appendMetric("cdf_compared_count", comparison.cdfComparedCount)
-                appendMetric("cdf_mean_signed_delta_ms", comparison.cdfMeanSignedDeltaMs)
-                appendMetric("cdf_mean_absolute_delta_ms", comparison.cdfMeanAbsoluteDeltaMs)
-                appendMetric("cdf_p50_absolute_delta_ms", comparison.cdfP50AbsoluteDeltaMs)
-                appendMetric("cdf_p95_absolute_delta_ms", comparison.cdfP95AbsoluteDeltaMs)
-                appendMetric("cdf_max_absolute_delta_ms", comparison.cdfMaxAbsoluteDeltaMs)
+                appendMetric("compared_receipt_count", comparison.comparedReceiptCount)
+                appendMetric("missing_receipt_count", comparison.missingReceiptCount)
+                appendMetric("mean_signed_delta_ms", comparison.meanSignedDeltaMs)
+                appendMetric("mean_absolute_delta_ms", comparison.meanAbsoluteDeltaMs)
+                appendMetric("root_mean_square_delta_ms", comparison.rootMeanSquareDeltaMs)
+                appendMetric("p50_absolute_delta_ms", comparison.p50AbsoluteDeltaMs)
+                appendMetric("p95_absolute_delta_ms", comparison.p95AbsoluteDeltaMs)
+                appendMetric("max_absolute_delta_ms", comparison.maxAbsoluteDeltaMs)
                 appendMetric("missing_penalty_ms", comparison.missingPenaltyMs)
             }
         )
         println("Wrote gossip dissemination comparison summary: $outputPath")
     }
 
-    private fun writePairDeltaCsv(
-        left: List<MessageReceipt>,
-        right: List<MessageReceipt>,
-        outputPath: Path
-    ) {
-        val leftByKey = GossipMetrics.firstReceiptsByKey(left)
-        val rightByKey = GossipMetrics.firstReceiptsByKey(right)
-        val keys = (leftByKey.keys + rightByKey.keys)
-            .sortedWith(compareBy({ it.publishingNodeId }, { it.receivingNodeId }))
-
-        outputPath.writeText(
-            buildString {
-                appendLine("publishing_node_id,receiving_node_id,left_time_s,right_time_s,right_minus_left_ms,abs_delta_ms,status")
-                keys.forEach { key ->
-                    val leftReceipt = leftByKey[key]
-                    val rightReceipt = rightByKey[key]
-                    val delta = if (leftReceipt != null && rightReceipt != null) {
-                        millis(rightReceipt.receivedAt - leftReceipt.receivedAt)
-                    } else {
-                        null
-                    }
-                    appendLine(
-                        listOf(
-                            key.publishingNodeId,
-                            key.receivingNodeId,
-                            leftReceipt?.receivedAt?.let(::seconds).orEmpty(),
-                            rightReceipt?.receivedAt?.let(::seconds).orEmpty(),
-                            delta?.let(::decimal).orEmpty(),
-                            delta?.let { decimal(abs(it)) }.orEmpty(),
-                            when {
-                                leftReceipt != null && rightReceipt != null -> "matched"
-                                leftReceipt != null -> "left_only"
-                                else -> "right_only"
-                            }
-                        ).joinToString(",")
-                    )
-                }
-            }
-        )
-        println("Wrote gossip dissemination pair deltas: $outputPath")
-    }
-
-    private fun writeCdfDeltaCsv(
+    private fun writeIntegralDeltaCsv(
         left: List<MessageReceipt>,
         right: List<MessageReceipt>,
         outputPath: Path
@@ -180,7 +128,7 @@ class GossipDisseminationComparisonTest {
                 }
             }
         )
-        println("Wrote gossip dissemination CDF deltas: $outputPath")
+        println("Wrote gossip dissemination integral deltas: $outputPath")
     }
 
     private fun StringBuilder.appendMetric(name: String, value: Any?) {
@@ -207,5 +155,4 @@ class GossipDisseminationComparisonTest {
     private fun decimal(value: Double, digits: Int = 6): String =
         "%.${digits}f".format(Locale.US, value)
 
-    private fun Any?.orEmpty(): Any = this ?: ""
 }

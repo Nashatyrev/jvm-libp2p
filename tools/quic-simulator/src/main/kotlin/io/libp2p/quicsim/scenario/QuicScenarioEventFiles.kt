@@ -78,6 +78,12 @@ object QuicScenarioEventFileCodec {
                 event.publisherNodeId
             ).joinToString("\t")
 
+            is QuicScenarioEvent.GossipMessagePublished -> listOf(
+                "gossip_message_published",
+                event.nodeId,
+                event.at.inWholeNanoseconds
+            ).joinToString("\t")
+
             is QuicScenarioEvent.AttestationAggregatePublished -> listOf(
                 "attestation_aggregate_published",
                 event.nodeId,
@@ -132,6 +138,11 @@ object QuicScenarioEventFileCodec {
                 nodeId = parts[1].toInt(),
                 at = parts[2].toLong().nanoseconds,
                 publisherNodeId = parts[3].toInt()
+            )
+
+            "gossip_message_published" -> QuicScenarioEvent.GossipMessagePublished(
+                nodeId = parts[1].toInt(),
+                at = parts[2].toLong().nanoseconds
             )
 
             "attestation_aggregate_published" -> QuicScenarioEvent.AttestationAggregatePublished(

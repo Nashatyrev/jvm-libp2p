@@ -8,6 +8,15 @@ class QuicScenarioEventFileCodecTest {
     @Test
     fun `round trips attestation aggregate events`() {
         val events = listOf(
+            QuicScenarioEvent.GossipMessagePublished(
+                nodeId = 1,
+                at = 100.milliseconds
+            ),
+            QuicScenarioEvent.GossipMessageReceived(
+                nodeId = 2,
+                at = 110.milliseconds,
+                publisherNodeId = 1
+            ),
             QuicScenarioEvent.AttestationAggregatePublished(
                 nodeId = 1,
                 at = 120.milliseconds,

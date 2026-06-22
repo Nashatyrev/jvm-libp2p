@@ -98,6 +98,12 @@ class SampleGossipNodeProgram(
             simContext.scheduler.executeAfterDelay(publishDelay) {
                 publishAttempted = true
                 log("[$simNodeId] publishing to ${testTopic.topic}")
+                eventSink.record(
+                    QuicScenarioEvent.GossipMessagePublished(
+                        nodeId = simNodeId,
+                        at = simContext.timer.time() - epoch
+                    )
+                )
                 publisher.publish(Unpooled.wrappedBuffer(createPayload()), testTopic)
                     .whenComplete { _, err ->
                         if (err == null) {

@@ -21,7 +21,7 @@ class ShadowQuicScenarioRunner(
     private val workDir: Path = Files.createTempDirectory("quic-shadow-"),
     private val listenPortStartRange: Int = 17000,
     private val nodeIpPrefix: String = "11.0.0.",
-    private val parallelism: Int = 1,
+    private val parallelism: Int? = null,
     private val javaOptions: List<String> = DEFAULT_SHADOW_NODE_JAVA_OPTIONS
 ) : QuicScenarioRunner {
 
@@ -41,13 +41,19 @@ class ShadowQuicScenarioRunner(
         val configPath = workDir.resolve("shadow.yaml")
         configPath.writeText(config)
 
+        val command = buildList {
+            add(shadowPath.commandString())
+            add("--data-directory")
+            add(workDir.resolve("shadow.data").absolutePathString())
+            parallelism?.let {
+                add("--parallelism")
+                add(it.toString())
+            }
+            add(configPath.absolutePathString())
+        }
+
         val process = ProcessBuilder(
-            shadowPath.commandString(),
-            "--data-directory",
-            workDir.resolve("shadow.data").absolutePathString(),
-            "--parallelism",
-            parallelism.toString(),
-            configPath.absolutePathString()
+            command
         )
             .directory(workDir.toFile())
             .redirectErrorStream(true)

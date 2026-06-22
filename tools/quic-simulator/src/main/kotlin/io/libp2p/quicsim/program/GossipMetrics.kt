@@ -14,36 +14,26 @@ object GossipMetrics {
         val publishingNodeId: SimNodeId
     )
 
-    data class MessageReceiptKey(
-        val publishingNodeId: SimNodeId,
-        val receivingNodeId: SimNodeId
+    data class MessagePublication(
+        val publishedAt: Duration,
+        val publishingNodeId: SimNodeId
     )
 
     data class DisseminationComparison(
         val leftReceiptCount: Int,
         val rightReceiptCount: Int,
-        val matchedPairCount: Int,
-        val leftOnlyPairCount: Int,
-        val rightOnlyPairCount: Int,
-        val pairMeanSignedDeltaMs: Double?,
-        val pairMeanAbsoluteDeltaMs: Double?,
-        val pairRootMeanSquareDeltaMs: Double?,
-        val pairP50AbsoluteDeltaMs: Double?,
-        val pairP95AbsoluteDeltaMs: Double?,
-        val pairMaxAbsoluteDeltaMs: Double?,
-        val pairDifferenceScoreMs: Double,
-        val cdfComparedCount: Int,
-        val cdfMeanSignedDeltaMs: Double?,
-        val cdfMeanAbsoluteDeltaMs: Double?,
-        val cdfP50AbsoluteDeltaMs: Double?,
-        val cdfP95AbsoluteDeltaMs: Double?,
-        val cdfMaxAbsoluteDeltaMs: Double?,
-        val cdfDifferenceScoreMs: Double,
+        val comparedReceiptCount: Int,
+        val missingReceiptCount: Int,
+        val meanSignedDeltaMs: Double?,
+        val meanAbsoluteDeltaMs: Double?,
+        val rootMeanSquareDeltaMs: Double?,
+        val p50AbsoluteDeltaMs: Double?,
+        val p95AbsoluteDeltaMs: Double?,
+        val maxAbsoluteDeltaMs: Double?,
+        val integralDifferenceMs: Double?,
+        val differenceScoreMs: Double,
         val missingPenaltyMs: Double
-    ) {
-        val differenceScoreMs: Double
-            get() = cdfDifferenceScoreMs
-    }
+    )
 
     fun messageReceipts(events: List<QuicScenarioEvent>): List<MessageReceipt> =
         events.filterIsInstance<QuicScenarioEvent.GossipMessageReceived>()
@@ -56,62 +46,47 @@ object GossipMetrics {
             }
             .sortedWith(compareBy({ it.receivedAt }, { it.receivingNodeId }, { it.publishingNodeId }))
 
+    fun messagePublications(events: List<QuicScenarioEvent>): List<MessagePublication> =
+        events.filterIsInstance<QuicScenarioEvent.GossipMessagePublished>()
+            .map {
+                MessagePublication(
+                    publishedAt = it.at,
+                    publishingNodeId = it.nodeId
+                )
+            }
+            .sortedWith(compareBy({ it.publishedAt }, { it.publishingNodeId }))
+
     fun compareDissemination(
         left: List<MessageReceipt>,
         right: List<MessageReceipt>,
         missingPenaltyMs: Double = defaultMissingPenaltyMs(left, right)
     ): DisseminationComparison {
-        val leftByKey = firstReceiptsByKey(left)
-        val rightByKey = firstReceiptsByKey(right)
-        val leftKeys = leftByKey.keys
-        val rightKeys = rightByKey.keys
-        val matchedKeys = leftKeys intersect rightKeys
-        val unionKeyCount = (leftKeys + rightKeys).size
-
-        val pairDeltas = matchedKeys.map { key ->
-            millis(rightByKey.getValue(key).receivedAt - leftByKey.getValue(key).receivedAt)
-        }
-        val pairAbsDeltas = pairDeltas.map(::abs)
-        val unmatchedPairCount = unionKeyCount - matchedKeys.size
-        val pairMissingFraction = if (unionKeyCount == 0) 0.0 else unmatchedPairCount.toDouble() / unionKeyCount
-
         val leftTimes = left.map { millis(it.receivedAt) }.sorted()
         val rightTimes = right.map { millis(it.receivedAt) }.sorted()
-        val cdfComparedCount = minOf(leftTimes.size, rightTimes.size)
-        val cdfDeltas = (0 until cdfComparedCount).map { rightTimes[it] - leftTimes[it] }
-        val cdfAbsDeltas = cdfDeltas.map(::abs)
-        val cdfMissingCount = abs(leftTimes.size - rightTimes.size)
-        val cdfUnionCount = maxOf(leftTimes.size, rightTimes.size)
-        val cdfMissingFraction = if (cdfUnionCount == 0) 0.0 else cdfMissingCount.toDouble() / cdfUnionCount
+        val comparedCount = minOf(leftTimes.size, rightTimes.size)
+        val deltas = (0 until comparedCount).map { rightTimes[it] - leftTimes[it] }
+        val absoluteDeltas = deltas.map(::abs)
+        val missingCount = abs(leftTimes.size - rightTimes.size)
+        val unionCount = maxOf(leftTimes.size, rightTimes.size)
+        val missingFraction = if (unionCount == 0) 0.0 else missingCount.toDouble() / unionCount
+        val integralDifferenceMs = absoluteDeltas.meanOrNull()
 
         return DisseminationComparison(
             leftReceiptCount = left.size,
             rightReceiptCount = right.size,
-            matchedPairCount = matchedKeys.size,
-            leftOnlyPairCount = leftKeys.size - matchedKeys.size,
-            rightOnlyPairCount = rightKeys.size - matchedKeys.size,
-            pairMeanSignedDeltaMs = pairDeltas.meanOrNull(),
-            pairMeanAbsoluteDeltaMs = pairAbsDeltas.meanOrNull(),
-            pairRootMeanSquareDeltaMs = pairDeltas.rootMeanSquareOrNull(),
-            pairP50AbsoluteDeltaMs = pairAbsDeltas.percentileOrNull(0.50),
-            pairP95AbsoluteDeltaMs = pairAbsDeltas.percentileOrNull(0.95),
-            pairMaxAbsoluteDeltaMs = pairAbsDeltas.maxOrNull(),
-            pairDifferenceScoreMs = (pairAbsDeltas.meanOrNull() ?: 0.0) + pairMissingFraction * missingPenaltyMs,
-            cdfComparedCount = cdfComparedCount,
-            cdfMeanSignedDeltaMs = cdfDeltas.meanOrNull(),
-            cdfMeanAbsoluteDeltaMs = cdfAbsDeltas.meanOrNull(),
-            cdfP50AbsoluteDeltaMs = cdfAbsDeltas.percentileOrNull(0.50),
-            cdfP95AbsoluteDeltaMs = cdfAbsDeltas.percentileOrNull(0.95),
-            cdfMaxAbsoluteDeltaMs = cdfAbsDeltas.maxOrNull(),
-            cdfDifferenceScoreMs = (cdfAbsDeltas.meanOrNull() ?: 0.0) + cdfMissingFraction * missingPenaltyMs,
+            comparedReceiptCount = comparedCount,
+            missingReceiptCount = missingCount,
+            meanSignedDeltaMs = deltas.meanOrNull(),
+            meanAbsoluteDeltaMs = absoluteDeltas.meanOrNull(),
+            rootMeanSquareDeltaMs = deltas.rootMeanSquareOrNull(),
+            p50AbsoluteDeltaMs = absoluteDeltas.percentileOrNull(0.50),
+            p95AbsoluteDeltaMs = absoluteDeltas.percentileOrNull(0.95),
+            maxAbsoluteDeltaMs = absoluteDeltas.maxOrNull(),
+            integralDifferenceMs = integralDifferenceMs,
+            differenceScoreMs = (integralDifferenceMs ?: 0.0) + missingFraction * missingPenaltyMs,
             missingPenaltyMs = missingPenaltyMs
         )
     }
-
-    fun firstReceiptsByKey(receipts: List<MessageReceipt>): Map<MessageReceiptKey, MessageReceipt> =
-        receipts
-            .groupBy { MessageReceiptKey(it.publishingNodeId, it.receivingNodeId) }
-            .mapValues { (_, values) -> values.minByOrNull { it.receivedAt }!! }
 
     private fun defaultMissingPenaltyMs(left: List<MessageReceipt>, right: List<MessageReceipt>): Double {
         val maxTimeMs = (left + right).maxOfOrNull { millis(it.receivedAt) } ?: 0.0
