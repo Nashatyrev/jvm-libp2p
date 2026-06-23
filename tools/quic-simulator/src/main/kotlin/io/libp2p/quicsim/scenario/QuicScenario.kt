@@ -1,6 +1,7 @@
 package io.libp2p.quicsim.scenario
 
 import io.libp2p.quicsim.program.NodeProgramFactory
+import io.libp2p.quicsim.udpnetwork.UdpSimNetworkDefaults
 import kotlin.time.Duration
 
 data class QuicScenario<out F : NodeProgramFactory>(
@@ -47,7 +48,7 @@ data class QuicNetworkTopology(
             bandwidthBytesPerSecond: Long,
             routerId: String = "router-0",
             hostId: (Int) -> String = { "node-$it" },
-            maxQueueWaitTime: Duration = Duration.INFINITE
+            maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME
         ): QuicNetworkTopology {
             require(hostCount > 0) { "hostCount must be positive" }
             val hosts = (0 until hostCount).map { QuicNetworkHost(hostId(it)) }
@@ -87,7 +88,7 @@ data class QuicNetworkLink(
     val to: String,
     val latency: Duration,
     val bandwidthBytesPerSecond: Long,
-    val maxQueueWaitTime: Duration = Duration.INFINITE
+    val maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME
 ) {
     init {
         require(!latency.isNegative()) { "latency must not be negative" }

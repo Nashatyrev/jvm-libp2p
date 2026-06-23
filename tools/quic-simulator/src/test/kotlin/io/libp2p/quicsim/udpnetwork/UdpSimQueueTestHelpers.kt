@@ -12,7 +12,7 @@ import kotlin.time.Duration
 fun fifoUdpSimQueue(
     bandwidth: Bandwidth,
     latency: Duration,
-    maxQueueWaitTime: Duration = Duration.INFINITE
+    maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME
 ): TestUdpSimQueue {
     val bandwidthQueue = FifoUdpSimBandwidthQueue(bandwidth, maxQueueWaitTime)
     val latencyQueue = LatencyQueueImpl<UdpSimPacket>(latency)
@@ -31,7 +31,7 @@ fun fifoUdpSimQueue(
 fun latencyThenBandwidthUdpSimQueue(
     bandwidth: Bandwidth,
     latency: Duration,
-    maxQueueWaitTime: Duration = Duration.INFINITE
+    maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME
 ): TestUdpSimQueue {
     val bandwidthQueue = FifoUdpSimBandwidthQueue(bandwidth, maxQueueWaitTime)
     val latencyQueue = LatencyQueueImpl<UdpSimPacket>(latency)

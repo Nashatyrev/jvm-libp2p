@@ -19,7 +19,7 @@ class FifoUdpSimBandwidthQueueTest {
 
     @Test
     fun `spaces packets after immediate first packet`() {
-        val bandwidthQueue = FifoUdpSimBandwidthQueue(Bandwidth(1_000))
+        val bandwidthQueue = FifoUdpSimBandwidthQueue(Bandwidth(1_000), maxQueueWaitTime = 200.milliseconds)
         val packet1 = UdpSimPacket(1, 100, "a", "b")
         val packet2 = UdpSimPacket(2, 100, "a", "b")
         val packet3 = UdpSimPacket(3, 100, "a", "b")
