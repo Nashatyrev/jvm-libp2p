@@ -16,7 +16,7 @@ class SlowStartBatchReportTest {
     @Test
     fun `write simulated slow start packet batch csv`() {
         writeBatchCsv(
-            result = SimulatedQuicScenarioRunner().run(QuicScenarios.slowStart()),
+            result = SimulatedQuicScenarioRunner(latencyWindowParallelism = 20).run(QuicScenarios.slowStart()),
             outputPath = outputDir().resolve("slow-start-simulated-batches.csv")
         )
     }

@@ -13,6 +13,7 @@ import kotlin.time.Duration.Companion.seconds
 
 object QuicScenarios {
     const val SLOW_START = "quic-slow-start"
+    const val INBOUND_CONGESTION = "quic-inbound-congestion"
     const val SAMPLE_GOSSIP_100 = "quic-sample-gossip-100"
     const val SAMPLE_GOSSIP_20_SYNC_PUBLISH = "quic-sample-gossip-20-sync-publish"
     const val SAMPLE_GOSSIP_100_128K_10MS_5_PUBLISHERS = "quic-sample-gossip-100-128k-10ms-5pub"
@@ -45,6 +46,47 @@ object QuicScenarios {
                             from = 0,
                             to = 1
                         )
+                    ),
+                    eventSink = eventSink
+                )
+            }
+        )
+    }
+
+    fun inboundCongestion(
+        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
+    ): QuicScenario<DataChunkNodeProgramFactory> {
+        val nodeCount = 4
+        return QuicScenario(
+            name = INBOUND_CONGESTION,
+            network = QuicNetworkTopology.star(
+                hostCount = nodeCount,
+                latency = 30.milliseconds,
+                bandwidthBytesPerSecond = 1_000_000L
+            ),
+            maxRunDuration = 100.seconds,
+            createNodeProgramFactory = {
+                DataChunkNodeProgramFactory(
+                    nodeCount = nodeCount,
+                    chunks = listOf(
+                        DataChunkNodeProgramFactory.DataChunk(
+                            sizeBytes = 1_000_000,
+                            at = 10.seconds,
+                            from = 1,
+                            to = 0
+                        ),
+                        DataChunkNodeProgramFactory.DataChunk(
+                            sizeBytes = 1_000_000,
+                            at = 10.seconds + 300.milliseconds,
+                            from = 2,
+                            to = 0
+                        ),
+                        DataChunkNodeProgramFactory.DataChunk(
+                            sizeBytes = 1_000_000,
+                            at = 11.seconds,
+                            from = 3,
+                            to = 0
+                        ),
                     ),
                     eventSink = eventSink
                 )
@@ -85,13 +127,17 @@ object QuicScenarios {
         )
 
     fun sampleGossip100LargeMessages(
-        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
+        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink(),
+        topologySeed: Int = 1234,
+        gossipSeedBase: Long = 0
     ): QuicScenario<NodeProgramFactory> =
         sampleGossip(
             name = SAMPLE_GOSSIP_100_128K_10MS_5_PUBLISHERS,
             nodeCount = 100,
             publishersCount = 5,
             neighboursToConnect = 20,
+            topologySeed = topologySeed,
+            gossipSeedBase = gossipSeedBase,
             latency = 10.milliseconds,
             messageSizeBytes = 128 * 1024,
             eventSink = eventSink

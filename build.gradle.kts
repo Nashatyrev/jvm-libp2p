@@ -101,6 +101,26 @@ configure(
             showStackTraces = true
         }
 
+        listOf(
+            "gossipCompare.dir",
+            "gossipCompare.left",
+            "gossipCompare.right",
+            "sampleGossip.gossipSeedBase",
+            "sampleGossip.seedBase",
+            "sampleGossip.seedRuns",
+            "sampleGossip.runLabel",
+            "sampleGossip.simulatorSeed",
+            "sampleGossip.topologySeed",
+            "sampleGossipReport.dir",
+            "shadow.parallelism",
+            "shadow.path",
+            "slowStartReport.dir"
+        ).forEach { propertyName ->
+            System.getProperty(propertyName)?.let { propertyValue ->
+                systemProperty(propertyName, propertyValue)
+            }
+        }
+
         // disabling the parallel test runs for the time being due to port collisions
         // If GRADLE_MAX_TEST_FORKS is not set, use half the available processors
 //    maxParallelForks = (System.getenv("GRADLE_MAX_TEST_FORKS")?.toInt() ?:

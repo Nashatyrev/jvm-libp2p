@@ -6,12 +6,13 @@ import io.libp2p.quicsim.scenario.QuicScenario
 import io.libp2p.quicsim.scenario.QuicScenarioEventSource
 import io.libp2p.quicsim.scenario.QuicScenarioResult
 import io.libp2p.quicsim.scenario.QuicScenarioRunner
-import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl2
+import java.security.SecureRandom
 
 class SimulatedQuicScenarioRunner(
     private val ipManager: IPManager = IPManager.Default,
     private val listenPortStartRange: Int = 17000,
-    private val latencyWindowParallelism: Int = 0
+    private val latencyWindowParallelism: Int = 0,
+    private val random: SecureRandom = SecureRandom(byteArrayOf(100))
 ) : QuicScenarioRunner {
 
     override fun <F : NodeProgramFactory> run(scenario: QuicScenario<F>): QuicScenarioResult<F> {
@@ -22,6 +23,7 @@ class SimulatedQuicScenarioRunner(
             ipManager = ipManager,
             listenPortStartRange = listenPortStartRange,
             maxSimulatedRunDuration = scenario.maxRunDuration,
+            random = random,
             latencyWindowParallelism = latencyWindowParallelism
         )
 
