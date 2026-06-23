@@ -12,14 +12,20 @@ class SimulatedQuicScenarioRunner(
     private val ipManager: IPManager = IPManager.Default,
     private val listenPortStartRange: Int = 17000,
     private val latencyWindowParallelism: Int = 0,
+    private val bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO,
     private val random: SecureRandom = SecureRandom(byteArrayOf(100))
 ) : QuicScenarioRunner {
+    init {
+        require(latencyWindowParallelism == 0 || bandwidthQueueDiscipline == BandwidthQueueDiscipline.FIFO) {
+            "Parallel simulator fast path currently supports only FIFO bandwidth queues"
+        }
+    }
 
     override fun <F : NodeProgramFactory> run(scenario: QuicScenario<F>): QuicScenarioResult<F> {
         val nodeProgramFactory = scenario.createNodeProgramFactory()
         val runner = SimulatedRunner(
             nodeFactory = nodeProgramFactory,
-            udpNetwork = scenario.network.toUdpSimNetwork(),
+            udpNetwork = scenario.network.toUdpSimNetwork(bandwidthQueueDiscipline),
             ipManager = ipManager,
             listenPortStartRange = listenPortStartRange,
             maxSimulatedRunDuration = scenario.maxRunDuration,

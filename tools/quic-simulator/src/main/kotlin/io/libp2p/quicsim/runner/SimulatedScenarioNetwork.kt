@@ -13,8 +13,11 @@ import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
+import io.libp2p.quicsim.udpnetwork.impl.FqCodelUdpSimBandwidthQueue
 
-internal fun QuicNetworkTopology.toUdpSimNetwork(): UdpSimNetwork {
+internal fun QuicNetworkTopology.toUdpSimNetwork(
+    bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO
+): UdpSimNetwork {
     val udpHosts = hosts.associate { it.id to UdpSimNode(it.id) }
     val udpRouters = routers.associate { it.id to UdpSimNode(it.id) }
     val udpNodesById = udpHosts + udpRouters
@@ -25,14 +28,24 @@ internal fun QuicNetworkTopology.toUdpSimNetwork(): UdpSimNetwork {
             link.toUdpSimLink(
                 from = udpNodesById.getValue(link.from),
                 to = udpNodesById.getValue(link.to),
-                isFromEndpoint = link.isNodeOutbound(hostIds)
+                isFromEndpoint = link.isNodeOutbound(hostIds),
+                bandwidthQueueDiscipline = bandwidthQueueDiscipline
             )
         }
     )
 }
 
-fun QuicNetworkLink.toUdpSimLink(from: UdpSimNode, to: UdpSimNode, isFromEndpoint: Boolean): UdpSimLink {
-    val bandwidthQueue = FifoUdpSimBandwidthQueue(Bandwidth(this.bandwidthBytesPerSecond), this.maxQueueWaitTime)
+fun QuicNetworkLink.toUdpSimLink(
+    from: UdpSimNode,
+    to: UdpSimNode,
+    isFromEndpoint: Boolean,
+    bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO
+): UdpSimLink {
+    val bandwidth = Bandwidth(this.bandwidthBytesPerSecond)
+    val bandwidthQueue = when (bandwidthQueueDiscipline) {
+        BandwidthQueueDiscipline.FIFO -> FifoUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
+        BandwidthQueueDiscipline.FQ_CODEL -> FqCodelUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
+    }
     val latencyQueue = LatencyQueueImpl<UdpSimPacket>(this.latency)
     val qdisc = if (isFromEndpoint)
         SerialPacketProcessor(

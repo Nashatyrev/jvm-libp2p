@@ -178,6 +178,8 @@ class UdpSimNetworkEngineImpl4(
             link = this,
             latencyQueue = latencyQueue as? LatencyQueueImpl<UdpSimPacket>
                 ?: error("Impl4 fast path requires LatencyQueueImpl"),
-            bandwidthQueue = FastBandwidthQueue(bandwidthQueue.bandwidth, bandwidthQueue.maxQueueWaitTime)
+            bandwidthQueue = (bandwidthQueue as? FifoUdpSimBandwidthQueue)
+                ?.let { FastBandwidthQueue(it.bandwidth, it.maxQueueWaitTime) }
+                ?: error("Impl4 fast path currently supports only FIFO bandwidth queues")
         )
 }

@@ -6,6 +6,7 @@ import io.libp2p.quicsim.core.PacketProcessor
 import io.libp2p.quicsim.core.PacketReceiver.Companion.createPacketProcessorAdapter
 import io.libp2p.quicsim.core.SerialPacketProcessor
 import io.libp2p.quicsim.core.schedule.impl.LatencyQueueImpl
+import io.libp2p.quicsim.udpnetwork.UdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
 import kotlin.time.Duration
 
@@ -48,7 +49,7 @@ fun latencyThenBandwidthUdpSimQueue(
 }
 
 class TestUdpSimQueue(
-    val bandwidthQueue: FifoUdpSimBandwidthQueue,
+    val bandwidthQueue: UdpSimBandwidthQueue,
     val latencyQueue: LatencyQueue<UdpSimPacket>,
     private val delegate: PacketProcessor<UdpSimPacket>
 ) : PacketProcessor<UdpSimPacket> {

@@ -1,14 +1,15 @@
 package io.libp2p.quicsim.udpnetwork.impl
 
 import io.libp2p.quicsim.udpnetwork.Bandwidth
+import io.libp2p.quicsim.udpnetwork.UdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkDefaults
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import kotlin.time.Duration
 
 class FifoUdpSimBandwidthQueue(
-    val bandwidth: Bandwidth,
-    val maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME,
-) : QueueProcessorAdapter<UdpSimPacket>() {
+    override val bandwidth: Bandwidth,
+    override val maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME,
+) : QueueProcessorAdapter<UdpSimPacket>(), UdpSimBandwidthQueue {
     private var nextAvailableAt: Duration? = null
 
     override fun enqueueInbound(inboundData: List<UdpSimPacket>, at: Duration) {
