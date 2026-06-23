@@ -149,6 +149,7 @@ object QuicScenarios {
     ): QuicScenario<NodeProgramFactory> =
         when (name) {
             SLOW_START -> slowStart(eventSink)
+            INBOUND_CONGESTION -> inboundCongestion(eventSink)
             SAMPLE_GOSSIP_100 -> sampleGossip100(eventSink)
             SAMPLE_GOSSIP_20_SYNC_PUBLISH -> sampleGossip20SyncPublish(eventSink)
             SAMPLE_GOSSIP_100_128K_10MS_5_PUBLISHERS -> sampleGossip100LargeMessages(eventSink)

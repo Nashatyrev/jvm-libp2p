@@ -114,6 +114,7 @@ configure(
             "sampleGossipReport.dir",
             "shadow.parallelism",
             "shadow.path",
+            "inboundCongestionReport.dir",
             "slowStartReport.dir"
         ).forEach { propertyName ->
             System.getProperty(propertyName)?.let { propertyValue ->
