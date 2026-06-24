@@ -15,12 +15,6 @@ class SimulatedQuicScenarioRunner(
     private val bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO,
     private val random: SecureRandom = SecureRandom(byteArrayOf(100))
 ) : QuicScenarioRunner {
-    init {
-        require(latencyWindowParallelism == 0 || bandwidthQueueDiscipline == BandwidthQueueDiscipline.FIFO) {
-            "Parallel simulator fast path currently supports only FIFO bandwidth queues"
-        }
-    }
-
     override fun <F : NodeProgramFactory> run(scenario: QuicScenario<F>): QuicScenarioResult<F> {
         val nodeProgramFactory = scenario.createNodeProgramFactory()
         val runner = SimulatedRunner(

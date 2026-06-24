@@ -22,6 +22,28 @@ class InboundCongestionBatchReportTest {
     }
 
     @Test
+    fun `write simulated inbound congestion fq codel packet batch csv`() {
+        writeBatchCsv(
+            result = SimulatedQuicScenarioRunner(
+                latencyWindowParallelism = 20,
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.FQ_CODEL
+            ).run(QuicScenarios.inboundCongestion()),
+            outputPath = outputDir().resolve("inbound-congestion-fq-codel-simulated-batches.csv")
+        )
+    }
+
+    @Test
+    fun `write simulated inbound congestion codel packet batch csv`() {
+        writeBatchCsv(
+            result = SimulatedQuicScenarioRunner(
+                latencyWindowParallelism = 20,
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL
+            ).run(QuicScenarios.inboundCongestion()),
+            outputPath = outputDir().resolve("inbound-congestion-codel-simulated-batches.csv")
+        )
+    }
+
+    @Test
     fun `write shadow inbound congestion packet batch csv`() {
         val shadowPath = System.getProperty("shadow.path")
         assumeTrue(!shadowPath.isNullOrBlank(), "Set -Dshadow.path=/path/to/shadow to run Shadow report")

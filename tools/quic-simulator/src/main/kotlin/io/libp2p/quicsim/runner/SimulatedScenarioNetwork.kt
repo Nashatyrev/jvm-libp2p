@@ -12,6 +12,7 @@ import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
+import io.libp2p.quicsim.udpnetwork.impl.CodelUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FqCodelUdpSimBandwidthQueue
 
@@ -45,6 +46,7 @@ fun QuicNetworkLink.toUdpSimLink(
     val bandwidthQueue = when (bandwidthQueueDiscipline) {
         BandwidthQueueDiscipline.FIFO -> FifoUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
         BandwidthQueueDiscipline.FQ_CODEL -> FqCodelUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
+        BandwidthQueueDiscipline.CODEL -> CodelUdpSimBandwidthQueue(bandwidth)
     }
     val latencyQueue = LatencyQueueImpl<UdpSimPacket>(this.latency)
     val qdisc = if (isFromEndpoint)

@@ -22,6 +22,17 @@ class SlowStartBatchReportTest {
     }
 
     @Test
+    fun `write simulated slow start codel packet batch csv`() {
+        writeBatchCsv(
+            result = SimulatedQuicScenarioRunner(
+                latencyWindowParallelism = 20,
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL
+            ).run(QuicScenarios.slowStart()),
+            outputPath = outputDir().resolve("slow-start-codel-simulated-batches.csv")
+        )
+    }
+
+    @Test
     fun `write shadow slow start packet batch csv`() {
         val shadowPath = System.getProperty("shadow.path")
         assumeTrue(!shadowPath.isNullOrBlank(), "Set -Dshadow.path=/path/to/shadow to run Shadow report")

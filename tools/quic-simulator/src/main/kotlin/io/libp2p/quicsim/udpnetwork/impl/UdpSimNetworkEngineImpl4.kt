@@ -1,13 +1,13 @@
 package io.libp2p.quicsim.udpnetwork.impl
 
+import io.libp2p.quicsim.core.schedule.PacketProcessorB
 import io.libp2p.quicsim.core.schedule.impl.LatencyQueueImpl
-import io.libp2p.quicsim.udpnetwork.Bandwidth
+import io.libp2p.quicsim.udpnetwork.UdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.UdpSimLink
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork.Companion.findEndpoints
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
-import java.util.ArrayDeque
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.ZERO
 
@@ -23,59 +23,37 @@ class UdpSimNetworkEngineImpl4(
     private data class LinkState(
         val link: UdpSimLink,
         val latencyQueue: LatencyQueueImpl<UdpSimPacket>,
-        val bandwidthQueue: FastBandwidthQueue
+        val bandwidthQueue: TimedBandwidthQueue
     )
 
-    private class FastBandwidthQueue(
-        private val bandwidth: Bandwidth,
-        private val maxQueueWaitTime: Duration
+    private class TimedBandwidthQueue(
+        bandwidthQueue: UdpSimBandwidthQueue
     ) {
-        private val queue = ArrayDeque<TimedPacket>()
-        private var nextAvailableAt: Duration? = null
+        private val wrapper = PacketProcessorB(bandwidthQueue)
 
         fun enqueue(packets: List<UdpSimPacket>, at: Duration) {
-            var availableAt = nextAvailableAt
-            packets.forEach { packet ->
-                availableAt = enqueue(packet, at, availableAt)
+            if (packets.isEmpty()) {
+                return
             }
-        }
-
-        fun enqueue(packet: UdpSimPacket, at: Duration) {
-            enqueue(packet, at, nextAvailableAt)
-        }
-
-        private fun enqueue(
-            packet: UdpSimPacket,
-            at: Duration,
-            availableAt: Duration?
-        ): Duration? {
-            val dequeueTime = if (availableAt == null || availableAt <= at) {
-                at
-            } else {
-                availableAt
-            }
-            return if (dequeueTime - at <= maxQueueWaitTime) {
-                queue += TimedPacket(dequeueTime, packet)
-                (dequeueTime + bandwidth.durationToTransfer(packet.bytes)).also {
-                    nextAvailableAt = it
-                }
-            } else {
-                availableAt
-            }
+            wrapper.advanceTillAndExecute(at)
+            wrapper.deliverInbound(packets)
         }
 
         fun drainReadyUntil(targetTime: Duration, sink: MutableList<TimedPacket>) {
-            while (queue.isNotEmpty()) {
-                val queuedPacket = queue.peekFirst()
-                if (queuedPacket.at > targetTime) {
+            while (true) {
+                val nextTaskPoint = wrapper.nextTaskPoint ?: break
+                if (nextTaskPoint > targetTime) {
                     break
                 }
-                sink += queue.removeFirst()
+                wrapper.advanceTillAndExecute(nextTaskPoint)
+                wrapper.deliverOutbound().forEach { packet ->
+                    sink += TimedPacket(nextTaskPoint, packet)
+                }
             }
         }
 
         fun nextTaskPoint(): Duration? =
-            queue.peekFirst()?.at
+            wrapper.nextTaskPoint
     }
 
     private var cumulativeAdvanceMutable: Duration = ZERO
@@ -110,8 +88,12 @@ class UdpSimNetworkEngineImpl4(
         val routedPackets = ArrayList<TimedPacket>()
 
         outboundLinks.forEach { outboundLink ->
-            outboundLink.bandwidthQueue.drainReadyUntil(targetTime, routedPackets)
-            outboundLink.latencyQueue.emitPacketsUntil(targetTime).forEach { timedPackets ->
+            val emittedPackets = outboundLink.latencyQueue.emitPacketsUntil(targetTime).sortedBy { it.at }
+            emittedPackets.firstOrNull()?.let {
+                outboundLink.bandwidthQueue.drainReadyUntil(it.at, routedPackets)
+            }
+            emittedPackets.forEach { timedPackets ->
+                outboundLink.bandwidthQueue.drainReadyUntil(timedPackets.at, routedPackets)
                 outboundLink.bandwidthQueue.enqueue(timedPackets.packets, timedPackets.at)
             }
             outboundLink.bandwidthQueue.drainReadyUntil(targetTime, routedPackets)
@@ -130,9 +112,19 @@ class UdpSimNetworkEngineImpl4(
                 arrivals.sortWith(compareBy<TimedPacket> { it.at }.thenBy { it.packet.id })
             }
             val deliveredToEndpoint = ArrayList<TimedPacket>(arrivals.size)
-            inboundLink.bandwidthQueue.drainReadyUntil(targetTime, deliveredToEndpoint)
-            arrivals.forEach { timedPacket ->
-                inboundLink.bandwidthQueue.enqueue(timedPacket.packet, timedPacket.at)
+            arrivals.firstOrNull()?.let {
+                inboundLink.bandwidthQueue.drainReadyUntil(it.at, deliveredToEndpoint)
+            }
+            var arrivalIndex = 0
+            while (arrivalIndex < arrivals.size) {
+                val at = arrivals[arrivalIndex].at
+                val sameTimePackets = mutableListOf<UdpSimPacket>()
+                while (arrivalIndex < arrivals.size && arrivals[arrivalIndex].at == at) {
+                    sameTimePackets += arrivals[arrivalIndex].packet
+                    arrivalIndex++
+                }
+                inboundLink.bandwidthQueue.drainReadyUntil(at, deliveredToEndpoint)
+                inboundLink.bandwidthQueue.enqueue(sameTimePackets, at)
             }
             inboundLink.bandwidthQueue.drainReadyUntil(targetTime, deliveredToEndpoint)
             receiveAtEndpoint(inboundLink, deliveredToEndpoint)
@@ -178,8 +170,6 @@ class UdpSimNetworkEngineImpl4(
             link = this,
             latencyQueue = latencyQueue as? LatencyQueueImpl<UdpSimPacket>
                 ?: error("Impl4 fast path requires LatencyQueueImpl"),
-            bandwidthQueue = (bandwidthQueue as? FifoUdpSimBandwidthQueue)
-                ?.let { FastBandwidthQueue(it.bandwidth, it.maxQueueWaitTime) }
-                ?: error("Impl4 fast path currently supports only FIFO bandwidth queues")
+            bandwidthQueue = TimedBandwidthQueue(bandwidthQueue)
         )
 }
