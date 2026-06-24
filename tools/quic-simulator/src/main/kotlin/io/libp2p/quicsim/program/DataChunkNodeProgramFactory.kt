@@ -181,6 +181,7 @@ class DataChunkNodeProgramFactory(
         private lateinit var networkContext: NetworkContext
         private lateinit var epoch: TimePoint
         private val connections = ConcurrentHashMap<SimNodeId, Connection>()
+        private val streamControllers = ConcurrentHashMap<SimNodeId, CompletableFuture<DataChunkController>>()
         override val completeFuture: CompletableFuture<Unit> = CompletableFuture()
 
         override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> {
@@ -207,13 +208,13 @@ class DataChunkNodeProgramFactory(
             this.networkContext = networkContext
             this.epoch = simContext.timer.time()
 
-            val connectFutures = (0 until nodeCount)
+            val streamFutures = (0 until nodeCount)
                 .filter { it != simNodeId }
                 .map { nodeId ->
                     val nodeAddress = networkContext.allNodes[nodeId]
                         ?: throw IllegalStateException("Node $nodeId not found")
                     networkContext.myHost.network.connect(nodeAddress)
-                        .thenAccept { connection ->
+                        .thenCompose { connection ->
                             connections[nodeId] = connection
                             connectedNodeIds[simNodeId] += nodeId
                             eventSink.record(
@@ -224,10 +225,11 @@ class DataChunkNodeProgramFactory(
                                 )
                             )
                             completeIfReady()
+                            openDataStream(nodeId, connection)
                         }
                 }
 
-            return CompletableFuture.allOf(*connectFutures.toTypedArray())
+            return CompletableFuture.allOf(*streamFutures.toTypedArray())
                 .thenApply {
                     scheduleConfiguredSends()
                     Unit
@@ -269,11 +271,22 @@ class DataChunkNodeProgramFactory(
             }
         }
 
+        private fun openDataStream(
+            remoteNodeId: SimNodeId,
+            connection: Connection
+        ): CompletableFuture<Void> {
+            val controllerFuture = connection.muxerSession()
+                .createStream(binding)
+                .controller
+            streamControllers[remoteNodeId] = controllerFuture
+            return controllerFuture.thenAccept { }
+        }
+
         private fun sendChunk(indexedChunk: IndexedDataChunk) {
             try {
                 val target = indexedChunk.chunk.to
-                val connection = connections[target]
-                    ?: throw IllegalStateException("Node $simNodeId is not connected to node $target")
+                val controllerFuture = streamControllers[target]
+                    ?: throw IllegalStateException("Node $simNodeId has no open data stream to node $target")
                 val sentAt = now()
                 sentChunkIndices += indexedChunk.index
                 completeIfReady()
@@ -287,15 +300,14 @@ class DataChunkNodeProgramFactory(
                     )
                 )
 
-                connection.muxerSession()
-                    .createStream(binding)
-                    .controller
-                    .thenAccept { controller ->
+                controllerFuture
+                    .thenCompose { controller ->
                         controller.send(indexedChunk)
                     }
-                    .exceptionally { error ->
-                        recordFailure(error)
-                        null
+                    .whenComplete { _, error ->
+                        if (error != null) {
+                            recordFailure(error)
+                        }
                     }
             } catch (t: Throwable) {
                 recordFailure(t)
