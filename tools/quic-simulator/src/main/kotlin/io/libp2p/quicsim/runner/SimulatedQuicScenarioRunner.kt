@@ -13,7 +13,8 @@ class SimulatedQuicScenarioRunner(
     private val listenPortStartRange: Int = 17000,
     private val latencyWindowParallelism: Int = 0,
     private val bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO,
-    private val random: SecureRandom = SecureRandom(byteArrayOf(100))
+    private val random: SecureRandom = SecureRandom(byteArrayOf(100)),
+    private val datagramPacketTraceRecorder: DatagramPacketTraceRecorder = DatagramPacketTraceRecorder.Noop
 ) : QuicScenarioRunner {
     override fun <F : NodeProgramFactory> run(scenario: QuicScenario<F>): QuicScenarioResult<F> {
         val nodeProgramFactory = scenario.createNodeProgramFactory()
@@ -24,7 +25,8 @@ class SimulatedQuicScenarioRunner(
             listenPortStartRange = listenPortStartRange,
             maxSimulatedRunDuration = scenario.maxRunDuration,
             random = random,
-            latencyWindowParallelism = latencyWindowParallelism
+            latencyWindowParallelism = latencyWindowParallelism,
+            datagramPacketTraceRecorder = datagramPacketTraceRecorder
         )
 
         try {

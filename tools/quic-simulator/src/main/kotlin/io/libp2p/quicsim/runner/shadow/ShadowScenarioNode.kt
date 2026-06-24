@@ -2,22 +2,30 @@ package io.libp2p.quicsim.runner.shadow
 
 import io.libp2p.core.Host
 import io.libp2p.core.crypto.KeyType
+import io.libp2p.core.crypto.PrivKey
 import io.libp2p.core.dsl.HostBuilder
 import io.libp2p.core.multiformats.Multiaddr
+import io.libp2p.core.multistream.ProtocolBinding
+import io.libp2p.core.transport.Transport
 import io.libp2p.quicsim.core.schedule.impl.NanoMonotonicTimer
 import io.libp2p.quicsim.core.schedule.impl.toScheduledExecutorService
 import io.libp2p.quicsim.core.schedule.impl.toSimpleScheduler
 import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.runner.DeterministicNodeIdentity
+import io.libp2p.quicsim.runner.DatagramPacketTraceRecorder
+import io.libp2p.quicsim.runner.FileDatagramPacketTraceRecorder
+import io.libp2p.quicsim.runner.TracingDatagramChannelFactory
 import io.libp2p.quicsim.scenario.FileQuicScenarioEventSink
 import io.libp2p.quicsim.scenario.QuicScenarios
 import io.libp2p.quicsim.sim.NetworkContext
 import io.libp2p.quicsim.sim.SimContext
+import io.libp2p.transport.quic.DefaultDatagramChannelFactory
 import io.libp2p.transport.quic.QuicTransport
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.function.BiFunction
 import kotlin.io.path.Path
 import kotlin.system.exitProcess
 import kotlin.time.Duration
@@ -43,6 +51,7 @@ private data class ShadowScenarioNodeArgs(
     val listenPortStartRange: Int = 17000,
     val nodeIpPrefix: String = "11.0.0.",
     val pollMillis: Long = 100,
+    val datagramTraceFile: Path? = null,
 ) {
     companion object {
         fun parse(args: Array<String>): ShadowScenarioNodeArgs {
@@ -58,7 +67,8 @@ private data class ShadowScenarioNodeArgs(
                 listenIp = values["listen-ip"] ?: "0.0.0.0",
                 listenPortStartRange = values["listen-port-start-range"]?.toInt() ?: 17000,
                 nodeIpPrefix = values["node-ip-prefix"] ?: "11.0.0.",
-                pollMillis = values["poll-millis"]?.toLong() ?: 100
+                pollMillis = values["poll-millis"]?.toLong() ?: 100,
+                datagramTraceFile = values["datagram-trace-file"]?.let { Path(it) }
             )
         }
     }
@@ -111,10 +121,26 @@ private class ShadowScenarioNodeApp(
         val protocols = nodeProgram.createProtocols(simContext)
         val nodeId = nodeProgram.simNodeId
         val port = args.listenPortStartRange + nodeId
+        val traceRecorder = args.datagramTraceFile
+            ?.let(::FileDatagramPacketTraceRecorder)
+            ?: DatagramPacketTraceRecorder.Noop
+        val transportFactory = BiFunction<PrivKey, List<ProtocolBinding<*>>, Transport> { key, selectedProtocols ->
+            QuicTransport(
+                key,
+                "ECDSA",
+                selectedProtocols,
+                datagramChannelFactory = TracingDatagramChannelFactory(
+                    delegate = DefaultDatagramChannelFactory(),
+                    nodeId = nodeProgram.simNodeId,
+                    timeSupplier = { simContext.timer.elapsedTime() },
+                    traceRecorder = traceRecorder
+                )
+            )
+        }
 
         return HostBuilder()
             .keyType(KeyType.ED25519)
-            .secureTransport(QuicTransport.Companion::ECDSA)
+            .secureTransport(transportFactory)
             .protocol(*(protocols.toTypedArray()))
             .listen("/ip4/${args.listenIp}/udp/$port/quic-v1")
             .builderModifier { builder ->

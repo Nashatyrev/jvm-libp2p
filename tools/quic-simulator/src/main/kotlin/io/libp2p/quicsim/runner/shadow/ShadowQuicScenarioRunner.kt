@@ -29,11 +29,13 @@ class ShadowQuicScenarioRunner(
         workDir.createDirectories()
         val nodeProgramFactory = scenario.createNodeProgramFactory()
         val eventsDir = workDir.resolve("events").also { it.createDirectories() }
+        val datagramTracesDir = workDir.resolve("datagram-traces").also { it.createDirectories() }
         val config = ShadowConfigBuilder(
             scenario = scenario,
             javaPath = javaPath,
             classpath = classpath,
             eventsDir = eventsDir,
+            datagramTracesDir = datagramTracesDir,
             listenPortStartRange = listenPortStartRange,
             nodeIpPrefix = nodeIpPrefix,
             javaOptions = javaOptions
@@ -94,6 +96,7 @@ class ShadowConfigBuilder(
     private val javaPath: Path,
     private val classpath: String,
     private val eventsDir: Path,
+    private val datagramTracesDir: Path? = null,
     private val listenPortStartRange: Int,
     private val nodeIpPrefix: String = "11.0.0.",
     private val javaOptions: List<String> = emptyList()
@@ -145,7 +148,12 @@ class ShadowConfigBuilder(
             listenPortStartRange.toString(),
             "--node-ip-prefix",
             nodeIpPrefix
-        )
+        ) + datagramTracesDir?.let {
+            listOf(
+                "--datagram-trace-file",
+                it.resolve("node-$nodeId.datagrams.csv").absolutePathString()
+            )
+        }.orEmpty()
 }
 
 private fun QuicNetworkTopology.toShadowGml(): String {

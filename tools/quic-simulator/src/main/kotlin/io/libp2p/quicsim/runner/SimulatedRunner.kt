@@ -45,7 +45,8 @@ class SimulatedRunner(
     val random: SecureRandom = SecureRandom(byteArrayOf(100)),
     val latencyWindowParallelism: Int = 0,
     val nodeVisitorFactory: SimNodeVisitorFactory<DatagramPacket> =
-        SimNodeVisitorFactory { PacketProcessorVisitor.none() }
+        SimNodeVisitorFactory { PacketProcessorVisitor.none() },
+    val datagramPacketTraceRecorder: DatagramPacketTraceRecorder = DatagramPacketTraceRecorder.Noop
 ) {
     val nodeCount: Int = udpNetwork.nodes.size
 
@@ -121,7 +122,12 @@ class SimulatedRunner(
                 key,
                 "ECDSA",
                 selectedProtocols,
-                datagramChannelFactory = SimNodeDatagramChannelFactory(node),
+                datagramChannelFactory = TracingDatagramChannelFactory(
+                    delegate = SimNodeDatagramChannelFactory(node),
+                    nodeId = nodeProgram.simNodeId,
+                    timeSupplier = { simContext.timer.elapsedTime() },
+                    traceRecorder = datagramPacketTraceRecorder
+                ),
                 allocator = simulatedQuicAllocator
             )
         }
