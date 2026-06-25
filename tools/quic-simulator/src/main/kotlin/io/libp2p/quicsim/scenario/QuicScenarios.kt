@@ -7,12 +7,14 @@ import io.libp2p.quicsim.program.NodeProgramFactory
 import io.libp2p.quicsim.program.SampleGossipNodeProgram
 import io.libp2p.quicsim.sim.SimNodeId
 import kotlin.random.Random
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 object QuicScenarios {
     const val SLOW_START = "quic-slow-start"
+    const val SINGLE_TRANSFER_8MB = "quic-single-transfer-8mb"
     const val INBOUND_CONGESTION = "quic-inbound-congestion"
     const val SAMPLE_GOSSIP_100 = "quic-sample-gossip-100"
     const val SAMPLE_GOSSIP_20_SYNC_PUBLISH = "quic-sample-gossip-20-sync-publish"
@@ -27,7 +29,8 @@ object QuicScenarios {
             network = QuicNetworkTopology.star(
                 hostCount = nodeCount,
                 latency = 100.milliseconds,
-                bandwidthBytesPerSecond = 1_000_000L
+                bandwidthBytesPerSecond = 1_000_000L,
+                maxQueueWaitTime = Duration.INFINITE
             ),
             maxRunDuration = 100.seconds,
             createNodeProgramFactory = {
@@ -53,6 +56,36 @@ object QuicScenarios {
         )
     }
 
+    fun singleTransfer8Mb(
+        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
+    ): QuicScenario<DataChunkNodeProgramFactory> {
+        val nodeCount = 2
+        return QuicScenario(
+            name = SINGLE_TRANSFER_8MB,
+            network = QuicNetworkTopology.star(
+                hostCount = nodeCount,
+                latency = 100.milliseconds,
+                bandwidthBytesPerSecond = 2_000_000L,
+                maxQueueWaitTime = Duration.INFINITE
+            ),
+            maxRunDuration = 100.seconds,
+            createNodeProgramFactory = {
+                DataChunkNodeProgramFactory(
+                    nodeCount = nodeCount,
+                    chunks = listOf(
+                        DataChunkNodeProgramFactory.DataChunk(
+                            sizeBytes = 8_000_000,
+                            at = 10.seconds,
+                            from = 0,
+                            to = 1
+                        )
+                    ),
+                    eventSink = eventSink
+                )
+            }
+        )
+    }
+
     fun inboundCongestion(
         eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
     ): QuicScenario<DataChunkNodeProgramFactory> {
@@ -62,7 +95,8 @@ object QuicScenarios {
             network = QuicNetworkTopology.star(
                 hostCount = nodeCount,
                 latency = 30.milliseconds,
-                bandwidthBytesPerSecond = 1_000_000L
+                bandwidthBytesPerSecond = 1_000_000L,
+                maxQueueWaitTime = Duration.INFINITE
             ),
             maxRunDuration = 100.seconds,
             createNodeProgramFactory = {
@@ -149,6 +183,7 @@ object QuicScenarios {
     ): QuicScenario<NodeProgramFactory> =
         when (name) {
             SLOW_START -> slowStart(eventSink)
+            SINGLE_TRANSFER_8MB -> singleTransfer8Mb(eventSink)
             INBOUND_CONGESTION -> inboundCongestion(eventSink)
             SAMPLE_GOSSIP_100 -> sampleGossip100(eventSink)
             SAMPLE_GOSSIP_20_SYNC_PUBLISH -> sampleGossip20SyncPublish(eventSink)

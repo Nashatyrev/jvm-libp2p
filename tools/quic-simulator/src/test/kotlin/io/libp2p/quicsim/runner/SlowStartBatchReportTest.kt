@@ -36,6 +36,89 @@ class SlowStartBatchReportTest {
     }
 
     @Test
+    fun `write simulated single transfer 8mb codel packet batch csv`() {
+        writeBatchCsv(
+            result = SimulatedQuicScenarioRunner(
+                latencyWindowParallelism = 20,
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL
+            ).run(QuicScenarios.singleTransfer8Mb()),
+            outputPath = outputDir().resolve("single-transfer-8mb-codel-simulated-batches.csv")
+        )
+    }
+
+    @Test
+    fun `write simulated single transfer 8mb fifo packet batch csv`() {
+        writeBatchCsv(
+            result = SimulatedQuicScenarioRunner(
+                latencyWindowParallelism = 20
+            ).run(QuicScenarios.singleTransfer8Mb()),
+            outputPath = outputDir().resolve("single-transfer-8mb-fifo-simulated-batches.csv")
+        )
+    }
+
+    @Test
+    fun `write simulated single transfer 8mb fifo datagram trace csv`() {
+        val traceRecorder = RecordingDatagramPacketTraceRecorder()
+        SimulatedQuicScenarioRunner(
+            latencyWindowParallelism = 20,
+            datagramPacketTraceRecorder = traceRecorder
+        ).run(QuicScenarios.singleTransfer8Mb())
+
+        writeDatagramTraceCsv(
+            events = traceRecorder.events(),
+            outputPath = outputDir().resolve("single-transfer-8mb-fifo-simulated-datagrams.csv")
+        )
+        writeMissingDatagramTraceCsv(
+            events = traceRecorder.events(),
+            outputPath = outputDir().resolve("single-transfer-8mb-fifo-simulated-missing-datagrams.csv")
+        )
+        writeDatagramTraceSummaryCsv(
+            events = traceRecorder.events(),
+            outputPath = outputDir().resolve("single-transfer-8mb-fifo-simulated-datagram-summary.csv")
+        )
+    }
+
+    @Test
+    fun `write shadow single transfer 8mb packet batch csv`() {
+        val shadowPath = System.getProperty("shadow.path")
+        assumeTrue(!shadowPath.isNullOrBlank(), "Set -Dshadow.path=/path/to/shadow to run Shadow report")
+
+        writeBatchCsv(
+            result = ShadowQuicScenarioRunner(
+                shadowPath = Path(shadowPath),
+                workDir = Files.createTempDirectory("quic-shadow-single-transfer-8mb-batch-report-")
+            ).run(QuicScenarios.singleTransfer8Mb()),
+            outputPath = outputDir().resolve("single-transfer-8mb-shadow-batches.csv")
+        )
+    }
+
+    @Test
+    fun `write shadow single transfer 8mb datagram trace csv`() {
+        val shadowPath = System.getProperty("shadow.path")
+        assumeTrue(!shadowPath.isNullOrBlank(), "Set -Dshadow.path=/path/to/shadow to run Shadow report")
+
+        val workDir = Files.createTempDirectory("quic-shadow-single-transfer-8mb-datagram-trace-")
+        ShadowQuicScenarioRunner(
+            shadowPath = Path(shadowPath),
+            workDir = workDir
+        ).run(QuicScenarios.singleTransfer8Mb())
+
+        val events = readDatagramTraceCsv(workDir.resolve("datagram-traces"))
+        writeDatagramTraceCsv(
+            events = events,
+            outputPath = outputDir().resolve("single-transfer-8mb-shadow-datagrams.csv")
+        )
+        writeMissingDatagramTraceCsv(
+            events = events,
+            outputPath = outputDir().resolve("single-transfer-8mb-shadow-missing-datagrams.csv")
+        )
+        writeDatagramTraceSummaryCsv(
+            events = events,
+            outputPath = outputDir().resolve("single-transfer-8mb-shadow-datagram-summary.csv")
+        )
+    }
+
+    @Test
     fun `write simulated slow start codel datagram trace csv`() {
         val traceRecorder = RecordingDatagramPacketTraceRecorder()
         SimulatedQuicScenarioRunner(
