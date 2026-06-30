@@ -15,6 +15,7 @@ import kotlin.time.Duration.Companion.seconds
 object QuicScenarios {
     const val SLOW_START = "quic-slow-start"
     const val SINGLE_TRANSFER_8MB = "quic-single-transfer-8mb"
+    const val SINGLE_TRANSFER_8MB_HALF_RECEIVER_BW = "quic-single-transfer-8mb-half-receiver-bw"
     const val INBOUND_CONGESTION = "quic-inbound-congestion"
     const val SAMPLE_GOSSIP_100 = "quic-sample-gossip-100"
     const val SAMPLE_GOSSIP_20_SYNC_PUBLISH = "quic-sample-gossip-20-sync-publish"
@@ -67,6 +68,65 @@ object QuicScenarios {
                 latency = 100.milliseconds,
                 bandwidthBytesPerSecond = 2_000_000L,
                 maxQueueWaitTime = Duration.INFINITE
+            ),
+            maxRunDuration = 100.seconds,
+            createNodeProgramFactory = {
+                DataChunkNodeProgramFactory(
+                    nodeCount = nodeCount,
+                    chunks = listOf(
+                        DataChunkNodeProgramFactory.DataChunk(
+                            sizeBytes = 8_000_000,
+                            at = 10.seconds,
+                            from = 0,
+                            to = 1
+                        )
+                    ),
+                    eventSink = eventSink
+                )
+            }
+        )
+    }
+
+    fun singleTransfer8MbHalfReceiverBandwidth(
+        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
+    ): QuicScenario<DataChunkNodeProgramFactory> {
+        val nodeCount = 2
+        val routerId = "router-0"
+        return QuicScenario(
+            name = SINGLE_TRANSFER_8MB_HALF_RECEIVER_BW,
+            network = QuicNetworkTopology(
+                hosts = (0 until nodeCount).map { QuicNetworkHost("node-$it") },
+                routers = listOf(QuicNetworkRouter(routerId)),
+                links = listOf(
+                    QuicNetworkLink(
+                        from = "node-0",
+                        to = routerId,
+                        latency = 100.milliseconds,
+                        bandwidthBytesPerSecond = 2_000_000L,
+                        maxQueueWaitTime = Duration.INFINITE
+                    ),
+                    QuicNetworkLink(
+                        from = routerId,
+                        to = "node-0",
+                        latency = 100.milliseconds,
+                        bandwidthBytesPerSecond = 2_000_000L,
+                        maxQueueWaitTime = Duration.INFINITE
+                    ),
+                    QuicNetworkLink(
+                        from = "node-1",
+                        to = routerId,
+                        latency = 100.milliseconds,
+                        bandwidthBytesPerSecond = 1_000_000L,
+                        maxQueueWaitTime = Duration.INFINITE
+                    ),
+                    QuicNetworkLink(
+                        from = routerId,
+                        to = "node-1",
+                        latency = 100.milliseconds,
+                        bandwidthBytesPerSecond = 1_000_000L,
+                        maxQueueWaitTime = Duration.INFINITE
+                    )
+                )
             ),
             maxRunDuration = 100.seconds,
             createNodeProgramFactory = {
@@ -184,6 +244,7 @@ object QuicScenarios {
         when (name) {
             SLOW_START -> slowStart(eventSink)
             SINGLE_TRANSFER_8MB -> singleTransfer8Mb(eventSink)
+            SINGLE_TRANSFER_8MB_HALF_RECEIVER_BW -> singleTransfer8MbHalfReceiverBandwidth(eventSink)
             INBOUND_CONGESTION -> inboundCongestion(eventSink)
             SAMPLE_GOSSIP_100 -> sampleGossip100(eventSink)
             SAMPLE_GOSSIP_20_SYNC_PUBLISH -> sampleGossip20SyncPublish(eventSink)

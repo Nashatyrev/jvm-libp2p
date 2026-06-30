@@ -57,6 +57,27 @@ class SlowStartBatchReportTest {
     }
 
     @Test
+    fun `write simulated single transfer 8mb half receiver bandwidth fifo packet batch csv`() {
+        writeBatchCsv(
+            result = SimulatedQuicScenarioRunner(
+                latencyWindowParallelism = 20
+            ).run(QuicScenarios.singleTransfer8MbHalfReceiverBandwidth()),
+            outputPath = outputDir().resolve("single-transfer-8mb-half-receiver-bw-fifo-simulated-batches.csv")
+        )
+    }
+
+    @Test
+    fun `write simulated single transfer 8mb half receiver bandwidth codel packet batch csv`() {
+        writeBatchCsv(
+            result = SimulatedQuicScenarioRunner(
+                latencyWindowParallelism = 20,
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL
+            ).run(QuicScenarios.singleTransfer8MbHalfReceiverBandwidth()),
+            outputPath = outputDir().resolve("single-transfer-8mb-half-receiver-bw-codel-simulated-batches.csv")
+        )
+    }
+
+    @Test
     fun `write simulated single transfer 8mb fifo datagram trace csv`() {
         val traceRecorder = RecordingDatagramPacketTraceRecorder()
         SimulatedQuicScenarioRunner(
@@ -79,6 +100,25 @@ class SlowStartBatchReportTest {
     }
 
     @Test
+    fun `write simulated single transfer 8mb half receiver bandwidth codel udp packet report csv`() {
+        val traceRecorder = RecordingDatagramPacketTraceRecorder()
+        SimulatedQuicScenarioRunner(
+            latencyWindowParallelism = 20,
+            bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL,
+            datagramPacketTraceRecorder = traceRecorder
+        ).run(QuicScenarios.singleTransfer8MbHalfReceiverBandwidth())
+
+        writeDatagramTraceCsv(
+            events = traceRecorder.events(),
+            outputPath = outputDir().resolve("single-transfer-8mb-half-receiver-bw-codel-simulated-datagrams.csv")
+        )
+        writeUdpPacketReportCsv(
+            events = traceRecorder.events(),
+            outputPath = outputDir().resolve("single-transfer-8mb-half-receiver-bw-codel-simulated-udp-packets.csv")
+        )
+    }
+
+    @Test
     fun `write shadow single transfer 8mb packet batch csv`() {
         val shadowPath = System.getProperty("shadow.path")
         assumeTrue(!shadowPath.isNullOrBlank(), "Set -Dshadow.path=/path/to/shadow to run Shadow report")
@@ -89,6 +129,20 @@ class SlowStartBatchReportTest {
                 workDir = Files.createTempDirectory("quic-shadow-single-transfer-8mb-batch-report-")
             ).run(QuicScenarios.singleTransfer8Mb()),
             outputPath = outputDir().resolve("single-transfer-8mb-shadow-batches.csv")
+        )
+    }
+
+    @Test
+    fun `write shadow single transfer 8mb half receiver bandwidth packet batch csv`() {
+        val shadowPath = System.getProperty("shadow.path")
+        assumeTrue(!shadowPath.isNullOrBlank(), "Set -Dshadow.path=/path/to/shadow to run Shadow report")
+
+        writeBatchCsv(
+            result = ShadowQuicScenarioRunner(
+                shadowPath = Path(shadowPath),
+                workDir = Files.createTempDirectory("quic-shadow-single-transfer-8mb-half-receiver-bw-batch-report-")
+            ).run(QuicScenarios.singleTransfer8MbHalfReceiverBandwidth()),
+            outputPath = outputDir().resolve("single-transfer-8mb-half-receiver-bw-shadow-batches.csv")
         )
     }
 
@@ -115,6 +169,28 @@ class SlowStartBatchReportTest {
         writeDatagramTraceSummaryCsv(
             events = events,
             outputPath = outputDir().resolve("single-transfer-8mb-shadow-datagram-summary.csv")
+        )
+    }
+
+    @Test
+    fun `write shadow single transfer 8mb half receiver bandwidth udp packet report csv`() {
+        val shadowPath = System.getProperty("shadow.path")
+        assumeTrue(!shadowPath.isNullOrBlank(), "Set -Dshadow.path=/path/to/shadow to run Shadow report")
+
+        val workDir = Files.createTempDirectory("quic-shadow-single-transfer-8mb-half-receiver-bw-udp-packets-")
+        ShadowQuicScenarioRunner(
+            shadowPath = Path(shadowPath),
+            workDir = workDir
+        ).run(QuicScenarios.singleTransfer8MbHalfReceiverBandwidth())
+
+        val events = readDatagramTraceCsv(workDir.resolve("datagram-traces"))
+        writeDatagramTraceCsv(
+            events = events,
+            outputPath = outputDir().resolve("single-transfer-8mb-half-receiver-bw-shadow-datagrams.csv")
+        )
+        writeUdpPacketReportCsv(
+            events = events,
+            outputPath = outputDir().resolve("single-transfer-8mb-half-receiver-bw-shadow-udp-packets.csv")
         )
     }
 
@@ -271,6 +347,49 @@ class SlowStartBatchReportTest {
         println("Wrote datagram trace summary CSV: $outputPath")
     }
 
+    private fun writeUdpPacketReportCsv(
+        events: List<DatagramPacketTraceEvent>,
+        outputPath: Path
+    ) {
+        outputPath.parent.createDirectories()
+        val indexedEvents = events.mapIndexed { index, event -> IndexedDatagramPacketTraceEvent(index, event) }
+        val inboundByKey = indexedEvents
+            .filter { it.event.direction == DatagramPacketTraceEvent.Direction.INBOUND }
+            .sortedWith(compareBy({ it.event.at }, { it.index }))
+            .groupBy { it.event.matchKey }
+            .mapValues { (_, value) -> ArrayDeque(value) }
+        val outbound = indexedEvents
+            .filter { it.event.direction == DatagramPacketTraceEvent.Direction.OUTBOUND }
+            .sortedWith(compareBy({ it.event.at }, { it.index }))
+
+        val rows = buildString {
+            appendLine("packet_number,from,to,sent_time_ns,sent_time_s,receive_time_ns,receive_time_s,size")
+            outbound.forEachIndexed { index, sentWithIndex ->
+                val sent = sentWithIndex.event
+                val received = inboundByKey[sent.matchKey]?.removeFirstOrNull()?.event
+                appendLine(
+                    listOf(
+                        index + 1,
+                        sent.nodeId,
+                        received?.nodeId ?: sent.remoteHost.toNodeIdOrBlank(),
+                        sent.at.inWholeNanoseconds,
+                        "%.9f".format(sent.at.inWholeNanoseconds / 1_000_000_000.0),
+                        received?.at?.inWholeNanoseconds ?: "",
+                        received?.at?.let { "%.9f".format(it.inWholeNanoseconds / 1_000_000_000.0) } ?: "",
+                        sent.bytes
+                    ).joinToString(",")
+                )
+            }
+        }
+        outputPath.writeText(rows)
+        println("Wrote UDP packet report CSV: $outputPath")
+    }
+
+    private data class IndexedDatagramPacketTraceEvent(
+        val index: Int,
+        val event: DatagramPacketTraceEvent
+    )
+
     private fun missingOutboundDatagrams(events: List<DatagramPacketTraceEvent>): List<DatagramPacketTraceEvent> {
         val inboundCounts = events
             .filter { it.direction == DatagramPacketTraceEvent.Direction.INBOUND }
@@ -305,8 +424,22 @@ class SlowStartBatchReportTest {
             matchKey
         ).joinToString(",")
 
+    private fun String.toNodeIdOrBlank(): String =
+        when {
+            startsWith("10.0.") -> split(".").let { parts ->
+                if (parts.size == 4) {
+                    (parts[2].toIntOrNull()?.times(256) ?: return "") + (parts[3].toIntOrNull() ?: return "")
+                } else {
+                    ""
+                }
+            }.toString()
+            startsWith("11.0.0.") -> removePrefix("11.0.0.").toIntOrNull()?.minus(1)?.toString() ?: ""
+            else -> ""
+        }
+
     private fun readDatagramTraceCsv(traceDir: Path): List<DatagramPacketTraceEvent> =
         traceDir.listDirectoryEntries("*.datagrams.csv")
+            .sortedBy { it.fileName.toString() }
             .flatMap { path ->
                 path.readLines()
                     .drop(1)
