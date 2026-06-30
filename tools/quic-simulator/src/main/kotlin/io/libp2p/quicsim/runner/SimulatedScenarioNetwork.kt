@@ -47,6 +47,11 @@ fun QuicNetworkLink.toUdpSimLink(
         BandwidthQueueDiscipline.FIFO -> FifoUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
         BandwidthQueueDiscipline.FQ_CODEL -> FqCodelUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
         BandwidthQueueDiscipline.CODEL -> CodelUdpSimBandwidthQueue(bandwidth)
+        BandwidthQueueDiscipline.FIFO_OUTBOUND_CODEL_INBOUND -> if (isFromEndpoint) {
+            FifoUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
+        } else {
+            CodelUdpSimBandwidthQueue(bandwidth)
+        }
     }
     val latencyQueue = LatencyQueueImpl<UdpSimPacket>(this.latency)
     val qdisc = if (isFromEndpoint)

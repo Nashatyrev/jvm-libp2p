@@ -36,6 +36,17 @@ class SlowStartBatchReportTest {
     }
 
     @Test
+    fun `write simulated slow start fifo outbound codel inbound packet batch csv`() {
+        writeBatchCsv(
+            result = SimulatedQuicScenarioRunner(
+                latencyWindowParallelism = 20,
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO_OUTBOUND_CODEL_INBOUND
+            ).run(QuicScenarios.slowStart()),
+            outputPath = outputDir().resolve("slow-start-fifo-outbound-codel-inbound-simulated-batches.csv")
+        )
+    }
+
+    @Test
     fun `write simulated single transfer 8mb codel packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
@@ -43,6 +54,17 @@ class SlowStartBatchReportTest {
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL
             ).run(QuicScenarios.singleTransfer8Mb()),
             outputPath = outputDir().resolve("single-transfer-8mb-codel-simulated-batches.csv")
+        )
+    }
+
+    @Test
+    fun `write simulated single transfer 8mb fifo outbound codel inbound packet batch csv`() {
+        writeBatchCsv(
+            result = SimulatedQuicScenarioRunner(
+                latencyWindowParallelism = 20,
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO_OUTBOUND_CODEL_INBOUND
+            ).run(QuicScenarios.singleTransfer8Mb()),
+            outputPath = outputDir().resolve("single-transfer-8mb-fifo-outbound-codel-inbound-simulated-batches.csv")
         )
     }
 
@@ -74,6 +96,19 @@ class SlowStartBatchReportTest {
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL
             ).run(QuicScenarios.singleTransfer8MbHalfReceiverBandwidth()),
             outputPath = outputDir().resolve("single-transfer-8mb-half-receiver-bw-codel-simulated-batches.csv")
+        )
+    }
+
+    @Test
+    fun `write simulated single transfer 8mb half receiver bandwidth fifo outbound codel inbound packet batch csv`() {
+        writeBatchCsv(
+            result = SimulatedQuicScenarioRunner(
+                latencyWindowParallelism = 20,
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO_OUTBOUND_CODEL_INBOUND
+            ).run(QuicScenarios.singleTransfer8MbHalfReceiverBandwidth()),
+            outputPath = outputDir().resolve(
+                "single-transfer-8mb-half-receiver-bw-fifo-outbound-codel-inbound-simulated-batches.csv"
+            )
         )
     }
 

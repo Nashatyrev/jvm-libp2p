@@ -3,6 +3,7 @@ package io.libp2p.quicsim.runner
 import io.libp2p.quicsim.scenario.QuicNetworkTopology
 import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.libp2p.quicsim.udpnetwork.impl.CodelUdpSimBandwidthQueue
+import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FqCodelUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl4
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -51,6 +52,20 @@ class SimulatedScenarioNetworkTest {
         ).toUdpSimNetwork(BandwidthQueueDiscipline.CODEL)
 
         assertTrue(network.links.all { it.bandwidthQueue is CodelUdpSimBandwidthQueue })
+    }
+
+    @Test
+    fun `can use fifo outbound and codel inbound bandwidth queues`() {
+        val network = QuicNetworkTopology.star(
+            hostCount = 1,
+            latency = 10.milliseconds,
+            bandwidthBytesPerSecond = 1_000
+        ).toUdpSimNetwork(BandwidthQueueDiscipline.FIFO_OUTBOUND_CODEL_INBOUND)
+        val outbound = network.links.single { it.from.id == "node-0" && it.to.id == "router-0" }
+        val inbound = network.links.single { it.from.id == "router-0" && it.to.id == "node-0" }
+
+        assertTrue(outbound.bandwidthQueue is FifoUdpSimBandwidthQueue)
+        assertTrue(inbound.bandwidthQueue is CodelUdpSimBandwidthQueue)
     }
 
     @Test
