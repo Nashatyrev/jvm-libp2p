@@ -17,7 +17,7 @@ import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FqCodelUdpSimBandwidthQueue
 
 internal fun QuicNetworkTopology.toUdpSimNetwork(
-    bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO
+    bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
 ): UdpSimNetwork {
     val udpHosts = hosts.associate { it.id to UdpSimNode(it.id) }
     val udpRouters = routers.associate { it.id to UdpSimNode(it.id) }
@@ -40,14 +40,14 @@ fun QuicNetworkLink.toUdpSimLink(
     from: UdpSimNode,
     to: UdpSimNode,
     isFromEndpoint: Boolean,
-    bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO
+    bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
 ): UdpSimLink {
     val bandwidth = Bandwidth(this.bandwidthBytesPerSecond)
     val bandwidthQueue = when (bandwidthQueueDiscipline) {
         BandwidthQueueDiscipline.FIFO -> FifoUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
         BandwidthQueueDiscipline.FQ_CODEL -> FqCodelUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
         BandwidthQueueDiscipline.CODEL -> CodelUdpSimBandwidthQueue(bandwidth)
-        BandwidthQueueDiscipline.FIFO_OUTBOUND_CODEL_INBOUND -> if (isFromEndpoint) {
+        BandwidthQueueDiscipline.SHADOW_LIKE -> if (isFromEndpoint) {
             FifoUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
         } else {
             CodelUdpSimBandwidthQueue(bandwidth)

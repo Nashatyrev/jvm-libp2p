@@ -44,13 +44,13 @@ class InboundCongestionBatchReportTest {
     }
 
     @Test
-    fun `write simulated inbound congestion fifo outbound codel inbound packet batch csv`() {
+    fun `write simulated inbound congestion shadow like packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
                 latencyWindowParallelism = 20,
-                bandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO_OUTBOUND_CODEL_INBOUND
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
             ).run(QuicScenarios.inboundCongestion()),
-            outputPath = outputDir().resolve("inbound-congestion-fifo-outbound-codel-inbound-simulated-batches.csv")
+            outputPath = outputDir().resolve("inbound-congestion-shadow-like-simulated-batches.csv")
         )
     }
 

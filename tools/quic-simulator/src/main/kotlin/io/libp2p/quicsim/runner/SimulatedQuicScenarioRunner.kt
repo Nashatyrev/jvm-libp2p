@@ -12,7 +12,7 @@ class SimulatedQuicScenarioRunner(
     private val ipManager: IPManager = IPManager.Default,
     private val listenPortStartRange: Int = 17000,
     private val latencyWindowParallelism: Int = 0,
-    private val bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO,
+    private val bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE,
     private val random: SecureRandom = SecureRandom(byteArrayOf(100)),
     private val datagramPacketTraceRecorder: DatagramPacketTraceRecorder = DatagramPacketTraceRecorder.Noop
 ) : QuicScenarioRunner {

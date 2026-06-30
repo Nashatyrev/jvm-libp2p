@@ -55,12 +55,12 @@ class SimulatedScenarioNetworkTest {
     }
 
     @Test
-    fun `can use fifo outbound and codel inbound bandwidth queues`() {
+    fun `can use shadow like bandwidth queues`() {
         val network = QuicNetworkTopology.star(
             hostCount = 1,
             latency = 10.milliseconds,
             bandwidthBytesPerSecond = 1_000
-        ).toUdpSimNetwork(BandwidthQueueDiscipline.FIFO_OUTBOUND_CODEL_INBOUND)
+        ).toUdpSimNetwork(BandwidthQueueDiscipline.SHADOW_LIKE)
         val outbound = network.links.single { it.from.id == "node-0" && it.to.id == "router-0" }
         val inbound = network.links.single { it.from.id == "router-0" && it.to.id == "node-0" }
 

@@ -36,13 +36,13 @@ class SlowStartBatchReportTest {
     }
 
     @Test
-    fun `write simulated slow start fifo outbound codel inbound packet batch csv`() {
+    fun `write simulated slow start shadow like packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
                 latencyWindowParallelism = 20,
-                bandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO_OUTBOUND_CODEL_INBOUND
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
             ).run(QuicScenarios.slowStart()),
-            outputPath = outputDir().resolve("slow-start-fifo-outbound-codel-inbound-simulated-batches.csv")
+            outputPath = outputDir().resolve("slow-start-shadow-like-simulated-batches.csv")
         )
     }
 
@@ -58,13 +58,13 @@ class SlowStartBatchReportTest {
     }
 
     @Test
-    fun `write simulated single transfer 8mb fifo outbound codel inbound packet batch csv`() {
+    fun `write simulated single transfer 8mb shadow like packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
                 latencyWindowParallelism = 20,
-                bandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO_OUTBOUND_CODEL_INBOUND
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
             ).run(QuicScenarios.singleTransfer8Mb()),
-            outputPath = outputDir().resolve("single-transfer-8mb-fifo-outbound-codel-inbound-simulated-batches.csv")
+            outputPath = outputDir().resolve("single-transfer-8mb-shadow-like-simulated-batches.csv")
         )
     }
 
@@ -100,14 +100,14 @@ class SlowStartBatchReportTest {
     }
 
     @Test
-    fun `write simulated single transfer 8mb half receiver bandwidth fifo outbound codel inbound packet batch csv`() {
+    fun `write simulated single transfer 8mb half receiver bandwidth shadow like packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
                 latencyWindowParallelism = 20,
-                bandwidthQueueDiscipline = BandwidthQueueDiscipline.FIFO_OUTBOUND_CODEL_INBOUND
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
             ).run(QuicScenarios.singleTransfer8MbHalfReceiverBandwidth()),
             outputPath = outputDir().resolve(
-                "single-transfer-8mb-half-receiver-bw-fifo-outbound-codel-inbound-simulated-batches.csv"
+                "single-transfer-8mb-half-receiver-bw-shadow-like-simulated-batches.csv"
             )
         )
     }
