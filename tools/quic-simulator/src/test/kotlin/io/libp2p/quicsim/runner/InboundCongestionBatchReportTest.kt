@@ -69,6 +69,31 @@ class InboundCongestionBatchReportTest {
     }
 
     @Test
+    fun `write simulated inbound congestion shadow like packet receipt csv`() {
+        writePacketReceiptCsv(
+            result = SimulatedQuicScenarioRunner(
+                latencyWindowParallelism = 20,
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
+            ).run(QuicScenarios.inboundCongestion()),
+            outputPath = outputDir().resolve("inbound-congestion-shadow-like-simulated-packet-receipts.csv")
+        )
+    }
+
+    @Test
+    fun `write shadow inbound congestion packet receipt csv`() {
+        val shadowPath = System.getProperty("shadow.path")
+        assumeTrue(!shadowPath.isNullOrBlank(), "Set -Dshadow.path=/path/to/shadow to run Shadow report")
+
+        writePacketReceiptCsv(
+            result = ShadowQuicScenarioRunner(
+                shadowPath = Path(shadowPath),
+                workDir = Files.createTempDirectory("quic-shadow-inbound-congestion-packet-receipt-report-")
+            ).run(QuicScenarios.inboundCongestion()),
+            outputPath = outputDir().resolve("inbound-congestion-shadow-packet-receipts.csv")
+        )
+    }
+
+    @Test
     fun `write simulated outbound congestion shadow like packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
@@ -119,6 +144,44 @@ class InboundCongestionBatchReportTest {
         }
         outputPath.writeText(rows)
         println("Wrote packet batch CSV: $outputPath")
+    }
+
+    private fun writePacketReceiptCsv(
+        result: QuicScenarioResult<*>,
+        outputPath: Path
+    ) {
+        outputPath.parent.createDirectories()
+        val rows = buildString {
+            appendLine("runner,scenario,chunk,sequence,total_packets,from,to,received_time_ns,received_time_s,payload_bytes")
+            DataChunkMetrics.packetReceipts(result.events)
+                .sortedWith(
+                    compareBy(
+                        { it.receivedAt },
+                        { it.chunkIndex },
+                        { it.sequence },
+                        { it.from },
+                        { it.to }
+                    )
+                )
+                .forEach { receipt ->
+                    appendLine(
+                        listOf(
+                            result.runnerName,
+                            result.scenarioName,
+                            receipt.chunkIndex,
+                            receipt.sequence,
+                            receipt.totalPackets,
+                            receipt.from,
+                            receipt.to,
+                            receipt.receivedAt.inWholeNanoseconds,
+                            "%.9f".format(receipt.receivedAt.inWholeNanoseconds / 1_000_000_000.0),
+                            receipt.payloadBytes
+                        ).joinToString(",")
+                    )
+                }
+        }
+        outputPath.writeText(rows)
+        println("Wrote packet receipt CSV: $outputPath")
     }
 
     private fun outputDir(): Path =
