@@ -17,6 +17,7 @@ object QuicScenarios {
     const val SINGLE_TRANSFER_8MB = "quic-single-transfer-8mb"
     const val SINGLE_TRANSFER_8MB_HALF_RECEIVER_BW = "quic-single-transfer-8mb-half-receiver-bw"
     const val INBOUND_CONGESTION = "quic-inbound-congestion"
+    const val OUTBOUND_CONGESTION = "quic-outbound-congestion"
     const val SAMPLE_GOSSIP_100 = "quic-sample-gossip-100"
     const val SAMPLE_GOSSIP_20_SYNC_PUBLISH = "quic-sample-gossip-20-sync-publish"
     const val SAMPLE_GOSSIP_100_128K_10MS_5_PUBLISHERS = "quic-sample-gossip-100-128k-10ms-5pub"
@@ -188,6 +189,48 @@ object QuicScenarios {
         )
     }
 
+    fun outboundCongestion(
+        eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink()
+    ): QuicScenario<DataChunkNodeProgramFactory> {
+        val nodeCount = 4
+        return QuicScenario(
+            name = OUTBOUND_CONGESTION,
+            network = QuicNetworkTopology.star(
+                hostCount = nodeCount,
+                latency = 30.milliseconds,
+                bandwidthBytesPerSecond = 1_000_000L,
+                maxQueueWaitTime = Duration.INFINITE
+            ),
+            maxRunDuration = 100.seconds,
+            createNodeProgramFactory = {
+                DataChunkNodeProgramFactory(
+                    nodeCount = nodeCount,
+                    chunks = listOf(
+                        DataChunkNodeProgramFactory.DataChunk(
+                            sizeBytes = 1_000_000,
+                            at = 10.seconds,
+                            from = 0,
+                            to = 1
+                        ),
+                        DataChunkNodeProgramFactory.DataChunk(
+                            sizeBytes = 1_000_000,
+                            at = 10.seconds + 300.milliseconds,
+                            from = 0,
+                            to = 2
+                        ),
+                        DataChunkNodeProgramFactory.DataChunk(
+                            sizeBytes = 1_000_000,
+                            at = 11.seconds,
+                            from = 0,
+                            to = 3
+                        ),
+                    ),
+                    eventSink = eventSink
+                )
+            }
+        )
+    }
+
     fun sampleGossip100(
         eventSink: QuicScenarioEventSink = RecordingQuicScenarioEventSink(),
         topologySeed: Int = 1234,
@@ -246,6 +289,7 @@ object QuicScenarios {
             SINGLE_TRANSFER_8MB -> singleTransfer8Mb(eventSink)
             SINGLE_TRANSFER_8MB_HALF_RECEIVER_BW -> singleTransfer8MbHalfReceiverBandwidth(eventSink)
             INBOUND_CONGESTION -> inboundCongestion(eventSink)
+            OUTBOUND_CONGESTION -> outboundCongestion(eventSink)
             SAMPLE_GOSSIP_100 -> sampleGossip100(eventSink)
             SAMPLE_GOSSIP_20_SYNC_PUBLISH -> sampleGossip20SyncPublish(eventSink)
             SAMPLE_GOSSIP_100_128K_10MS_5_PUBLISHERS -> sampleGossip100LargeMessages(eventSink)

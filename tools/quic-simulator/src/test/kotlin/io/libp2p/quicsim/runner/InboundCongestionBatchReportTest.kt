@@ -68,6 +68,31 @@ class InboundCongestionBatchReportTest {
         )
     }
 
+    @Test
+    fun `write simulated outbound congestion shadow like packet batch csv`() {
+        writeBatchCsv(
+            result = SimulatedQuicScenarioRunner(
+                latencyWindowParallelism = 20,
+                bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
+            ).run(QuicScenarios.outboundCongestion()),
+            outputPath = outputDir().resolve("outbound-congestion-shadow-like-simulated-batches.csv")
+        )
+    }
+
+    @Test
+    fun `write shadow outbound congestion packet batch csv`() {
+        val shadowPath = System.getProperty("shadow.path")
+        assumeTrue(!shadowPath.isNullOrBlank(), "Set -Dshadow.path=/path/to/shadow to run Shadow report")
+
+        writeBatchCsv(
+            result = ShadowQuicScenarioRunner(
+                shadowPath = Path(shadowPath),
+                workDir = Files.createTempDirectory("quic-shadow-outbound-congestion-report-")
+            ).run(QuicScenarios.outboundCongestion()),
+            outputPath = outputDir().resolve("outbound-congestion-shadow-batches.csv")
+        )
+    }
+
     private fun writeBatchCsv(
         result: QuicScenarioResult<*>,
         outputPath: Path
