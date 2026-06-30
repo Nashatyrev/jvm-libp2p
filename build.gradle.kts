@@ -114,12 +114,19 @@ configure(
             "sampleGossipReport.dir",
             "shadow.parallelism",
             "shadow.path",
+            "simVsShadow.fixture.dir",
+            "simVsShadow.updateFixtures",
+            "simVsShadow.updateGossipFixtures",
             "inboundCongestionReport.dir",
             "slowStartReport.dir"
         ).forEach { propertyName ->
             System.getProperty(propertyName)?.let { propertyValue ->
                 systemProperty(propertyName, propertyValue)
             }
+        }
+
+        if (project.path == ":tools:quic-simulator") {
+            jvmArgs("-XX:MaxDirectMemorySize=${System.getProperty("quicsim.test.maxDirectMemory", "2g")}")
         }
 
         // disabling the parallel test runs for the time being due to port collisions
