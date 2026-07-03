@@ -101,39 +101,40 @@ open class DefaultGossipRpcPartsQueue(
         addPart(PrunePart(topic, backoffSeconds, backoffPeers))
     }
 
-    override fun takeMerged(): List<Rpc.RPC> {
-        val ret = mutableListOf<Rpc.RPC>()
+    override fun popMerged(): Rpc.RPC? {
+        if (parts.isEmpty()) return null
+
+        val builder = Rpc.RPC.newBuilder()
         var partIdx = 0
-        while (partIdx < parts.size) {
-            val builder = Rpc.RPC.newBuilder()
 
-            var publishCount = params.maxPublishedMessages ?: Int.MAX_VALUE
-            var subscriptionCount = params.maxSubscriptions ?: Int.MAX_VALUE
-            var iHaveCount = params.maxIHaveLength
-            var iWantCount = params.maxIWantMessageIds ?: Int.MAX_VALUE
-            var graftCount = params.maxGraftMessages ?: Int.MAX_VALUE
-            var pruneCount = params.maxPruneMessages ?: Int.MAX_VALUE
+        var publishCount = params.maxPublishedMessages ?: Int.MAX_VALUE
+        var subscriptionCount = params.maxSubscriptions ?: Int.MAX_VALUE
+        var iHaveCount = params.maxIHaveLength
+        var iWantCount = params.maxIWantMessageIds ?: Int.MAX_VALUE
+        var graftCount = params.maxGraftMessages ?: Int.MAX_VALUE
+        var pruneCount = params.maxPruneMessages ?: Int.MAX_VALUE
 
-            while (partIdx < parts.size &&
-                publishCount > 0 && subscriptionCount > 0 && iHaveCount > 0 &&
-                iWantCount > 0 && graftCount > 0 && pruneCount > 0
-            ) {
-                val part = parts[partIdx++]
-                when (part) {
-                    is PublishPart -> publishCount--
-                    is SubscriptionPart -> subscriptionCount--
-                    is IHavePart -> iHaveCount--
-                    is IWantPart -> iWantCount--
-                    is GraftPart -> graftCount--
-                    is PrunePart -> pruneCount--
-                }
-
-                part.appendToBuilder(builder)
+        while (partIdx < parts.size &&
+            publishCount > 0 && subscriptionCount > 0 && iHaveCount > 0 &&
+            iWantCount > 0 && graftCount > 0 && pruneCount > 0
+        ) {
+            val part = parts[partIdx++]
+            when (part) {
+                is PublishPart -> publishCount--
+                is SubscriptionPart -> subscriptionCount--
+                is IHavePart -> iHaveCount--
+                is IWantPart -> iWantCount--
+                is GraftPart -> graftCount--
+                is PrunePart -> pruneCount--
             }
-            ret += builder.build()
+
+            part.appendToBuilder(builder)
         }
 
-        parts.clear()
-        return ret
+        parts.subList(0, partIdx).clear()
+        return builder.build()
     }
+
+    override fun takeMerged(): List<Rpc.RPC> =
+        generateSequence { popMerged() }.toList()
 }

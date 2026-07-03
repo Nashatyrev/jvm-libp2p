@@ -5,10 +5,13 @@ import io.libp2p.core.PeerId
 import io.libp2p.core.Stream
 import io.libp2p.etc.types.submitAsync
 import io.libp2p.etc.types.toVoidCompletableFuture
+import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.util.ReferenceCountUtil
 import org.slf4j.LoggerFactory
+import java.nio.channels.ClosedChannelException
+import java.util.ArrayDeque
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ScheduledExecutorService
 
@@ -64,6 +67,7 @@ abstract class P2PService(
         var closed = false
         var aborted = false // indicates that stream was closed on init and [peerHandler] may not be initialized
         private var peerHandler: PeerHandler? = null
+        private val pendingWrites = ArrayDeque<PendingWrite>()
 
         override fun handlerAdded(ctx: ChannelHandlerContext?) {
             runOnEventThread {
@@ -85,12 +89,22 @@ abstract class P2PService(
             this.ctx = ctx
             runOnEventThread(peerHandler) {
                 streamActive(this)
+                drainPendingWrites()
             }
         }
+
+        override fun channelWritabilityChanged(ctx: ChannelHandlerContext) {
+            runOnEventThread(peerHandler) {
+                drainPendingWrites()
+            }
+            ctx.fireChannelWritabilityChanged()
+        }
+
         override fun channelUnregistered(ctx: ChannelHandlerContext?) {
             closed = true
             runOnEventThread(peerHandler) {
                 this.ctx = null
+                failPendingWrites(ClosedChannelException())
                 streamDisconnected(this)
             }
         }
@@ -106,6 +120,109 @@ abstract class P2PService(
         }
 
         fun getPeerHandler() = peerHandler ?: throw InternalErrorException("[peerHandler] not initialized yet")
+
+        /**
+         * Enqueues a lazy sequence of outbound messages.
+         *
+         * The sequence is iterated only on the service event thread and only while the
+         * underlying Netty channel is writable.
+         */
+        fun enqueueWrite(messageSupplier: Sequence<Any>): CompletableFuture<Unit> = enqueueWrite { messageSupplier }
+
+        /**
+         * Enqueues a lazy sequence of outbound messages.
+         *
+         * [messageSupplier] is invoked on the service event thread, and the returned
+         * sequence is iterated only on that thread while the underlying Netty channel
+         * is writable.
+         */
+        fun enqueueWrite(messageSupplier: () -> Sequence<Any>): CompletableFuture<Unit> {
+            val result = CompletableFuture<Unit>()
+            runOnEventThread(peerHandler) {
+                try {
+                    if (closed) {
+                        result.completeExceptionally(ClosedChannelException())
+                    } else {
+                        pendingWrites.add(PendingWrite(messageSupplier().iterator(), result))
+                        drainPendingWrites()
+                    }
+                } catch (e: Exception) {
+                    result.completeExceptionally(e)
+                    throw e
+                }
+            }
+            return result
+        }
+
+        private fun drainPendingWrites() {
+            val context = ctx ?: return
+            var flushed = false
+
+            while (context.channel().isWritable && pendingWrites.isNotEmpty()) {
+                val pendingWrite = pendingWrites.peek()
+                try {
+                    if (pendingWrite.iterator.hasNext()) {
+                        pendingWrite.write(context.write(pendingWrite.iterator.next()))
+                        flushed = true
+                    } else {
+                        pendingWrites.remove()
+                        pendingWrite.endOfInput()
+                    }
+                } catch (e: Exception) {
+                    pendingWrites.remove()
+                    pendingWrite.result.completeExceptionally(e)
+                    onServiceException(peerHandler, null, e)
+                }
+            }
+
+            if (flushed) {
+                context.flush()
+            }
+        }
+
+        private fun failPendingWrites(cause: Throwable) {
+            while (pendingWrites.isNotEmpty()) {
+                pendingWrites.remove().result.completeExceptionally(cause)
+            }
+        }
+
+        private inner class PendingWrite(
+            val iterator: Iterator<Any>,
+            val result: CompletableFuture<Unit>
+        ) {
+            private var inputEnded = false
+            private var pendingWriteFutures = 0
+            private var failure: Throwable? = null
+
+            fun write(writeFuture: ChannelFuture) {
+                pendingWriteFutures++
+                writeFuture.addListener {
+                    runOnEventThread(peerHandler) {
+                        pendingWriteFutures--
+                        if (!it.isSuccess && failure == null) {
+                            failure = it.cause()
+                        }
+                        completeIfDone()
+                    }
+                }
+            }
+
+            fun endOfInput() {
+                inputEnded = true
+                completeIfDone()
+            }
+
+            private fun completeIfDone() {
+                if (!inputEnded || pendingWriteFutures > 0) return
+
+                val cause = failure
+                if (cause == null) {
+                    result.complete(Unit)
+                } else {
+                    result.completeExceptionally(cause)
+                }
+            }
+        }
 
         /**
          * Close on stream initialize without setting the [peerHandler]
@@ -124,6 +241,7 @@ abstract class P2PService(
     open inner class PeerHandler(val streamHandler: StreamHandler) {
         open val peerId = streamHandler.stream.remotePeerId()
         open fun writeAndFlush(msg: Any): CompletableFuture<Unit> = streamHandler.ctx!!.writeAndFlush(msg).toVoidCompletableFuture()
+        open fun enqueueWrite(messageSupplier: Sequence<Any>): CompletableFuture<Unit> = streamHandler.enqueueWrite { messageSupplier }
         open fun isActive() = streamHandler.ctx != null
         open fun getInboundHandler(): StreamHandler? = streamHandler
         open fun getOutboundHandler(): StreamHandler? = streamHandler

@@ -23,6 +23,12 @@ abstract class P2PServiceSemiDuplex(executor: ScheduledExecutorService) : P2PSer
                 SemiDuplexNoOutboundStreamException("No active outbound stream to write data $msg")
             )
 
+        override fun enqueueWrite(messageSupplier: Sequence<Any>): CompletableFuture<Unit> =
+            getOutboundHandler()?.enqueueWrite(messageSupplier) ?: completedExceptionally(
+                SemiDuplexNoOutboundStreamException("No active outbound stream to write data")
+            )
+
+
         override fun isActive() = getOutboundHandler()?.ctx != null
 
         override fun getInboundHandler() = if (streamHandler.stream.isInitiator) otherStreamHandler else streamHandler

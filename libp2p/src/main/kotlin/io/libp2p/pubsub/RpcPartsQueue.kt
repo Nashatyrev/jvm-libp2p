@@ -18,6 +18,8 @@ interface RpcPartsQueue {
 
     fun addSubscription(topic: Topic, status: SubscriptionStatus)
 
+    fun popMerged(): Rpc.RPC?
+
     fun takeMerged(): List<Rpc.RPC>
 }
 
@@ -59,6 +61,17 @@ open class DefaultRpcPartsQueue : RpcPartsQueue {
 
     override fun addSubscription(topic: Topic, status: RpcPartsQueue.SubscriptionStatus) {
         addPart(SubscriptionPart(topic, status))
+    }
+
+    override fun popMerged(): Rpc.RPC? {
+        if (parts.isEmpty()) return null
+
+        val builder = Rpc.RPC.newBuilder()
+        parts.forEach {
+            it.appendToBuilder(builder)
+        }
+        parts.clear()
+        return builder.build()
     }
 
     override fun takeMerged(): List<Rpc.RPC> {

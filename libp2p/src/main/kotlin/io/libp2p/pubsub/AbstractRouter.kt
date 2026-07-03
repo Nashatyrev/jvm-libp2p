@@ -91,8 +91,9 @@ abstract class AbstractRouter(
     }
 
     protected fun flushPending(peer: PeerHandler) {
-        val peerMessages = pendingRpcParts.popQueue(peer).takeMerged()
-        val allSendPromise = peerMessages.map { send(peer, it) }.thenApplyAll { }
+        val peerQueue = pendingRpcParts.getQueue(peer)
+        val allSendPromise = enqueueSend(peer,
+            generateSequence { peerQueue.popMerged() })
         pendingMessagePromises.removeAll(peer)?.forEach {
             allSendPromise.forward(it)
         }
@@ -336,6 +337,9 @@ abstract class AbstractRouter(
         }
     }
 
+    protected fun enqueueSend(peer: PeerHandler, messageSupplier: Sequence<Rpc.RPC>): CompletableFuture<Unit> {
+        return peer.enqueueWrite(messageSupplier)
+    }
     protected open fun send(peer: PeerHandler, msg: Rpc.RPC): CompletableFuture<Unit> {
         return peer.writeAndFlush(msg)
     }

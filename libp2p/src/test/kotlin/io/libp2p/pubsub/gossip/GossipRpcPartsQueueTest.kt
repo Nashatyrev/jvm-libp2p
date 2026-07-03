@@ -3,6 +3,7 @@ package io.libp2p.pubsub.gossip
 import io.libp2p.core.PeerId
 import io.libp2p.etc.types.toProtobuf
 import io.libp2p.etc.types.toWBytes
+import io.libp2p.pubsub.DefaultRpcPartsQueue
 import io.libp2p.pubsub.Topic
 import io.libp2p.pubsub.gossip.builders.GossipParamsBuilder
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
@@ -199,6 +200,55 @@ class GossipRpcPartsQueueTest {
 
         assertThat(merged).allMatch { router.validateMessageListLimits(it) }
         assertThat(merged.merge().disperse().toSet()).isEqualTo(monolithMsg.disperse().toSet())
+    }
+
+    @Test
+    fun `popOneMerged() default queue pops all parts as one message`() {
+        val partsQueue = DefaultRpcPartsQueue()
+        partsQueue.addSubscribe("topic")
+        partsQueue.addPublish(createRpcMessage("topic", "data"))
+
+        val msg = partsQueue.popMerged()
+
+        assertThat(msg).isNotNull()
+        assertThat(msg!!.subscriptionsCount).isEqualTo(1)
+        assertThat(msg.publishCount).isEqualTo(1)
+        assertThat(partsQueue.popMerged()).isNull()
+    }
+
+    @Test
+    fun `popOneMerged() pops only the parts used for one limited gossip message`() {
+        val router = GossipRouterBuilder(params = gossipParamsWithLimits).build()
+        val partsQueue = TestGossipQueue(gossipParamsWithLimits)
+        (0 until maxSubscriptions + 1).forEach {
+            partsQueue.addSubscribe("topic-$it")
+        }
+        partsQueue.addPublish(createRpcMessage("topic-$maxSubscriptions", "data"))
+
+        val firstMsg = partsQueue.popMerged()
+        val remainingMsgs = partsQueue.takeMerged()
+
+        assertThat(firstMsg).isNotNull()
+        val firstMsgNonNull = firstMsg!!
+        assertThat(router.validateMessageListLimits(firstMsgNonNull)).isTrue()
+        assertThat(firstMsgNonNull.subscriptionsCount).isEqualTo(maxSubscriptions)
+        assertThat(firstMsgNonNull.publishCount).isZero()
+        assertThat(remainingMsgs).hasSize(1)
+        assertThat(remainingMsgs[0].subscriptionsCount).isEqualTo(1)
+        assertThat(remainingMsgs[0].publishCount).isEqualTo(1)
+        assertThat(partsQueue.popMerged()).isNull()
+    }
+
+    @Test
+    fun `popOneMerged() repeated pops match takeMerged`() {
+        val popQueue = PartCounts(21, 13, 14, 15, 16, 0).generateQueue(gossipParamsWithLimits)
+        val takeQueue = PartCounts(21, 13, 14, 15, 16, 0).generateQueue(gossipParamsWithLimits)
+
+        val poppedMsgs = generateSequence { popQueue.popMerged() }.toList()
+        val takenMsgs = takeQueue.takeMerged()
+
+        assertThat(poppedMsgs).isEqualTo(takenMsgs)
+        assertThat(popQueue.popMerged()).isNull()
     }
 
     @Test
