@@ -35,17 +35,25 @@ import io.libp2p.quicsim.udpnetwork.fifoUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.latencyThenBandwidthUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl2
+import io.netty.buffer.AdaptiveByteBufAllocator
 import io.netty.buffer.ByteBuf
+import io.netty.buffer.ByteBufAllocator
+import io.netty.buffer.CompositeByteBuf
+import io.netty.buffer.WrappedByteBuf
 import io.netty.channel.socket.DatagramPacket
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.io.ByteArrayOutputStream
+import java.lang.management.BufferPoolMXBean
+import java.lang.management.ManagementFactory
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
 import kotlin.time.Duration
@@ -98,14 +106,20 @@ class SimulatedRunnerTest {
 
     @Test
     fun sendMessageFromNPublishers() {
-        val nodeCount = 100
-        val publishersCount = 100
-        val neighboursToConnect = 20
+        val nodeCount = intProperty("quicsim.sendMessageFromNPublishers.nodeCount", 1000)
+        val publishersCount = intProperty("quicsim.sendMessageFromNPublishers.publishersCount", nodeCount)
+        val neighboursToConnect = intProperty("quicsim.sendMessageFromNPublishers.neighboursToConnect", 20)
+        val messagesPerPublisher = intProperty("quicsim.sendMessageFromNPublishers.messagesPerPublisher", 1)
         val bandwidth = Bandwidth(5_000_000L)
         val halfLatency = 20.milliseconds
-        val messageSizeBytes = 1024
+        val messageSizeBytes = intProperty("quicsim.sendMessageFromNPublishers.messageSizeBytes", 130)
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val packetStats = PacketStatsNodeVisitorFactory()
+        val directBufferStats = DirectBufferStatsSampler()
+        val globalAllocator = CountingByteBufAllocator(
+            delegate = AdaptiveByteBufAllocator(),
+            captureAllocationStacks = System.getProperty("quicsim.profile.globalAllocatorParanoid").toBoolean()
+        )
         val randomConnectionsByNode: Map<SimNodeId, List<SimNodeId>> =
             QuicScenarios.createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = 1234)
 
@@ -129,24 +143,40 @@ class SimulatedRunnerTest {
                             ),
                         randomSeed = id.toLong(),
                         messageSizeBytes = messageSizeBytes,
+                        messagesPerPublisher = messagesPerPublisher,
                         initialPublishDelay = 30.seconds,
                     ).also { nodePrograms += it }
             },
             udpNetwork = udpNetwork,
             maxSimulatedRunDuration = 10.minutes,
             latencyWindowParallelism = 20,
-            nodeVisitorFactory = packetStats
+            nodeVisitorFactory = packetStats,
+            quicAllocatorFactory = { globalAllocator }
         )
 
-        runner.run()
+        directBufferStats.start()
+        try {
+            runner.run()
+        } finally {
+            directBufferStats.stop()
+        }
         assertTrue(
             nodePrograms.all { it.completeFuture.isDone },
             "Expected all sample gossip node programs to complete in 1000-node scenario"
         )
 
 //        println("Total packet count: " + udpNetworkLogging.packetsCount + ", bytes: " + udpNetworkLogging.throughputBytes)
-        println("Params: neighboursToConnect: $neighboursToConnect, publishersCount: $publishersCount")
+        println(
+            "Params: neighboursToConnect: $neighboursToConnect, " +
+                "publishersCount: $publishersCount, messagesPerPublisher: $messagesPerPublisher"
+        )
         println("Packet stats: ${packetStats.snapshot()}")
+        println("Direct buffer stats: ${directBufferStats.snapshot()}")
+        println("Global shared allocation stats: ${globalAllocator.snapshot()}")
+        globalAllocator.unreleasedAllocationReport(limit = 10)?.let { report ->
+            println("Global shared unreleased allocation report:")
+            println(report)
+        }
     }
 
     @Test
@@ -468,6 +498,9 @@ class SimulatedRunnerTest {
     }
 
     private companion object {
+        fun intProperty(name: String, defaultValue: Int): Int =
+            System.getProperty(name)?.toIntOrNull() ?: defaultValue
+
         fun fifoQDiscFactory(bandwidth: Bandwidth): TestQDiscFactory = { latency, isFromEndpoint ->
             if (isFromEndpoint) {
                 latencyThenBandwidthUdpSimQueue(
@@ -717,4 +750,321 @@ class SimulatedRunnerTest {
             val maxInFlightBytes: Long
         )
     }
+
+    class DirectBufferStatsSampler(
+        private val samplePeriodMillis: Long = 10
+    ) {
+        private val directPool = bufferPool("direct")
+        private val mappedPool = bufferPool("mapped")
+        private val running = AtomicBoolean()
+        private val maxDirectCount = AtomicLong()
+        private val maxDirectMemoryUsed = AtomicLong()
+        private val maxDirectTotalCapacity = AtomicLong()
+        private val maxMappedMemoryUsed = AtomicLong()
+        private var thread: Thread? = null
+
+        fun start() {
+            if (!running.compareAndSet(false, true)) return
+            thread = Thread {
+                while (running.get()) {
+                    sample()
+                    Thread.sleep(samplePeriodMillis)
+                }
+            }.also {
+                it.isDaemon = true
+                it.name = "direct-buffer-stats-sampler"
+                it.start()
+            }
+        }
+
+        fun stop() {
+            running.set(false)
+            thread?.join(1_000)
+            sample()
+        }
+
+        fun snapshot(): Snapshot =
+            Snapshot(
+                directCount = directPool?.count ?: -1,
+                directMemoryUsed = directPool?.memoryUsed ?: -1,
+                directTotalCapacity = directPool?.totalCapacity ?: -1,
+                mappedMemoryUsed = mappedPool?.memoryUsed ?: -1,
+                maxDirectCount = maxDirectCount.get(),
+                maxDirectMemoryUsed = maxDirectMemoryUsed.get(),
+                maxDirectTotalCapacity = maxDirectTotalCapacity.get(),
+                maxMappedMemoryUsed = maxMappedMemoryUsed.get()
+            )
+
+        private fun sample() {
+            directPool?.let {
+                updateMax(maxDirectCount, it.count)
+                updateMax(maxDirectMemoryUsed, it.memoryUsed)
+                updateMax(maxDirectTotalCapacity, it.totalCapacity)
+            }
+            mappedPool?.let {
+                updateMax(maxMappedMemoryUsed, it.memoryUsed)
+            }
+        }
+
+        private fun updateMax(maxValue: AtomicLong, candidate: Long) {
+            while (true) {
+                val current = maxValue.get()
+                if (candidate <= current || maxValue.compareAndSet(current, candidate)) {
+                    return
+                }
+            }
+        }
+
+        data class Snapshot(
+            val directCount: Long,
+            val directMemoryUsed: Long,
+            val directTotalCapacity: Long,
+            val mappedMemoryUsed: Long,
+            val maxDirectCount: Long,
+            val maxDirectMemoryUsed: Long,
+            val maxDirectTotalCapacity: Long,
+            val maxMappedMemoryUsed: Long
+        )
+
+        private fun bufferPool(name: String): BufferPoolMXBean? =
+            ManagementFactory.getPlatformMXBeans(BufferPoolMXBean::class.java)
+                .firstOrNull { it.name == name }
+    }
+
+    class CountingByteBufAllocator(
+        private val delegate: ByteBufAllocator,
+        private val captureAllocationStacks: Boolean = false
+    ) : ByteBufAllocator {
+        private data class AllocationRecord(
+            val id: Long,
+            val requestedBytes: Long,
+            val initialCapacityBytes: Long,
+            val direct: Boolean,
+            val stack: Array<StackTraceElement>
+        )
+
+        private val allocationIds = AtomicLong()
+        private val activeAllocationRecords = ConcurrentHashMap<Long, AllocationRecord>()
+        private val allocatedBuffers = AtomicLong()
+        private val releasedBuffers = AtomicLong()
+        private val activeBuffers = AtomicLong()
+        private val maxActiveBuffers = AtomicLong()
+        private val allocatedRequestedBytes = AtomicLong()
+        private val allocatedCapacityBytes = AtomicLong()
+        private val allocatedDirectCapacityBytes = AtomicLong()
+        private val activeRequestedBytes = AtomicLong()
+        private val activeCapacityBytes = AtomicLong()
+        private val activeDirectCapacityBytes = AtomicLong()
+        private val maxActiveRequestedBytes = AtomicLong()
+        private val maxActiveCapacityBytes = AtomicLong()
+        private val maxActiveDirectCapacityBytes = AtomicLong()
+
+        override fun buffer(): ByteBuf =
+            track(delegate.buffer(), requestedBytes = 0)
+
+        override fun buffer(initialCapacity: Int): ByteBuf =
+            track(delegate.buffer(initialCapacity), initialCapacity)
+
+        override fun buffer(initialCapacity: Int, maxCapacity: Int): ByteBuf =
+            track(delegate.buffer(initialCapacity, maxCapacity), initialCapacity)
+
+        override fun ioBuffer(): ByteBuf =
+            track(delegate.ioBuffer(), requestedBytes = 0)
+
+        override fun ioBuffer(initialCapacity: Int): ByteBuf =
+            track(delegate.ioBuffer(initialCapacity), initialCapacity)
+
+        override fun ioBuffer(initialCapacity: Int, maxCapacity: Int): ByteBuf =
+            track(delegate.ioBuffer(initialCapacity, maxCapacity), initialCapacity)
+
+        override fun heapBuffer(): ByteBuf =
+            track(delegate.heapBuffer(), requestedBytes = 0)
+
+        override fun heapBuffer(initialCapacity: Int): ByteBuf =
+            track(delegate.heapBuffer(initialCapacity), initialCapacity)
+
+        override fun heapBuffer(initialCapacity: Int, maxCapacity: Int): ByteBuf =
+            track(delegate.heapBuffer(initialCapacity, maxCapacity), initialCapacity)
+
+        override fun directBuffer(): ByteBuf =
+            track(delegate.directBuffer(), requestedBytes = 0)
+
+        override fun directBuffer(initialCapacity: Int): ByteBuf =
+            track(delegate.directBuffer(initialCapacity), initialCapacity)
+
+        override fun directBuffer(initialCapacity: Int, maxCapacity: Int): ByteBuf =
+            track(delegate.directBuffer(initialCapacity, maxCapacity), initialCapacity)
+
+        override fun compositeBuffer(): CompositeByteBuf =
+            delegate.compositeBuffer()
+
+        override fun compositeBuffer(maxNumComponents: Int): CompositeByteBuf =
+            delegate.compositeBuffer(maxNumComponents)
+
+        override fun compositeHeapBuffer(): CompositeByteBuf =
+            delegate.compositeHeapBuffer()
+
+        override fun compositeHeapBuffer(maxNumComponents: Int): CompositeByteBuf =
+            delegate.compositeHeapBuffer(maxNumComponents)
+
+        override fun compositeDirectBuffer(): CompositeByteBuf =
+            delegate.compositeDirectBuffer()
+
+        override fun compositeDirectBuffer(maxNumComponents: Int): CompositeByteBuf =
+            delegate.compositeDirectBuffer(maxNumComponents)
+
+        override fun isDirectBufferPooled(): Boolean =
+            delegate.isDirectBufferPooled
+
+        override fun calculateNewCapacity(minNewCapacity: Int, maxCapacity: Int): Int =
+            delegate.calculateNewCapacity(minNewCapacity, maxCapacity)
+
+        fun snapshot(): Snapshot =
+            Snapshot(
+                allocatedBuffers = allocatedBuffers.get(),
+                releasedBuffers = releasedBuffers.get(),
+                activeBuffers = activeBuffers.get(),
+                maxActiveBuffers = maxActiveBuffers.get(),
+                allocatedRequestedBytes = allocatedRequestedBytes.get(),
+                allocatedCapacityBytes = allocatedCapacityBytes.get(),
+                allocatedDirectCapacityBytes = allocatedDirectCapacityBytes.get(),
+                activeRequestedBytes = activeRequestedBytes.get(),
+                activeCapacityBytes = activeCapacityBytes.get(),
+                activeDirectCapacityBytes = activeDirectCapacityBytes.get(),
+                maxActiveRequestedBytes = maxActiveRequestedBytes.get(),
+                maxActiveCapacityBytes = maxActiveCapacityBytes.get(),
+                maxActiveDirectCapacityBytes = maxActiveDirectCapacityBytes.get()
+            )
+
+        fun unreleasedAllocationReport(limit: Int): String? {
+            if (!captureAllocationStacks || activeAllocationRecords.isEmpty()) return null
+
+            return buildString {
+                appendLine("activeAllocationRecords=${activeAllocationRecords.size}")
+                activeAllocationRecords.values
+                    .sortedByDescending { it.initialCapacityBytes }
+                    .take(limit)
+                    .forEachIndexed { index, record ->
+                        appendLine(
+                            "#${index + 1} id=${record.id} requestedBytes=${record.requestedBytes} " +
+                                "initialCapacityBytes=${record.initialCapacityBytes} direct=${record.direct}"
+                        )
+                        record.stack
+                            .dropWhile { it.className == CountingByteBufAllocator::class.java.name ||
+                                it.className == CountingByteBuf::class.java.name ||
+                                it.className.startsWith("java.lang.Thread")
+                            }
+                            .take(24)
+                            .forEach { appendLine("  at $it") }
+                    }
+            }
+        }
+
+        private fun track(buffer: ByteBuf, requestedBytes: Int): ByteBuf {
+            val capacityBytes = buffer.capacity().toLong()
+            val directCapacityBytes = if (buffer.isDirect) capacityBytes else 0L
+
+            allocatedBuffers.incrementAndGet()
+            allocatedRequestedBytes.addAndGet(requestedBytes.toLong())
+            allocatedCapacityBytes.addAndGet(capacityBytes)
+            allocatedDirectCapacityBytes.addAndGet(directCapacityBytes)
+            updateMax(maxActiveBuffers, activeBuffers.incrementAndGet())
+            updateMax(maxActiveRequestedBytes, activeRequestedBytes.addAndGet(requestedBytes.toLong()))
+            updateMax(maxActiveCapacityBytes, activeCapacityBytes.addAndGet(capacityBytes))
+            updateMax(maxActiveDirectCapacityBytes, activeDirectCapacityBytes.addAndGet(directCapacityBytes))
+
+            val allocationId = allocationIds.incrementAndGet()
+            if (captureAllocationStacks) {
+                activeAllocationRecords[allocationId] = AllocationRecord(
+                    id = allocationId,
+                    requestedBytes = requestedBytes.toLong(),
+                    initialCapacityBytes = capacityBytes,
+                    direct = buffer.isDirect,
+                    stack = Thread.currentThread().stackTrace
+                )
+            }
+
+            return CountingByteBuf(allocationId, buffer, requestedBytes.toLong(), capacityBytes, directCapacityBytes)
+        }
+
+        private fun release(allocationId: Long, requestedBytes: Long, capacityBytes: Long, directCapacityBytes: Long) {
+            activeAllocationRecords.remove(allocationId)
+            releasedBuffers.incrementAndGet()
+            activeBuffers.decrementAndGet()
+            activeRequestedBytes.addAndGet(-requestedBytes)
+            activeCapacityBytes.addAndGet(-capacityBytes)
+            activeDirectCapacityBytes.addAndGet(-directCapacityBytes)
+        }
+
+        private fun adjustCapacity(deltaCapacityBytes: Long, deltaDirectCapacityBytes: Long) {
+            updateMax(maxActiveCapacityBytes, activeCapacityBytes.addAndGet(deltaCapacityBytes))
+            updateMax(maxActiveDirectCapacityBytes, activeDirectCapacityBytes.addAndGet(deltaDirectCapacityBytes))
+        }
+
+        private fun updateMax(maxValue: AtomicLong, candidate: Long) {
+            while (true) {
+                val current = maxValue.get()
+                if (candidate <= current || maxValue.compareAndSet(current, candidate)) {
+                    return
+                }
+            }
+        }
+
+        private inner class CountingByteBuf(
+            private val allocationId: Long,
+            buffer: ByteBuf,
+            private val requestedBytes: Long,
+            initialCapacityBytes: Long,
+            initialDirectCapacityBytes: Long
+        ) : WrappedByteBuf(buffer) {
+            private val released = AtomicBoolean()
+            private var trackedCapacityBytes = initialCapacityBytes
+            private var trackedDirectCapacityBytes = initialDirectCapacityBytes
+
+            override fun capacity(newCapacity: Int): ByteBuf {
+                val beforeCapacity = capacity().toLong()
+                val beforeDirectCapacity = if (isDirect) beforeCapacity else 0L
+                val result = super.capacity(newCapacity)
+                val afterCapacity = capacity().toLong()
+                val afterDirectCapacity = if (isDirect) afterCapacity else 0L
+                trackedCapacityBytes += afterCapacity - beforeCapacity
+                trackedDirectCapacityBytes += afterDirectCapacity - beforeDirectCapacity
+                adjustCapacity(afterCapacity - beforeCapacity, afterDirectCapacity - beforeDirectCapacity)
+                return result
+            }
+
+            override fun release(): Boolean {
+                val deallocated = super.release()
+                if (deallocated && released.compareAndSet(false, true)) {
+                    release(allocationId, requestedBytes, trackedCapacityBytes, trackedDirectCapacityBytes)
+                }
+                return deallocated
+            }
+
+            override fun release(decrement: Int): Boolean {
+                val deallocated = super.release(decrement)
+                if (deallocated && released.compareAndSet(false, true)) {
+                    release(allocationId, requestedBytes, trackedCapacityBytes, trackedDirectCapacityBytes)
+                }
+                return deallocated
+            }
+        }
+
+        data class Snapshot(
+            val allocatedBuffers: Long,
+            val releasedBuffers: Long,
+            val activeBuffers: Long,
+            val maxActiveBuffers: Long,
+            val allocatedRequestedBytes: Long,
+            val allocatedCapacityBytes: Long,
+            val allocatedDirectCapacityBytes: Long,
+            val activeRequestedBytes: Long,
+            val activeCapacityBytes: Long,
+            val activeDirectCapacityBytes: Long,
+            val maxActiveRequestedBytes: Long,
+            val maxActiveCapacityBytes: Long,
+            val maxActiveDirectCapacityBytes: Long
+        )
+    }
+
 }

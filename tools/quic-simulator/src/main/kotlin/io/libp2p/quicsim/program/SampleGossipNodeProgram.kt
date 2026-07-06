@@ -36,6 +36,7 @@ class SampleGossipNodeProgram(
     randomSeed: Long = 0,
     testTopicName: String = "/quicsim/test-topic",
     val messageSizeBytes: Int = 1024,
+    val messagesPerPublisher: Int = 1,
     val initialPublishDelay: Duration = 1.minutes,
     private val eventSink: QuicScenarioEventSink = QuicScenarioEventSink.Noop,
 ) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed) {
@@ -43,9 +44,9 @@ class SampleGossipNodeProgram(
 
     private val random = Random(randomSeed)
     private val testTopic = Topic(testTopicName)
-    private val receivedNodeIds = ConcurrentHashMap.newKeySet<SimNodeId>()
+    private val receivedMessageIds = ConcurrentHashMap.newKeySet<MessageId>()
     @Volatile
-    private var expectedNodeIds: Set<Int> = emptySet()
+    private var expectedMessageIds: Set<MessageId> = emptySet()
     @Volatile
     private var publishScheduled = false
     @Volatile
@@ -70,19 +71,25 @@ class SampleGossipNodeProgram(
     }
 
     override fun onAllConnected(simContext: SimContext, networkContext: NetworkContext) {
-        expectedNodeIds = networkContext.allNodes.keys.filter { it < publishersCount }.toSet() - simNodeId
-        log("[$simNodeId] expected senders: $expectedNodeIds")
+        expectedMessageIds = (networkContext.allNodes.keys.filter { it < publishersCount }.toSet() - simNodeId)
+            .flatMap { publisherNodeId ->
+                (0 until messagesPerPublisher).map { messageIndex ->
+                    MessageId(publisherNodeId, messageIndex)
+                }
+            }
+            .toSet()
+        log("[$simNodeId] expected messages: $expectedMessageIds")
         installRouterEventLogger()
 
         messageApi.subscribe(Consumer { msg ->
-            parseSenderNodeId(msg.data)?.let { publisherNodeId ->
-                receivedNodeIds += publisherNodeId
+            parseSenderMessageId(msg.data)?.let { messageId ->
+                receivedMessageIds += messageId
                 completeIfReady()
                 eventSink.record(
                     QuicScenarioEvent.GossipMessageReceived(
                         nodeId = simNodeId,
                         at = simContext.timer.time() - epoch,
-                        publisherNodeId = publisherNodeId
+                        publisherNodeId = messageId.publisherNodeId
                     )
                 )
             }
@@ -97,31 +104,33 @@ class SampleGossipNodeProgram(
             val publishDelay = (initialPublishDelay - elapsedSinceStart).coerceAtLeast(Duration.ZERO)
             simContext.scheduler.executeAfterDelay(publishDelay) {
                 publishAttempted = true
-                log("[$simNodeId] publishing to ${testTopic.topic}")
-                eventSink.record(
-                    QuicScenarioEvent.GossipMessagePublished(
-                        nodeId = simNodeId,
-                        at = simContext.timer.time() - epoch
+                for (messageIndex in 0 until messagesPerPublisher) {
+                    log("[$simNodeId] publishing message=$messageIndex to ${testTopic.topic}")
+                    eventSink.record(
+                        QuicScenarioEvent.GossipMessagePublished(
+                            nodeId = simNodeId,
+                            at = simContext.timer.time() - epoch
+                        )
                     )
-                )
-                publisher.publish(Unpooled.wrappedBuffer(createPayload()), testTopic)
-                    .whenComplete { _, err ->
-                        if (err == null) {
-                            publishSucceeded = true
-                            lastPublishError = null
-                            log("[$simNodeId] publish succeeded")
-                        } else {
-                            publishSucceeded = false
-                            lastPublishError = err.message
-                            log("[$simNodeId] publish failed: ${err.message}")
+                    publisher.publish(Unpooled.wrappedBuffer(createPayload(messageIndex)), testTopic)
+                        .whenComplete { _, err ->
+                            if (err == null) {
+                                publishSucceeded = true
+                                lastPublishError = null
+                                log("[$simNodeId] publish message=$messageIndex succeeded")
+                            } else {
+                                publishSucceeded = false
+                                lastPublishError = err.message
+                                log("[$simNodeId] publish message=$messageIndex failed: ${err.message}")
+                            }
                         }
-                    }
+                }
             }
         }
     }
 
     private fun isComplete(): Boolean =
-        expectedNodeIds.isNotEmpty() && receivedNodeIds.containsAll(expectedNodeIds)
+        expectedMessageIds.isNotEmpty() && receivedMessageIds.containsAll(expectedMessageIds)
 
     private fun completeIfReady() {
         if (isComplete()) {
@@ -130,8 +139,8 @@ class SampleGossipNodeProgram(
     }
 
     fun debugState(): String {
-        val received = receivedNodeIds.toSortedSet().toList()
-        val missing = (expectedNodeIds - receivedNodeIds).toSortedSet().toList()
+        val received = receivedMessageIds.toList().sorted()
+        val missing = (expectedMessageIds - receivedMessageIds).sorted()
         val meshPeers = gossipRouter.mesh[testTopic.topic]
             ?.map { it.peerId.toBase58().take(12) }
             ?.sorted()
@@ -143,7 +152,7 @@ class SampleGossipNodeProgram(
         return "scheduled=$publishScheduled attempted=$publishAttempted " +
             "publishSucceeded=$publishSucceeded lastPublishError=${lastPublishError ?: "-"} " +
             "meshPeers=$meshPeers fanoutPeers=$fanoutPeers " +
-            "expected=$expectedNodeIds received=$received missing=$missing complete=${completeFuture.isDone}"
+            "expected=$expectedMessageIds received=$received missing=$missing complete=${completeFuture.isDone}"
     }
 
     private fun installRouterEventLogger() {
@@ -197,8 +206,8 @@ class SampleGossipNodeProgram(
         log("[$simNodeId] router event listener installed")
     }
 
-    private fun createPayload(): ByteArray {
-        val prefix = "sender:$simNodeId\n".toByteArray(StandardCharsets.UTF_8)
+    private fun createPayload(messageIndex: Int): ByteArray {
+        val prefix = "sender:$simNodeId:$messageIndex\n".toByteArray(StandardCharsets.UTF_8)
         require(messageSizeBytes >= prefix.size) {
             "messageSizeBytes=$messageSizeBytes is too small, should be at least ${prefix.size} bytes"
         }
@@ -211,7 +220,7 @@ class SampleGossipNodeProgram(
         }
     }
 
-    private fun parseSenderNodeId(data: ByteBuf): SimNodeId? {
+    private fun parseSenderMessageId(data: ByteBuf): MessageId? {
         val readerIndex = data.readerIndex()
         val readableBytes = data.readableBytes()
         val prefix = SENDER_PREFIX_BYTES
@@ -225,9 +234,12 @@ class SampleGossipNodeProgram(
         val idEnd = findNewlineIndex(data, idStart, readerIndex + readableBytes)
         if (idEnd <= idStart) return null
 
-        val idBytes = ByteArray(idEnd - idStart)
-        data.getBytes(idStart, idBytes)
-        return String(idBytes, StandardCharsets.UTF_8).toInt()
+        val idAndIndexBytes = ByteArray(idEnd - idStart)
+        data.getBytes(idStart, idAndIndexBytes)
+        val idAndIndex = String(idAndIndexBytes, StandardCharsets.UTF_8).split(':', limit = 2)
+        val publisherNodeId = idAndIndex[0].toInt()
+        val messageIndex = idAndIndex.getOrNull(1)?.toInt() ?: 0
+        return MessageId(publisherNodeId, messageIndex)
     }
 
     private fun findNewlineIndex(data: ByteBuf, start: Int, endExclusive: Int): Int {
@@ -240,5 +252,13 @@ class SampleGossipNodeProgram(
     companion object {
         private const val NEW_LINE_BYTE: Byte = '\n'.code.toByte()
         private val SENDER_PREFIX_BYTES = "sender:".toByteArray(StandardCharsets.UTF_8)
+    }
+
+    private data class MessageId(
+        val publisherNodeId: SimNodeId,
+        val messageIndex: Int
+    ) : Comparable<MessageId> {
+        override fun compareTo(other: MessageId): Int =
+            compareValuesBy(this, other, MessageId::publisherNodeId, MessageId::messageIndex)
     }
 }

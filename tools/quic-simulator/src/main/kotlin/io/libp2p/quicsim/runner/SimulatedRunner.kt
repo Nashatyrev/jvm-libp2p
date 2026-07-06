@@ -24,6 +24,7 @@ import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.transport.quic.QuicTransport
 import io.netty.buffer.AdaptiveByteBufAllocator
+import io.netty.buffer.ByteBufAllocator
 import io.netty.channel.socket.DatagramPacket
 import java.security.SecureRandom
 import java.util.concurrent.CompletableFuture
@@ -46,7 +47,8 @@ class SimulatedRunner(
     val latencyWindowParallelism: Int = 0,
     val nodeVisitorFactory: SimNodeVisitorFactory<DatagramPacket> =
         SimNodeVisitorFactory { PacketProcessorVisitor.none() },
-    val datagramPacketTraceRecorder: DatagramPacketTraceRecorder = DatagramPacketTraceRecorder.Noop
+    val datagramPacketTraceRecorder: DatagramPacketTraceRecorder = DatagramPacketTraceRecorder.Noop,
+    val quicAllocatorFactory: (SimNodeId) -> ByteBufAllocator = { simulatedQuicAllocator }
 ) {
     val nodeCount: Int = udpNetwork.nodes.size
 
@@ -128,7 +130,7 @@ class SimulatedRunner(
                     timeSupplier = { simContext.timer.elapsedTime() },
                     traceRecorder = datagramPacketTraceRecorder
                 ),
-                allocator = simulatedQuicAllocator
+                allocator = quicAllocatorFactory(nodeProgram.simNodeId)
             )
         }
 
