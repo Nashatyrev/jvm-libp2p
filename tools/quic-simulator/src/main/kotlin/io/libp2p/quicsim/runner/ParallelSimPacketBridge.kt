@@ -11,6 +11,7 @@ import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl4
 import io.netty.channel.socket.DatagramPacket
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 class ParallelSimPacketBridge(
     val simNet: SimNet<DatagramPacket>,
@@ -28,8 +29,17 @@ class ParallelSimPacketBridge(
     )
 
     val latency = calcLatency()
+    private val advanceStep =
+        System.getProperty("quicsim.parallel.advanceStepMillis")
+            ?.toLongOrNull()
+            ?.milliseconds
+            ?: latency
     val allNodes = createAllNodes()
     private val parallelUdpNet = UdpSimNetworkEngineImpl4(udpNet)
+
+    init {
+        require(advanceStep > Duration.Companion.ZERO) { "advance step must be positive" }
+    }
 
     private fun calcLatency(): Duration {
         val latencies = udpNet.links.map { it.latencyQueue.minimalLatency }.distinct()
@@ -69,6 +79,10 @@ class ParallelSimPacketBridge(
         fun advance(advanceDuration: Duration);
     }
 
+    private fun interface ShouldExecuteAction {
+        fun shouldExecute(advanceDuration: Duration): Boolean
+    }
+
     fun advanceWhile(predicate: () -> Boolean) {
         val lock = Any()
         val executor = PrioritizedQuiescentExecutor(parallelism)
@@ -79,6 +93,8 @@ class ParallelSimPacketBridge(
             var currentTime: Duration,
             val linkedTasks: MutableList<Task> = mutableListOf<Task>(),
             val advanceAction: AdvanceAction,
+            val shouldExecuteAction: ShouldExecuteAction = ShouldExecuteAction { true },
+            val skipAction: AdvanceAction = AdvanceAction {},
         ) {
             var pendingTime: Duration = currentTime
             var running: Boolean = false
@@ -89,8 +105,13 @@ class ParallelSimPacketBridge(
 
             fun advance() = synchronized(lock) {
 //                println("-- [$name] Scheduled advance $pendingTime -> ${pendingTime + latency}")
-                val advanceDuration = latency
+                val advanceDuration = advanceStep
                 pendingTime += advanceDuration
+                if (!shouldExecuteAction.shouldExecute(advanceDuration)) {
+                    skipAction.advance(advanceDuration)
+                    onAdvanced(advanceDuration)
+                    return@synchronized
+                }
                 running = true
                 executor.submit(priority) {
                     if (predicate()) {
@@ -124,22 +145,32 @@ class ParallelSimPacketBridge(
             Task(
                 name = "udpNet",
                 priority = 0,
-                currentTime = parallelUdpNet.currentTime
-            ) { advanceDuration ->
-                parallelUdpNet.advanceUntil(advanceDuration)
-                // just to increase the timer
-                advance(advanceDuration)
-            }
+                currentTime = parallelUdpNet.currentTime,
+                advanceAction = AdvanceAction { advanceDuration ->
+                    parallelUdpNet.advanceUntil(advanceDuration)
+                    // just to increase the timer
+                    advance(advanceDuration)
+                },
+            )
 
         val allNodesTasks = allNodes.map {
             Task(
                 name = it.simNode.ip,
                 priority = 1,
                 currentTime = it.simNode.nodeTime.elapsedTime(),
-                linkedTasks = mutableListOf(udpNetTask)
-            ) { advanceDuration ->
-                it.pump.advanceAndExecuteUntil(advanceDuration)
-            }
+                linkedTasks = mutableListOf(udpNetTask),
+                advanceAction = AdvanceAction { advanceDuration ->
+                    it.pump.advanceAndExecuteUntil(advanceDuration)
+                },
+                shouldExecuteAction = ShouldExecuteAction { advanceDuration ->
+                    it.pump.nextTaskDuration()?.let { nextTaskDuration ->
+                        nextTaskDuration <= advanceDuration
+                    } ?: false
+                },
+                skipAction = AdvanceAction { advanceDuration ->
+                    it.pump.advance(advanceDuration)
+                },
+            )
         }
 
         udpNetTask.linkedTasks += allNodesTasks
@@ -149,8 +180,8 @@ class ParallelSimPacketBridge(
             it.advanceIfPossible()
         }
 
-        executor.use { executor ->
-            executor.awaitQuiescence()
+        executor.use {
+            it.awaitQuiescence()
         }
     }
 
