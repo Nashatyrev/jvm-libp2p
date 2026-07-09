@@ -24,6 +24,7 @@ class ParallelSimPacketBridge(
     }
 
     data class SimNodeWithUdpLinks(
+        val udpNodeId: String,
         val simNode: SimNode<DatagramPacket>,
         val pump: ControllablePacketPump<DatagramPacket>
     )
@@ -69,7 +70,7 @@ class ParallelSimPacketBridge(
         val aheadProcessorSim =
             aheadProcessor.map(nettyDatagramToSimUdpPacketConverter, simUdpPacketToNettyDatagramConverter)
         val controllable = ControllablePacketPump(simNode, aheadProcessorSim)
-        return SimNodeWithUdpLinks(simNode, controllable)
+        return SimNodeWithUdpLinks(udpNode.id, simNode, controllable)
     }
 
     override fun advanceImpl(advanceDuration: Duration) {
@@ -79,8 +80,8 @@ class ParallelSimPacketBridge(
         fun advance(advanceDuration: Duration);
     }
 
-    private fun interface ShouldExecuteAction {
-        fun shouldExecute(advanceDuration: Duration): Boolean
+    private fun interface NextTaskDurationAction {
+        fun nextTaskDuration(): Duration?
     }
 
     fun advanceWhile(predicate: () -> Boolean) {
@@ -93,36 +94,69 @@ class ParallelSimPacketBridge(
             var currentTime: Duration,
             val linkedTasks: MutableList<Task> = mutableListOf<Task>(),
             val advanceAction: AdvanceAction,
-            val shouldExecuteAction: ShouldExecuteAction = ShouldExecuteAction { true },
-            val skipAction: AdvanceAction = AdvanceAction {},
+            val nextTaskDurationAction: NextTaskDurationAction? = null,
+            val afterAdvancedAction: () -> Unit = {},
         ) {
             var pendingTime: Duration = currentTime
             var running: Boolean = false
+            var skippedAdvance: Duration = Duration.Companion.ZERO
+            private var cachedNextTaskDuration: Duration? = null
+            private var cachedNextTaskDurationValid: Boolean = false
 
             fun canAdvance() = synchronized(lock) {
                 !running && linkedTasks.all { it.currentTime >= this.pendingTime }
             }
 
+            fun invalidateNextTaskDuration() {
+                cachedNextTaskDuration = null
+                cachedNextTaskDurationValid = false
+            }
+
+            private fun nextTaskDuration(): Duration? {
+                if (!cachedNextTaskDurationValid) {
+                    cachedNextTaskDuration = nextTaskDurationAction?.nextTaskDuration()
+                    cachedNextTaskDurationValid = true
+                }
+                return cachedNextTaskDuration
+            }
+
+            private fun shouldExecute(advanceDuration: Duration): Boolean {
+                if (nextTaskDurationAction == null) {
+                    return true
+                }
+                val totalAdvance = skippedAdvance + advanceDuration
+                return nextTaskDuration()?.let { nextTaskDuration ->
+                    nextTaskDuration <= totalAdvance
+                } ?: false
+            }
+
             fun advance() = synchronized(lock) {
                 val advanceDuration = advanceStep
                 pendingTime += advanceDuration
-                if (!shouldExecuteAction.shouldExecute(advanceDuration)) {
-                    skipAction.advance(advanceDuration)
-                    onAdvanced(advanceDuration)
+                if (!shouldExecute(advanceDuration)) {
+                    skippedAdvance += advanceDuration
+                    onAdvanced(advanceDuration, executed = false)
                     return@synchronized
                 }
+                val executeAdvance = skippedAdvance + advanceDuration
+                skippedAdvance = Duration.Companion.ZERO
+                invalidateNextTaskDuration()
                 running = true
                 executor.submit(priority) {
                     if (predicate()) {
-                        advanceAction.advance(advanceDuration)
-                        onAdvanced(advanceDuration)
+                        advanceAction.advance(executeAdvance)
+                        onAdvanced(advanceDuration, executed = true)
                     }
                 }
             }
 
-            fun onAdvanced(advanceDuration: Duration) = synchronized(lock) {
+            fun onAdvanced(advanceDuration: Duration, executed: Boolean) = synchronized(lock) {
+                if (executed) {
+                    invalidateNextTaskDuration()
+                }
                 currentTime += advanceDuration
                 running = false
+                afterAdvancedAction()
                 advanceIfPossible()
                 linkedTasks.forEach { it.advanceIfPossible() }
             }
@@ -134,7 +168,10 @@ class ParallelSimPacketBridge(
             }
         }
 
-        val udpNetTask =
+        lateinit var udpNetTask: Task
+        val nodeTasksByUdpId = mutableMapOf<String, Task>()
+
+        udpNetTask =
             Task(
                 name = "udpNet",
                 priority = 0,
@@ -144,10 +181,15 @@ class ParallelSimPacketBridge(
                     // just to increase the timer
                     advance(advanceDuration)
                 },
+                afterAdvancedAction = {
+                    parallelUdpNet.lastDeliveredEndpointNodeIds.forEach { nodeId ->
+                        nodeTasksByUdpId[nodeId]?.invalidateNextTaskDuration()
+                    }
+                },
             )
 
         val allNodesTasks = allNodes.map {
-            Task(
+            val task = Task(
                 name = it.simNode.ip,
                 priority = 1,
                 currentTime = it.simNode.nodeTime.elapsedTime(),
@@ -155,15 +197,12 @@ class ParallelSimPacketBridge(
                 advanceAction = { advanceDuration ->
                     it.pump.advanceAndExecuteUntil(advanceDuration)
                 },
-                shouldExecuteAction = { advanceDuration ->
-                    it.pump.nextTaskDuration()?.let { nextTaskDuration ->
-                        nextTaskDuration <= advanceDuration
-                    } ?: false
-                },
-                skipAction = { advanceDuration ->
-                    it.pump.advance(advanceDuration)
+                nextTaskDurationAction = {
+                    it.pump.nextTaskDuration()
                 },
             )
+            nodeTasksByUdpId[it.udpNodeId] = task
+            task
         }
 
         udpNetTask.linkedTasks += allNodesTasks

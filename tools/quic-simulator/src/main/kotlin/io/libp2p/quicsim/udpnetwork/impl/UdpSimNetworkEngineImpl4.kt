@@ -62,6 +62,8 @@ class UdpSimNetworkEngineImpl4(
     var innerPacketsCounter = 0L
     var deliveredPacketsCounter = 0L
     val totalPacketCount get() = innerPacketsCounter + deliveredPacketsCounter
+    var lastDeliveredEndpointNodeIds: Set<String> = emptySet()
+        private set
 
     private val endpoints = network.findEndpoints()
     private val outboundLinks = network.links
@@ -86,6 +88,7 @@ class UdpSimNetworkEngineImpl4(
     fun advanceUntil(advanceDuration: Duration) {
         val targetTime = currentTime + advanceDuration
         val routedPackets = ArrayList<TimedPacket>()
+        val deliveredEndpointNodeIds = mutableSetOf<String>()
 
         outboundLinks.forEach { outboundLink ->
             val emittedPackets = outboundLink.latencyQueue.emitPacketsUntil(targetTime).sortedBy { it.at }
@@ -127,9 +130,13 @@ class UdpSimNetworkEngineImpl4(
                 inboundLink.bandwidthQueue.enqueue(sameTimePackets, at)
             }
             inboundLink.bandwidthQueue.drainReadyUntil(targetTime, deliveredToEndpoint)
+            if (deliveredToEndpoint.isNotEmpty()) {
+                deliveredEndpointNodeIds += inboundLink.link.to.id
+            }
             receiveAtEndpoint(inboundLink, deliveredToEndpoint)
         }
 
+        lastDeliveredEndpointNodeIds = deliveredEndpointNodeIds
         cumulativeAdvanceMutable = targetTime
     }
 
