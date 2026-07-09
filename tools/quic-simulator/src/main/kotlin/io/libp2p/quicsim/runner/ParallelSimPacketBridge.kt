@@ -104,7 +104,6 @@ class ParallelSimPacketBridge(
             }
 
             fun advance() = synchronized(lock) {
-//                println("-- [$name] Scheduled advance $pendingTime -> ${pendingTime + latency}")
                 val advanceDuration = advanceStep
                 pendingTime += advanceDuration
                 if (!shouldExecuteAction.shouldExecute(advanceDuration)) {
@@ -115,13 +114,7 @@ class ParallelSimPacketBridge(
                 running = true
                 executor.submit(priority) {
                     if (predicate()) {
-//                        println("---- [$name] Advancing $currentTime -> ${currentTime + latency}")
-                        val s = System.nanoTime()
-                        val cntBefore = parallelUdpNet.totalPacketCount
                         advanceAction.advance(advanceDuration)
-                        val t = (System.nanoTime() - s) / 1000 / 1000.0
-                        val d = parallelUdpNet.totalPacketCount - cntBefore
-//                        println("---- [$name] Advance complete $currentTime -> ${currentTime + latency} in $t ms, packets: $d")
                         onAdvanced(advanceDuration)
                     }
                 }
@@ -159,15 +152,15 @@ class ParallelSimPacketBridge(
                 priority = 1,
                 currentTime = it.simNode.nodeTime.elapsedTime(),
                 linkedTasks = mutableListOf(udpNetTask),
-                advanceAction = AdvanceAction { advanceDuration ->
+                advanceAction = { advanceDuration ->
                     it.pump.advanceAndExecuteUntil(advanceDuration)
                 },
-                shouldExecuteAction = ShouldExecuteAction { advanceDuration ->
+                shouldExecuteAction = { advanceDuration ->
                     it.pump.nextTaskDuration()?.let { nextTaskDuration ->
                         nextTaskDuration <= advanceDuration
                     } ?: false
                 },
-                skipAction = AdvanceAction { advanceDuration ->
+                skipAction = { advanceDuration ->
                     it.pump.advance(advanceDuration)
                 },
             )
