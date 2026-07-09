@@ -118,6 +118,7 @@ configure(
             "simVsShadow.updateFixtures",
             "simVsShadow.updateGossipFixtures",
             "inboundCongestionReport.dir",
+            "quicsim.parallel.advanceStepMillis",
             "slowStartReport.dir"
         ).forEach { propertyName ->
             System.getProperty(propertyName)?.let { propertyValue ->
@@ -126,7 +127,11 @@ configure(
         }
 
         if (project.path == ":tools:quic-simulator") {
-            jvmArgs("-XX:MaxDirectMemorySize=${System.getProperty("quicsim.test.maxDirectMemory", "2g")}")
+            maxHeapSize = System.getProperty("quicsim.test.maxHeap", "16g")
+            jvmArgs("-XX:MaxDirectMemorySize=${System.getProperty("quicsim.test.maxDirectMemory", "16g")}")
+            System.getProperty("quicsim.test.jfrFile")?.let { jfrFile ->
+                jvmArgs("-XX:StartFlightRecording=filename=$jfrFile,settings=profile,dumponexit=true")
+            }
         }
 
         // disabling the parallel test runs for the time being due to port collisions
