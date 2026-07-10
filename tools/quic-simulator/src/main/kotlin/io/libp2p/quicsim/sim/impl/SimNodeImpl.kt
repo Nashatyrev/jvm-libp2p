@@ -11,6 +11,7 @@ import io.libp2p.quicsim.core.schedule.impl.NettyTicker
 import io.libp2p.quicsim.sim.SimNode
 import io.libp2p.quicsim.sim.SimNodeId
 import io.libp2p.quicsim.sim.impl.netty.SimDatagramChannel
+import io.netty.buffer.ByteBufAllocator
 import io.netty.channel.Channel
 import io.netty.channel.ChannelHandler
 import io.netty.channel.socket.DatagramPacket
@@ -35,17 +36,25 @@ class SimNodeImpl(
         AggregateControllable(listOf(scheduler, dispatchingPacketProcessor))
     private var cachedNextTaskDuration: Duration? = null
 
-    fun bindServerParent(bindAddress: SocketAddress,handler: ChannelHandler): CompletableFuture<Channel> =
-        bindParent(handler, bindAddress as InetSocketAddress)
+    fun bindServerParent(
+        bindAddress: SocketAddress,
+        handler: ChannelHandler,
+        allocator: ByteBufAllocator? = null
+    ): CompletableFuture<Channel> =
+        bindParent(handler, bindAddress as InetSocketAddress, allocator)
 
-    fun bindClientParent(handler: ChannelHandler): CompletableFuture<Channel> =
-        bindParent(handler, InetSocketAddress(ip, nextClientPort++))
+    fun bindClientParent(
+        handler: ChannelHandler,
+        allocator: ByteBufAllocator? = null
+    ): CompletableFuture<Channel> =
+        bindParent(handler, InetSocketAddress(ip, nextClientPort++), allocator)
 
     private fun bindParent(
         handler: ChannelHandler,
-        addr: InetSocketAddress
+        addr: InetSocketAddress,
+        allocator: ByteBufAllocator?
     ): CompletableFuture<Channel> {
-        val channel = SimDatagramChannel("sim-$nodeId-${addr.port}", addr, handler)
+        val channel = SimDatagramChannel("sim-$nodeId-${addr.port}", addr, handler, allocator)
         registerChannel(addr, channel)
         val bindFuture = channel.bind(addr)
         return bindFuture.toCompletableFuture()

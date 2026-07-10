@@ -212,7 +212,7 @@ class QuicTransport @JvmOverloads constructor(
                 registerChannel(quicChannel)
                 val connection = ConnectionOverNetty(quicChannel, this@QuicTransport, true)
 
-                connection.setMuxerSession(QuicMuxerSession(quicChannel, connection))
+                connection.setMuxerSession(QuicMuxerSession(quicChannel, connection, allocator))
 
                 val peerCertificates = (quicChannel.sslEngine()
                     ?: throw IllegalStateException("Missing QUIC SSL engine for client channel"))
@@ -365,7 +365,7 @@ class QuicTransport @JvmOverloads constructor(
                 nettyInitializer {
                     val connection = ConnectionOverNetty(it.channel, this@QuicTransport, false)
 
-                    connection.setMuxerSession(QuicMuxerSession(it.channel as QuicChannel, connection))
+                    connection.setMuxerSession(QuicMuxerSession(it.channel as QuicChannel, connection, allocator))
                     it.channel.attr(CONNECTION).set(connection)
 
                     // Add a handler to wait for channel activation (handshake completion)
@@ -423,7 +423,8 @@ class QuicTransport @JvmOverloads constructor(
 
     class QuicMuxerSession(
         val ch: QuicChannel,
-        val connection: ConnectionOverNetty
+        val connection: ConnectionOverNetty,
+        val allocator: ByteBufAllocator
     ) : StreamMuxer.Session {
 
         override fun <T> createStream(protocols: List<ProtocolBinding<T>>): StreamPromise<T> {
@@ -433,14 +434,16 @@ class QuicTransport @JvmOverloads constructor(
 
             val controller = CompletableFuture<T>()
 
-            val stream = ch.createStream(
-                QuicStreamType.BIDIRECTIONAL,
-                nettyInitializer {
+            val stream = ch.newStreamBootstrap()
+                .type(QuicStreamType.BIDIRECTIONAL)
+                .option(ChannelOption.ALLOCATOR, allocator)
+                .handler(nettyInitializer {
                     val stream = createStream(it.channel as QuicStreamChannel, connection, true)
                     val streamHandler = multi.toStreamHandler()
                     streamHandler.handleStream(stream).forward(controller)
-                }
-            ).toCompletableFuture()
+                })
+                .create()
+                .toCompletableFuture()
                 .thenApply {
                     it.attr(STREAM).get()
                 }
