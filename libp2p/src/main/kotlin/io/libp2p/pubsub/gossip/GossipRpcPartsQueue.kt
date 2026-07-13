@@ -1,5 +1,6 @@
 package io.libp2p.pubsub.gossip
 
+import com.google.protobuf.CodedOutputStream
 import io.libp2p.core.PeerId
 import io.libp2p.etc.types.toProtobuf
 import io.libp2p.pubsub.DefaultRpcPartsQueue
@@ -106,6 +107,8 @@ open class DefaultGossipRpcPartsQueue(
 
         val builder = Rpc.RPC.newBuilder()
         var partIdx = 0
+        var estimatedSize = 0L
+        val estimatedSizeLimit = estimatedSizeLimit()
 
         var publishCount = params.maxPublishedMessages ?: Int.MAX_VALUE
         var subscriptionCount = params.maxSubscriptions ?: Int.MAX_VALUE
@@ -118,7 +121,13 @@ open class DefaultGossipRpcPartsQueue(
             publishCount > 0 && subscriptionCount > 0 && iHaveCount > 0 &&
             iWantCount > 0 && graftCount > 0 && pruneCount > 0
         ) {
-            val part = parts[partIdx++]
+            val part = parts[partIdx]
+            val partEstimatedSize = estimatePartSize(part).toLong()
+            if (partIdx > 0 && estimatedSize + partEstimatedSize > estimatedSizeLimit) {
+                break
+            }
+
+            partIdx++
             when (part) {
                 is PublishPart -> publishCount--
                 is SubscriptionPart -> subscriptionCount--
@@ -129,6 +138,7 @@ open class DefaultGossipRpcPartsQueue(
             }
 
             part.appendToBuilder(builder)
+            estimatedSize += partEstimatedSize
         }
 
         parts.subList(0, partIdx).clear()
@@ -137,4 +147,39 @@ open class DefaultGossipRpcPartsQueue(
 
     override fun takeMerged(): List<Rpc.RPC> =
         generateSequence { popMerged() }.toList()
+
+    private fun estimatedSizeLimit(): Long {
+        val margin = maxOf(MIN_SIZE_ESTIMATE_MARGIN_BYTES, params.maxGossipMessageSize / SIZE_ESTIMATE_MARGIN_FRACTION)
+        return (params.maxGossipMessageSize - margin).coerceAtLeast(0).toLong()
+    }
+
+    private fun estimatePartSize(part: AbstractPart): Int =
+        when (part) {
+            is PublishPart ->
+                embeddedMessageFieldSize(Rpc.RPC.PUBLISH_FIELD_NUMBER, part.message.serializedSize)
+
+            is SubscriptionPart -> {
+                val subscription = Rpc.RPC.SubOpts.newBuilder()
+                    .setTopicid(part.topic)
+                    .setSubscribe(part.status == RpcPartsQueue.SubscriptionStatus.Subscribed)
+                    .build()
+                embeddedMessageFieldSize(Rpc.RPC.SUBSCRIPTIONS_FIELD_NUMBER, subscription.serializedSize)
+            }
+
+            else -> {
+                val singleControlPart = Rpc.RPC.newBuilder()
+                part.appendToBuilder(singleControlPart)
+                embeddedMessageFieldSize(Rpc.RPC.CONTROL_FIELD_NUMBER, singleControlPart.control.serializedSize)
+            }
+        }
+
+    private fun embeddedMessageFieldSize(fieldNumber: Int, messageSize: Int): Int =
+        CodedOutputStream.computeTagSize(fieldNumber) +
+            CodedOutputStream.computeUInt32SizeNoTag(messageSize) +
+            messageSize
+
+    private companion object {
+        const val MIN_SIZE_ESTIMATE_MARGIN_BYTES = 64
+        const val SIZE_ESTIMATE_MARGIN_FRACTION = 100
+    }
 }
