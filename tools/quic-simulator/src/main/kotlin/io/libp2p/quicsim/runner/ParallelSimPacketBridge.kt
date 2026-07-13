@@ -84,7 +84,10 @@ class ParallelSimPacketBridge(
         fun nextTaskDuration(): Duration?
     }
 
-    fun advanceWhile(predicate: () -> Boolean) {
+    fun advanceWhile(
+        predicate: () -> Boolean,
+        afterTimeAdvanced: (Duration) -> Unit = {}
+    ) {
         val lock = Any()
         val executor = PrioritizedQuiescentExecutor(parallelism)
 
@@ -185,6 +188,7 @@ class ParallelSimPacketBridge(
                     parallelUdpNet.lastDeliveredEndpointNodeIds.forEach { nodeId ->
                         nodeTasksByUdpId[nodeId]?.invalidateNextTaskDuration()
                     }
+                    afterTimeAdvanced(udpNetTask.currentTime)
                 },
             )
 

@@ -25,6 +25,7 @@ import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.transport.quic.QuicTransport
 import io.netty.buffer.AdaptiveByteBufAllocator
 import io.netty.buffer.ByteBufAllocator
+import io.netty.buffer.UnpooledByteBufAllocator
 import io.netty.channel.socket.DatagramPacket
 import java.security.SecureRandom
 import java.util.concurrent.CompletableFuture
@@ -48,7 +49,8 @@ class SimulatedRunner(
     val nodeVisitorFactory: SimNodeVisitorFactory<DatagramPacket> =
         SimNodeVisitorFactory { PacketProcessorVisitor.none() },
     val datagramPacketTraceRecorder: DatagramPacketTraceRecorder = DatagramPacketTraceRecorder.Noop,
-    val quicAllocatorFactory: (SimNodeId) -> ByteBufAllocator = { simulatedQuicAllocator }
+    val quicAllocatorFactory: (SimNodeId) -> ByteBufAllocator = defaultQuicAllocatorFactoryFromSystemProperties(),
+    val nodeHeapProfiler: SimulatedNodeHeapProfiler = SimulatedNodeHeapProfiler.fromSystemProperties()
 ) {
     val nodeCount: Int = udpNetwork.nodes.size
 
@@ -118,6 +120,7 @@ class SimulatedRunner(
         val protocols = nodeProgram.createProtocols(simContext)
         val port = listenPortStartRange + nodeProgram.simNodeId
         val listenIP = node.ip
+        val allocator = quicAllocatorFactory(nodeProgram.simNodeId)
 
         val transportFactory = BiFunction<PrivKey, List<ProtocolBinding<*>>, Transport> { key, selectedProtocols ->
             QuicTransport(
@@ -125,12 +128,12 @@ class SimulatedRunner(
                 "ECDSA",
                 selectedProtocols,
                 datagramChannelFactory = TracingDatagramChannelFactory(
-                    delegate = SimNodeDatagramChannelFactory(node),
+                    delegate = SimNodeDatagramChannelFactory(node, allocator),
                     nodeId = nodeProgram.simNodeId,
                     timeSupplier = { simContext.timer.elapsedTime() },
                     traceRecorder = datagramPacketTraceRecorder
                 ),
-                allocator = quicAllocatorFactory(nodeProgram.simNodeId)
+                allocator = allocator
             )
         }
 
@@ -160,6 +163,7 @@ class SimulatedRunner(
     fun run() {
         println("Creating hosts...")
         val nodesStuff = createNodesStuff()
+        nodeHeapProfiler.sample("after_create_nodes", Duration.ZERO, nodesStuff)
         val nodePrograms = nodesStuff.map { it.nodeProgram }
         val embeddedNodes = nodesStuff.map { it.simNodeImpl }
         println("Creating sim network...")
@@ -175,11 +179,13 @@ class SimulatedRunner(
                 SimpleSimPacketBridge(simCoreNet, udpNetwork, idAndIp)
             }
         simTimer = simPacketPump.monotonicTimer
+        nodeHeapProfiler.sample("after_create_sim_network", simTimer.elapsedTime(), nodesStuff)
         val logger = SimLogger(simTimer)
         logger.log("Starting hosts...")
 //        startHosts(nodesStuff.map { it.host })
         logger.log("Starting programs...")
         val startFuture = startPrograms(nodesStuff)
+        nodeHeapProfiler.sample("after_start_programs_scheduled", simTimer.elapsedTime(), nodesStuff)
         startFuture.handle { _, throwable ->
             if (throwable != null) {
                 logger.log("Error on starting programs...")
@@ -207,13 +213,20 @@ class SimulatedRunner(
 
             if (latencyWindowParallelism > 0) {
                 val parallelBridge = simPacketPump as ParallelSimPacketBridge
-                parallelBridge.advanceWhile { completedCount.get() < nodePrograms.size && simTimer.elapsedTime() < maxSimulatedRunDuration }
+                parallelBridge.advanceWhile(
+                    predicate = { completedCount.get() < nodePrograms.size && simTimer.elapsedTime() < maxSimulatedRunDuration },
+                    afterTimeAdvanced = { simTime ->
+                        nodeHeapProfiler.maybeSample("parallel_periodic", simTime, nodesStuff)
+                    }
+                )
+                nodeHeapProfiler.sample("after_parallel_advance", simTimer.elapsedTime(), nodesStuff)
 
             } else {
 
                 while (true) {
                     simPacketPump.advanceAndExecuteAll(nextAdvance)
                     val simTime = simTimer.time() - startSimT
+                    nodeHeapProfiler.maybeSample("periodic", simTime, nodesStuff)
 
                     val maybeNextAdvance = simPacketPump.nextTaskDuration()
 
@@ -237,10 +250,13 @@ class SimulatedRunner(
             }
 
             logger.log("Last Node complete at $lastCompleteTime")
+            nodeHeapProfiler.sample("completed", simTimer.elapsedTime(), nodesStuff)
         } catch (e: Exception) {
             logger.log("Exception: $e")
+            nodeHeapProfiler.sample("exception", runCatching { simTimer.elapsedTime() }.getOrNull(), nodesStuff)
             throw e
         } finally {
+            nodeHeapProfiler.close()
             simPacketPump.close()
         }
 
@@ -263,6 +279,33 @@ class SimulatedRunner(
     }
 
     companion object {
-        private val simulatedQuicAllocator = AdaptiveByteBufAllocator()
+        val defaultQuicAllocator: ByteBufAllocator = quicAllocatorFromSystemProperties()
+
+        fun defaultQuicAllocatorFactoryFromSystemProperties(): (SimNodeId) -> ByteBufAllocator {
+            val targetNodeId = System.getProperty("quicsim.nodeHeapProfile.nodeId")?.toIntOrNull()
+                ?: return { defaultQuicAllocator }
+            val dedicatedAllocator = System.getProperty("quicsim.nodeHeapProfile.dedicatedAllocator")
+                ?.toBooleanStrictOrNull()
+                ?: true
+            if (!dedicatedAllocator) {
+                return { defaultQuicAllocator }
+            }
+
+            val targetAllocator = quicAllocatorFromSystemProperties()
+            return { nodeId ->
+                if (nodeId == targetNodeId) {
+                    targetAllocator
+                } else {
+                    defaultQuicAllocator
+                }
+            }
+        }
+
+        private fun quicAllocatorFromSystemProperties(): ByteBufAllocator =
+            when (val allocatorMode = System.getProperty("quicsim.profile.allocator", "unpooled")) {
+                "adaptive" -> AdaptiveByteBufAllocator()
+                "unpooled" -> UnpooledByteBufAllocator(true)
+                else -> error("Unsupported quicsim.profile.allocator=$allocatorMode")
+            }
     }
 }

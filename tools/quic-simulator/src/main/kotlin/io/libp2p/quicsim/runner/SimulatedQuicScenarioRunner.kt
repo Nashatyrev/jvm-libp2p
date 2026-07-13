@@ -6,6 +6,8 @@ import io.libp2p.quicsim.scenario.QuicScenario
 import io.libp2p.quicsim.scenario.QuicScenarioEventSource
 import io.libp2p.quicsim.scenario.QuicScenarioResult
 import io.libp2p.quicsim.scenario.QuicScenarioRunner
+import io.libp2p.quicsim.sim.SimNodeId
+import io.netty.buffer.ByteBufAllocator
 import java.security.SecureRandom
 
 class SimulatedQuicScenarioRunner(
@@ -14,7 +16,10 @@ class SimulatedQuicScenarioRunner(
     private val latencyWindowParallelism: Int = 0,
     private val bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE,
     private val random: SecureRandom = SecureRandom(byteArrayOf(100)),
-    private val datagramPacketTraceRecorder: DatagramPacketTraceRecorder = DatagramPacketTraceRecorder.Noop
+    private val datagramPacketTraceRecorder: DatagramPacketTraceRecorder = DatagramPacketTraceRecorder.Noop,
+    private val nodeHeapProfiler: SimulatedNodeHeapProfiler = SimulatedNodeHeapProfiler.fromSystemProperties(),
+    private val quicAllocatorFactory: (SimNodeId) -> ByteBufAllocator =
+        SimulatedRunner.defaultQuicAllocatorFactoryFromSystemProperties()
 ) : QuicScenarioRunner {
     override fun <F : NodeProgramFactory> run(scenario: QuicScenario<F>): QuicScenarioResult<F> {
         val nodeProgramFactory = scenario.createNodeProgramFactory()
@@ -26,7 +31,9 @@ class SimulatedQuicScenarioRunner(
             maxSimulatedRunDuration = scenario.maxRunDuration,
             random = random,
             latencyWindowParallelism = latencyWindowParallelism,
-            datagramPacketTraceRecorder = datagramPacketTraceRecorder
+            datagramPacketTraceRecorder = datagramPacketTraceRecorder,
+            quicAllocatorFactory = quicAllocatorFactory,
+            nodeHeapProfiler = nodeHeapProfiler
         )
 
         try {
