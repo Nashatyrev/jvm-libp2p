@@ -35,12 +35,17 @@ import io.libp2p.quicsim.udpnetwork.fifoUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.latencyThenBandwidthUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl2
+import io.libp2p.quicsim.runner.AbstractSimPacketBridge
 import io.netty.buffer.AdaptiveByteBufAllocator
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.ByteBufAllocator
+import io.netty.buffer.ByteBufAllocatorMetric
+import io.netty.buffer.ByteBufAllocatorMetricProvider
 import io.netty.buffer.CompositeByteBuf
+import io.netty.buffer.UnpooledByteBufAllocator
 import io.netty.buffer.WrappedByteBuf
 import io.netty.channel.socket.DatagramPacket
+import io.netty.util.IllegalReferenceCountException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -116,9 +121,28 @@ class SimulatedRunnerTest {
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val packetStats = PacketStatsNodeVisitorFactory()
         val directBufferStats = DirectBufferStatsSampler()
+        val unpooledAllocatorStats = UnpooledAllocatorStatsSampler()
+        val defaultAllocatorStats = DefaultAllocatorStatsSampler()
+        val rssStats = RssStatsSampler()
+        val heapStats = HeapStatsSampler()
+        val allocatorMode = System.getProperty("quicsim.profile.allocator", "unpooled")
+        val forceHeapByteBufs = System.getProperty("quicsim.profile.heapByteBufs").toBoolean()
+        val bridgeHeapPayloads = System.getProperty("quicsim.bridge.heapPayloads").toBoolean()
         val globalAllocator = CountingByteBufAllocator(
-            delegate = AdaptiveByteBufAllocator(),
+            delegate = quicAllocatorDelegate(allocatorMode, forceHeapByteBufs),
             captureAllocationStacks = System.getProperty("quicsim.profile.globalAllocatorParanoid").toBoolean()
+        )
+        val profiledNodeId = System.getProperty("quicsim.nodeHeapProfile.nodeId")?.toIntOrNull()
+        val profiledAllocator = profiledNodeId?.let {
+            CountingByteBufAllocator(
+                delegate = quicAllocatorDelegate(allocatorMode, forceHeapByteBufs),
+                captureAllocationStacks = System.getProperty("quicsim.profile.nodeAllocatorParanoid").toBoolean()
+            )
+        }
+        val allocatorStats = CountingAllocatorStatsSampler(
+            allocators = listOfNotNull(globalAllocator, profiledAllocator),
+            samplePeriodMillis = System.getProperty("quicsim.profile.allocatorSamplePeriodMillis")
+                ?.toLongOrNull() ?: 50L
         )
         val randomConnectionsByNode: Map<SimNodeId, List<SimNodeId>> =
             QuicScenarios.createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = 1234)
@@ -151,33 +175,73 @@ class SimulatedRunnerTest {
             maxSimulatedRunDuration = 10.minutes,
             latencyWindowParallelism = 20,
             nodeVisitorFactory = packetStats,
-            quicAllocatorFactory = { globalAllocator }
+            quicAllocatorFactory = { nodeId ->
+                if (profiledAllocator != null && nodeId == profiledNodeId) {
+                    profiledAllocator
+                } else {
+                    globalAllocator
+                }
+            }
         )
 
+        AbstractSimPacketBridge.resetBridgeDirectCopyStats()
         directBufferStats.start()
+        unpooledAllocatorStats.start()
+        defaultAllocatorStats.start()
+        rssStats.start()
+        heapStats.start()
+        allocatorStats.start()
         try {
             runner.run()
         } finally {
+            allocatorStats.stop()
+            heapStats.stop()
             directBufferStats.stop()
+            unpooledAllocatorStats.stop()
+            defaultAllocatorStats.stop()
+            rssStats.stop()
         }
-        assertTrue(
-            nodePrograms.all { it.completeFuture.isDone },
-            "Expected all sample gossip node programs to complete in 1000-node scenario"
-        )
+        val allProgramsComplete = nodePrograms.all { it.completeFuture.isDone }
 
 //        println("Total packet count: " + udpNetworkLogging.packetsCount + ", bytes: " + udpNetworkLogging.throughputBytes)
         println(
             "Params: neighboursToConnect: $neighboursToConnect, " +
                 "publishersCount: $publishersCount, messagesPerPublisher: $messagesPerPublisher"
         )
+        println("Allocator mode: ${if (forceHeapByteBufs) "heap" else allocatorMode}")
+        println("Bridge payload mode: ${if (bridgeHeapPayloads) "heap" else "bytebuf-ref"}")
         println("Packet stats: ${packetStats.snapshot()}")
         println("Direct buffer stats: ${directBufferStats.snapshot()}")
+        println("Unpooled allocator stats: ${unpooledAllocatorStats.snapshot()}")
+        println("Default allocator stats: ${defaultAllocatorStats.snapshot()}")
+        println("Bridge direct copy stats: ${AbstractSimPacketBridge.bridgeDirectCopyStatsSnapshot()}")
+        println("RSS stats: ${rssStats.snapshot()}")
+        println("Heap stats: ${heapStats.snapshot()}")
         println("Global shared allocation stats: ${globalAllocator.snapshot()}")
+        profiledAllocator?.let { allocator ->
+            println("Profiled node allocation stats: nodeId=$profiledNodeId ${allocator.snapshot()}")
+            allocator.unreleasedAllocationReport(limit = 10)?.let { report ->
+                println("Profiled node unreleased allocation report:")
+                println(report)
+            }
+        }
         globalAllocator.unreleasedAllocationReport(limit = 10)?.let { report ->
             println("Global shared unreleased allocation report:")
             println(report)
         }
+        assertTrue(
+            allProgramsComplete,
+            "Expected all sample gossip node programs to complete in 1000-node scenario"
+        )
     }
+
+    private fun quicAllocatorDelegate(allocatorMode: String, forceHeapByteBufs: Boolean): ByteBufAllocator =
+        when {
+            forceHeapByteBufs -> HeapOnlyByteBufAllocator(AdaptiveByteBufAllocator())
+            allocatorMode == "adaptive" -> AdaptiveByteBufAllocator()
+            allocatorMode == "unpooled" -> UnpooledByteBufAllocator(true)
+            else -> error("Unsupported quicsim.profile.allocator=$allocatorMode")
+        }
 
     @Test
     @Timeout(30)
@@ -831,6 +895,405 @@ class SimulatedRunnerTest {
                 .firstOrNull { it.name == name }
     }
 
+    class UnpooledAllocatorStatsSampler(
+        private val samplePeriodMillis: Long = 10
+    ) {
+        private val metric = UnpooledByteBufAllocator.DEFAULT.metric()
+        private val running = AtomicBoolean()
+        private val maxUsedHeapMemory = AtomicLong()
+        private val maxUsedDirectMemory = AtomicLong()
+        private var thread: Thread? = null
+
+        fun start() {
+            if (!running.compareAndSet(false, true)) return
+            thread = Thread {
+                while (running.get()) {
+                    sample()
+                    Thread.sleep(samplePeriodMillis)
+                }
+            }.also {
+                it.isDaemon = true
+                it.name = "unpooled-allocator-stats-sampler"
+                it.start()
+            }
+        }
+
+        fun stop() {
+            running.set(false)
+            thread?.join(1_000)
+            sample()
+        }
+
+        fun snapshot(): Snapshot =
+            Snapshot(
+                usedHeapMemory = metric.usedHeapMemory(),
+                usedDirectMemory = metric.usedDirectMemory(),
+                maxUsedHeapMemory = maxUsedHeapMemory.get(),
+                maxUsedDirectMemory = maxUsedDirectMemory.get()
+            )
+
+        private fun sample() {
+            updateMax(maxUsedHeapMemory, metric.usedHeapMemory())
+            updateMax(maxUsedDirectMemory, metric.usedDirectMemory())
+        }
+
+        private fun updateMax(maxValue: AtomicLong, candidate: Long) {
+            while (true) {
+                val current = maxValue.get()
+                if (candidate <= current || maxValue.compareAndSet(current, candidate)) {
+                    return
+                }
+            }
+        }
+
+        data class Snapshot(
+            val usedHeapMemory: Long,
+            val usedDirectMemory: Long,
+            val maxUsedHeapMemory: Long,
+            val maxUsedDirectMemory: Long
+        )
+    }
+
+    class DefaultAllocatorStatsSampler(
+        private val samplePeriodMillis: Long = 10
+    ) {
+        private val metric = (ByteBufAllocator.DEFAULT as? ByteBufAllocatorMetricProvider)?.metric()
+        private val running = AtomicBoolean()
+        private val maxUsedHeapMemory = AtomicLong()
+        private val maxUsedDirectMemory = AtomicLong()
+        private var thread: Thread? = null
+
+        fun start() {
+            if (metric == null || !running.compareAndSet(false, true)) return
+            thread = Thread {
+                while (running.get()) {
+                    sample()
+                    Thread.sleep(samplePeriodMillis)
+                }
+            }.also {
+                it.isDaemon = true
+                it.name = "default-allocator-stats-sampler"
+                it.start()
+            }
+        }
+
+        fun stop() {
+            running.set(false)
+            thread?.join(1_000)
+            sample()
+        }
+
+        fun snapshot(): Snapshot =
+            Snapshot(
+                usedHeapMemory = metric?.usedHeapMemory() ?: -1,
+                usedDirectMemory = metric?.usedDirectMemory() ?: -1,
+                maxUsedHeapMemory = maxUsedHeapMemory.get(),
+                maxUsedDirectMemory = maxUsedDirectMemory.get()
+            )
+
+        private fun sample() {
+            metric?.let {
+                updateMax(maxUsedHeapMemory, it.usedHeapMemory())
+                updateMax(maxUsedDirectMemory, it.usedDirectMemory())
+            }
+        }
+
+        private fun updateMax(maxValue: AtomicLong, candidate: Long) {
+            while (true) {
+                val current = maxValue.get()
+                if (candidate <= current || maxValue.compareAndSet(current, candidate)) {
+                    return
+                }
+            }
+        }
+
+        data class Snapshot(
+            val usedHeapMemory: Long,
+            val usedDirectMemory: Long,
+            val maxUsedHeapMemory: Long,
+            val maxUsedDirectMemory: Long
+        )
+    }
+
+    class RssStatsSampler(
+        private val samplePeriodMillis: Long =
+            System.getProperty("quicsim.profile.rssSamplePeriodMillis")?.toLongOrNull() ?: 100
+    ) {
+        private val pid = ProcessHandle.current().pid()
+        private val running = AtomicBoolean()
+        private val maxRssBytes = AtomicLong()
+        private val lastRssBytes = AtomicLong(-1)
+        private var thread: Thread? = null
+
+        fun start() {
+            if (!running.compareAndSet(false, true)) return
+            thread = Thread {
+                while (running.get()) {
+                    sample()
+                    Thread.sleep(samplePeriodMillis)
+                }
+            }.also {
+                it.isDaemon = true
+                it.name = "rss-stats-sampler"
+                it.start()
+            }
+        }
+
+        fun stop() {
+            running.set(false)
+            thread?.join(1_000)
+            sample()
+        }
+
+        fun snapshot(): Snapshot =
+            Snapshot(
+                pid = pid,
+                rssBytes = lastRssBytes.get(),
+                maxRssBytes = maxRssBytes.get()
+            )
+
+        private fun sample() {
+            val rssBytes = readRssBytes() ?: return
+            lastRssBytes.set(rssBytes)
+            updateMax(maxRssBytes, rssBytes)
+        }
+
+        private fun readRssBytes(): Long? =
+            runCatching {
+                val process = ProcessBuilder("ps", "-o", "rss=", "-p", pid.toString())
+                    .redirectErrorStream(true)
+                    .start()
+                val output = process.inputStream.bufferedReader().readText().trim()
+                if (process.waitFor() != 0 || output.isBlank()) {
+                    null
+                } else {
+                    output.lineSequence().first().trim().toLongOrNull()?.times(1024)
+                }
+            }.getOrNull()
+
+        private fun updateMax(maxValue: AtomicLong, candidate: Long) {
+            while (true) {
+                val current = maxValue.get()
+                if (candidate <= current || maxValue.compareAndSet(current, candidate)) {
+                    return
+                }
+            }
+        }
+
+        data class Snapshot(
+            val pid: Long,
+            val rssBytes: Long,
+            val maxRssBytes: Long
+        )
+    }
+
+    class HeapStatsSampler(
+        private val samplePeriodMillis: Long =
+            System.getProperty("quicsim.profile.heapSamplePeriodMillis")?.toLongOrNull() ?: 10,
+        private val retainedSamplePeriodMillis: Long? =
+            System.getProperty("quicsim.profile.heapRetainedSamplePeriodMillis")?.toLongOrNull(),
+        private val retainedGcSettleMillis: Long =
+            System.getProperty("quicsim.profile.heapRetainedGcSettleMillis")?.toLongOrNull() ?: 20
+    ) {
+        private val memoryBean = ManagementFactory.getMemoryMXBean()
+        private val running = AtomicBoolean()
+        private val maxHeapUsedBytes = AtomicLong()
+        private val maxHeapCommittedBytes = AtomicLong()
+        private val maxRetainedHeapUsedBytes = AtomicLong(-1)
+        private val retainedSamples = AtomicLong()
+        private val lastHeapUsedBytes = AtomicLong(-1)
+        private val lastHeapCommittedBytes = AtomicLong(-1)
+        private val lastRetainedHeapUsedBytes = AtomicLong(-1)
+        private var lastRetainedSampleNanos = Long.MIN_VALUE
+        private var thread: Thread? = null
+
+        fun start() {
+            if (!running.compareAndSet(false, true)) return
+            thread = Thread {
+                while (running.get()) {
+                    sample(forceRetained = false)
+                    Thread.sleep(samplePeriodMillis)
+                }
+            }.also {
+                it.isDaemon = true
+                it.name = "heap-stats-sampler"
+                it.start()
+            }
+        }
+
+        fun stop() {
+            running.set(false)
+            thread?.join(1_000)
+            sample(forceRetained = true)
+        }
+
+        fun snapshot(): Snapshot =
+            Snapshot(
+                heapUsedBytes = lastHeapUsedBytes.get(),
+                heapCommittedBytes = lastHeapCommittedBytes.get(),
+                maxHeapUsedBytes = maxHeapUsedBytes.get(),
+                maxHeapCommittedBytes = maxHeapCommittedBytes.get(),
+                retainedHeapUsedBytes = lastRetainedHeapUsedBytes.get(),
+                maxRetainedHeapUsedBytes = maxRetainedHeapUsedBytes.get(),
+                retainedSamples = retainedSamples.get()
+            )
+
+        private fun sample(forceRetained: Boolean) {
+            val heapUsage = memoryBean.heapMemoryUsage
+            lastHeapUsedBytes.set(heapUsage.used)
+            lastHeapCommittedBytes.set(heapUsage.committed)
+            updateMax(maxHeapUsedBytes, heapUsage.used)
+            updateMax(maxHeapCommittedBytes, heapUsage.committed)
+            if (forceRetained || shouldSampleRetained()) {
+                sampleRetained()
+            }
+        }
+
+        private fun shouldSampleRetained(): Boolean {
+            val periodMillis = retainedSamplePeriodMillis ?: return false
+            val now = System.nanoTime()
+            val periodNanos = TimeUnit.MILLISECONDS.toNanos(periodMillis)
+            if (lastRetainedSampleNanos != Long.MIN_VALUE && now < lastRetainedSampleNanos + periodNanos) {
+                return false
+            }
+            lastRetainedSampleNanos = now
+            return true
+        }
+
+        private fun sampleRetained() {
+            System.gc()
+            if (retainedGcSettleMillis > 0) {
+                Thread.sleep(retainedGcSettleMillis)
+            }
+            val retainedBytes = memoryBean.heapMemoryUsage.used
+            lastRetainedHeapUsedBytes.set(retainedBytes)
+            updateMax(maxRetainedHeapUsedBytes, retainedBytes)
+            retainedSamples.incrementAndGet()
+        }
+
+        private fun updateMax(maxValue: AtomicLong, candidate: Long) {
+            while (true) {
+                val current = maxValue.get()
+                if (candidate <= current || maxValue.compareAndSet(current, candidate)) {
+                    return
+                }
+            }
+        }
+
+        data class Snapshot(
+            val heapUsedBytes: Long,
+            val heapCommittedBytes: Long,
+            val maxHeapUsedBytes: Long,
+            val maxHeapCommittedBytes: Long,
+            val retainedHeapUsedBytes: Long,
+            val maxRetainedHeapUsedBytes: Long,
+            val retainedSamples: Long
+        )
+    }
+
+    class CountingAllocatorStatsSampler(
+        private val allocators: List<CountingByteBufAllocator>,
+        private val samplePeriodMillis: Long
+    ) {
+        private val running = AtomicBoolean()
+        private var thread: Thread? = null
+
+        fun start() {
+            if (!running.compareAndSet(false, true)) return
+            thread = Thread {
+                while (running.get()) {
+                    sample()
+                    Thread.sleep(samplePeriodMillis)
+                }
+            }.also {
+                it.isDaemon = true
+                it.name = "counting-allocator-stats-sampler"
+                it.start()
+            }
+        }
+
+        fun stop() {
+            running.set(false)
+            thread?.join(1_000)
+            sample()
+        }
+
+        private fun sample() {
+            allocators.forEach { it.sampleTrackedCapacitiesAndDelegateMetric() }
+        }
+    }
+
+    class HeapOnlyByteBufAllocator(
+        private val delegate: ByteBufAllocator
+    ) : ByteBufAllocator, ByteBufAllocatorMetricProvider {
+        override fun buffer(): ByteBuf =
+            delegate.heapBuffer()
+
+        override fun buffer(initialCapacity: Int): ByteBuf =
+            delegate.heapBuffer(initialCapacity)
+
+        override fun buffer(initialCapacity: Int, maxCapacity: Int): ByteBuf =
+            delegate.heapBuffer(initialCapacity, maxCapacity)
+
+        override fun ioBuffer(): ByteBuf =
+            delegate.heapBuffer()
+
+        override fun ioBuffer(initialCapacity: Int): ByteBuf =
+            delegate.heapBuffer(initialCapacity)
+
+        override fun ioBuffer(initialCapacity: Int, maxCapacity: Int): ByteBuf =
+            delegate.heapBuffer(initialCapacity, maxCapacity)
+
+        override fun heapBuffer(): ByteBuf =
+            delegate.heapBuffer()
+
+        override fun heapBuffer(initialCapacity: Int): ByteBuf =
+            delegate.heapBuffer(initialCapacity)
+
+        override fun heapBuffer(initialCapacity: Int, maxCapacity: Int): ByteBuf =
+            delegate.heapBuffer(initialCapacity, maxCapacity)
+
+        override fun directBuffer(): ByteBuf =
+            delegate.heapBuffer()
+
+        override fun directBuffer(initialCapacity: Int): ByteBuf =
+            delegate.heapBuffer(initialCapacity)
+
+        override fun directBuffer(initialCapacity: Int, maxCapacity: Int): ByteBuf =
+            delegate.heapBuffer(initialCapacity, maxCapacity)
+
+        override fun compositeBuffer(): CompositeByteBuf =
+            delegate.compositeHeapBuffer()
+
+        override fun compositeBuffer(maxNumComponents: Int): CompositeByteBuf =
+            delegate.compositeHeapBuffer(maxNumComponents)
+
+        override fun compositeHeapBuffer(): CompositeByteBuf =
+            delegate.compositeHeapBuffer()
+
+        override fun compositeHeapBuffer(maxNumComponents: Int): CompositeByteBuf =
+            delegate.compositeHeapBuffer(maxNumComponents)
+
+        override fun compositeDirectBuffer(): CompositeByteBuf =
+            delegate.compositeHeapBuffer()
+
+        override fun compositeDirectBuffer(maxNumComponents: Int): CompositeByteBuf =
+            delegate.compositeHeapBuffer(maxNumComponents)
+
+        override fun isDirectBufferPooled(): Boolean =
+            false
+
+        override fun calculateNewCapacity(minNewCapacity: Int, maxCapacity: Int): Int =
+            delegate.calculateNewCapacity(minNewCapacity, maxCapacity)
+
+        override fun metric(): ByteBufAllocatorMetric =
+            (delegate as? ByteBufAllocatorMetricProvider)?.metric()
+                ?: object : ByteBufAllocatorMetric {
+                    override fun usedHeapMemory(): Long = -1
+                    override fun usedDirectMemory(): Long = -1
+                }
+    }
+
     class CountingByteBufAllocator(
         private val delegate: ByteBufAllocator,
         private val captureAllocationStacks: Boolean = false
@@ -843,7 +1306,19 @@ class SimulatedRunnerTest {
             val stack: Array<StackTraceElement>
         )
 
+        private class ActiveAllocationState(
+            val id: Long,
+            val requestedBytes: Long,
+            val buffer: ByteBuf,
+            initialCapacityBytes: Long,
+            initialDirectCapacityBytes: Long
+        ) {
+            var trackedCapacityBytes: Long = initialCapacityBytes
+            var trackedDirectCapacityBytes: Long = initialDirectCapacityBytes
+        }
+
         private val allocationIds = AtomicLong()
+        private val activeAllocationStates = ConcurrentHashMap<Long, ActiveAllocationState>()
         private val activeAllocationRecords = ConcurrentHashMap<Long, AllocationRecord>()
         private val allocatedBuffers = AtomicLong()
         private val releasedBuffers = AtomicLong()
@@ -858,6 +1333,12 @@ class SimulatedRunnerTest {
         private val maxActiveRequestedBytes = AtomicLong()
         private val maxActiveCapacityBytes = AtomicLong()
         private val maxActiveDirectCapacityBytes = AtomicLong()
+        private val maxDelegateUsedHeapMemory = AtomicLong()
+        private val maxDelegateUsedDirectMemory = AtomicLong()
+        private val maxDelegateUntrackedOrPooledDirectMemory = AtomicLong()
+        private val activeDirectAtMaxDelegateUsedDirectMemory = AtomicLong()
+        private val untrackedOrPooledDirectAtMaxDelegateUsedDirectMemory = AtomicLong()
+        private val delegateMetricSampleLock = Any()
 
         override fun buffer(): ByteBuf =
             track(delegate.buffer(), requestedBytes = 0)
@@ -919,8 +1400,10 @@ class SimulatedRunnerTest {
         override fun calculateNewCapacity(minNewCapacity: Int, maxCapacity: Int): Int =
             delegate.calculateNewCapacity(minNewCapacity, maxCapacity)
 
-        fun snapshot(): Snapshot =
-            Snapshot(
+        fun snapshot(): Snapshot {
+            refreshActiveCapacities(sampleDelegate = false)
+            sampleDelegateMetric()
+            return Snapshot(
                 allocatedBuffers = allocatedBuffers.get(),
                 releasedBuffers = releasedBuffers.get(),
                 activeBuffers = activeBuffers.get(),
@@ -933,8 +1416,23 @@ class SimulatedRunnerTest {
                 activeDirectCapacityBytes = activeDirectCapacityBytes.get(),
                 maxActiveRequestedBytes = maxActiveRequestedBytes.get(),
                 maxActiveCapacityBytes = maxActiveCapacityBytes.get(),
-                maxActiveDirectCapacityBytes = maxActiveDirectCapacityBytes.get()
+                maxActiveDirectCapacityBytes = maxActiveDirectCapacityBytes.get(),
+                delegateUsedHeapMemory = delegateMetric()?.usedHeapMemory() ?: -1,
+                delegateUsedDirectMemory = delegateMetric()?.usedDirectMemory() ?: -1,
+                delegateUntrackedOrPooledDirectMemory = delegateUntrackedOrPooledDirectMemory(),
+                maxDelegateUsedHeapMemory = maxDelegateUsedHeapMemory.get(),
+                maxDelegateUsedDirectMemory = maxDelegateUsedDirectMemory.get(),
+                maxDelegateUntrackedOrPooledDirectMemory = maxDelegateUntrackedOrPooledDirectMemory.get(),
+                activeDirectAtMaxDelegateUsedDirectMemory = activeDirectAtMaxDelegateUsedDirectMemory.get(),
+                untrackedOrPooledDirectAtMaxDelegateUsedDirectMemory =
+                    untrackedOrPooledDirectAtMaxDelegateUsedDirectMemory.get()
             )
+        }
+
+        fun sampleTrackedCapacitiesAndDelegateMetric() {
+            refreshActiveCapacities(sampleDelegate = false)
+            sampleDelegateMetric()
+        }
 
         fun unreleasedAllocationReport(limit: Int): String? {
             if (!captureAllocationStacks || activeAllocationRecords.isEmpty()) return null
@@ -972,8 +1470,17 @@ class SimulatedRunnerTest {
             updateMax(maxActiveRequestedBytes, activeRequestedBytes.addAndGet(requestedBytes.toLong()))
             updateMax(maxActiveCapacityBytes, activeCapacityBytes.addAndGet(capacityBytes))
             updateMax(maxActiveDirectCapacityBytes, activeDirectCapacityBytes.addAndGet(directCapacityBytes))
+            sampleDelegateMetric()
 
             val allocationId = allocationIds.incrementAndGet()
+            val activeState = ActiveAllocationState(
+                id = allocationId,
+                requestedBytes = requestedBytes.toLong(),
+                buffer = buffer,
+                initialCapacityBytes = capacityBytes,
+                initialDirectCapacityBytes = directCapacityBytes
+            )
+            activeAllocationStates[allocationId] = activeState
             if (captureAllocationStacks) {
                 activeAllocationRecords[allocationId] = AllocationRecord(
                     id = allocationId,
@@ -984,22 +1491,83 @@ class SimulatedRunnerTest {
                 )
             }
 
-            return CountingByteBuf(allocationId, buffer, requestedBytes.toLong(), capacityBytes, directCapacityBytes)
+            return CountingByteBuf(allocationId, buffer, activeState)
         }
 
-        private fun release(allocationId: Long, requestedBytes: Long, capacityBytes: Long, directCapacityBytes: Long) {
+        private fun release(allocationId: Long, state: ActiveAllocationState) {
+            refreshActiveCapacity(state, sampleDelegate = false)
+            activeAllocationStates.remove(allocationId)
             activeAllocationRecords.remove(allocationId)
             releasedBuffers.incrementAndGet()
             activeBuffers.decrementAndGet()
-            activeRequestedBytes.addAndGet(-requestedBytes)
-            activeCapacityBytes.addAndGet(-capacityBytes)
-            activeDirectCapacityBytes.addAndGet(-directCapacityBytes)
+            activeRequestedBytes.addAndGet(-state.requestedBytes)
+            synchronized(state) {
+                activeCapacityBytes.addAndGet(-state.trackedCapacityBytes)
+                activeDirectCapacityBytes.addAndGet(-state.trackedDirectCapacityBytes)
+            }
+            sampleDelegateMetric()
         }
 
-        private fun adjustCapacity(deltaCapacityBytes: Long, deltaDirectCapacityBytes: Long) {
+        private fun adjustCapacity(deltaCapacityBytes: Long, deltaDirectCapacityBytes: Long, sampleDelegate: Boolean) {
+            if (deltaCapacityBytes == 0L && deltaDirectCapacityBytes == 0L) return
             updateMax(maxActiveCapacityBytes, activeCapacityBytes.addAndGet(deltaCapacityBytes))
             updateMax(maxActiveDirectCapacityBytes, activeDirectCapacityBytes.addAndGet(deltaDirectCapacityBytes))
+            if (sampleDelegate) {
+                sampleDelegateMetric()
+            }
         }
+
+        private fun refreshActiveCapacities(sampleDelegate: Boolean) {
+            activeAllocationStates.values.forEach { refreshActiveCapacity(it, sampleDelegate) }
+        }
+
+        private fun refreshActiveCapacity(state: ActiveAllocationState, sampleDelegate: Boolean) {
+            var actualCapacityBytes: Long
+            var actualDirectCapacityBytes: Long
+            try {
+                actualCapacityBytes = state.buffer.capacity().toLong()
+                actualDirectCapacityBytes = if (state.buffer.isDirect) actualCapacityBytes else 0L
+            } catch (e: IllegalReferenceCountException) {
+                actualCapacityBytes = 0
+                actualDirectCapacityBytes = 0
+            }
+            synchronized(state) {
+                val deltaCapacityBytes = actualCapacityBytes - state.trackedCapacityBytes
+                val deltaDirectCapacityBytes = actualDirectCapacityBytes - state.trackedDirectCapacityBytes
+                state.trackedCapacityBytes = actualCapacityBytes
+                state.trackedDirectCapacityBytes = actualDirectCapacityBytes
+                adjustCapacity(deltaCapacityBytes, deltaDirectCapacityBytes, sampleDelegate)
+            }
+        }
+
+        private fun sampleDelegateMetric() {
+            delegateMetric()?.let {
+                val usedHeapMemory = it.usedHeapMemory()
+                val usedDirectMemory = it.usedDirectMemory()
+                val activeDirectMemory = activeDirectCapacityBytes.get()
+                val untrackedOrPooledDirectMemory = (usedDirectMemory - activeDirectMemory).coerceAtLeast(0)
+
+                synchronized(delegateMetricSampleLock) {
+                    updateMax(maxDelegateUsedHeapMemory, usedHeapMemory)
+                    updateMax(maxDelegateUntrackedOrPooledDirectMemory, untrackedOrPooledDirectMemory)
+                    val currentMaxDirectMemory = maxDelegateUsedDirectMemory.get()
+                    if (usedDirectMemory > currentMaxDirectMemory &&
+                        maxDelegateUsedDirectMemory.compareAndSet(currentMaxDirectMemory, usedDirectMemory)
+                    ) {
+                        activeDirectAtMaxDelegateUsedDirectMemory.set(activeDirectMemory)
+                        untrackedOrPooledDirectAtMaxDelegateUsedDirectMemory.set(untrackedOrPooledDirectMemory)
+                    }
+                }
+            }
+        }
+
+        private fun delegateMetric(): ByteBufAllocatorMetric? =
+            (delegate as? ByteBufAllocatorMetricProvider)?.metric()
+
+        private fun delegateUntrackedOrPooledDirectMemory(): Long =
+            delegateMetric()
+                ?.let { (it.usedDirectMemory() - activeDirectCapacityBytes.get()).coerceAtLeast(0) }
+                ?: -1
 
         private fun updateMax(maxValue: AtomicLong, candidate: Long) {
             while (true) {
@@ -1013,38 +1581,42 @@ class SimulatedRunnerTest {
         private inner class CountingByteBuf(
             private val allocationId: Long,
             buffer: ByteBuf,
-            private val requestedBytes: Long,
-            initialCapacityBytes: Long,
-            initialDirectCapacityBytes: Long
+            private val state: ActiveAllocationState
         ) : WrappedByteBuf(buffer) {
             private val released = AtomicBoolean()
-            private var trackedCapacityBytes = initialCapacityBytes
-            private var trackedDirectCapacityBytes = initialDirectCapacityBytes
 
             override fun capacity(newCapacity: Int): ByteBuf {
-                val beforeCapacity = capacity().toLong()
-                val beforeDirectCapacity = if (isDirect) beforeCapacity else 0L
                 val result = super.capacity(newCapacity)
-                val afterCapacity = capacity().toLong()
-                val afterDirectCapacity = if (isDirect) afterCapacity else 0L
-                trackedCapacityBytes += afterCapacity - beforeCapacity
-                trackedDirectCapacityBytes += afterDirectCapacity - beforeDirectCapacity
-                adjustCapacity(afterCapacity - beforeCapacity, afterDirectCapacity - beforeDirectCapacity)
+                refreshActiveCapacity(state, sampleDelegate = true)
+                return result
+            }
+
+            override fun ensureWritable(minWritableBytes: Int): ByteBuf {
+                val result = super.ensureWritable(minWritableBytes)
+                refreshActiveCapacity(state, sampleDelegate = true)
+                return result
+            }
+
+            override fun ensureWritable(minWritableBytes: Int, force: Boolean): Int {
+                val result = super.ensureWritable(minWritableBytes, force)
+                refreshActiveCapacity(state, sampleDelegate = true)
                 return result
             }
 
             override fun release(): Boolean {
+                refreshActiveCapacity(state, sampleDelegate = false)
                 val deallocated = super.release()
                 if (deallocated && released.compareAndSet(false, true)) {
-                    release(allocationId, requestedBytes, trackedCapacityBytes, trackedDirectCapacityBytes)
+                    release(allocationId, state)
                 }
                 return deallocated
             }
 
             override fun release(decrement: Int): Boolean {
+                refreshActiveCapacity(state, sampleDelegate = false)
                 val deallocated = super.release(decrement)
                 if (deallocated && released.compareAndSet(false, true)) {
-                    release(allocationId, requestedBytes, trackedCapacityBytes, trackedDirectCapacityBytes)
+                    release(allocationId, state)
                 }
                 return deallocated
             }
@@ -1063,7 +1635,15 @@ class SimulatedRunnerTest {
             val activeDirectCapacityBytes: Long,
             val maxActiveRequestedBytes: Long,
             val maxActiveCapacityBytes: Long,
-            val maxActiveDirectCapacityBytes: Long
+            val maxActiveDirectCapacityBytes: Long,
+            val delegateUsedHeapMemory: Long,
+            val delegateUsedDirectMemory: Long,
+            val delegateUntrackedOrPooledDirectMemory: Long,
+            val maxDelegateUsedHeapMemory: Long,
+            val maxDelegateUsedDirectMemory: Long,
+            val maxDelegateUntrackedOrPooledDirectMemory: Long,
+            val activeDirectAtMaxDelegateUsedDirectMemory: Long,
+            val untrackedOrPooledDirectAtMaxDelegateUsedDirectMemory: Long
         )
     }
 
