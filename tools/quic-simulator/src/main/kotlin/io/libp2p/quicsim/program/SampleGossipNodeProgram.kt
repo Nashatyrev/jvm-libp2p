@@ -41,6 +41,7 @@ class SampleGossipNodeProgram(
     private val eventSink: QuicScenarioEventSink = QuicScenarioEventSink.Noop,
 ) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed) {
     var log: (String) -> Unit = { println("[SampleGossipNodeProgram] $it") }
+    private val verboseLog = System.getProperty("quicsim.sampleGossip.log", "true").toBoolean()
 
     private val random = Random(randomSeed)
     private val testTopic = Topic(testTopicName)
@@ -61,7 +62,7 @@ class SampleGossipNodeProgram(
 
     override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> {
         val simLogger = SimLogger(context.timer)
-        log = simLogger::log
+        log = if (verboseLog) simLogger::log else { _ -> }
         return super.createProtocols(context)
     }
 
