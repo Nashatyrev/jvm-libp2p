@@ -19,7 +19,7 @@ class SlowStartBatchReportTest {
     @Test
     fun `write simulated slow start packet batch csv`() {
         writeBatchCsv(
-            result = SimulatedQuicScenarioRunner(latencyWindowParallelism = 20).run(QuicScenarios.slowStart()),
+            result = SimulatedQuicScenarioRunner(latencyWindowParallelism = 32).run(QuicScenarios.slowStart()),
             outputPath = outputDir().resolve("slow-start-simulated-batches.csv")
         )
     }
@@ -28,7 +28,7 @@ class SlowStartBatchReportTest {
     fun `write simulated slow start codel packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL
             ).run(QuicScenarios.slowStart()),
             outputPath = outputDir().resolve("slow-start-codel-simulated-batches.csv")
@@ -39,7 +39,7 @@ class SlowStartBatchReportTest {
     fun `write simulated slow start shadow like packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
             ).run(QuicScenarios.slowStart()),
             outputPath = outputDir().resolve("slow-start-shadow-like-simulated-batches.csv")
@@ -50,7 +50,7 @@ class SlowStartBatchReportTest {
     fun `write simulated single transfer 8mb codel packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL
             ).run(QuicScenarios.singleTransfer8Mb()),
             outputPath = outputDir().resolve("single-transfer-8mb-codel-simulated-batches.csv")
@@ -61,7 +61,7 @@ class SlowStartBatchReportTest {
     fun `write simulated single transfer 8mb shadow like packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
             ).run(QuicScenarios.singleTransfer8Mb()),
             outputPath = outputDir().resolve("single-transfer-8mb-shadow-like-simulated-batches.csv")
@@ -72,7 +72,7 @@ class SlowStartBatchReportTest {
     fun `write simulated single transfer 8mb fifo packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20
+                latencyWindowParallelism = 32
             ).run(QuicScenarios.singleTransfer8Mb()),
             outputPath = outputDir().resolve("single-transfer-8mb-fifo-simulated-batches.csv")
         )
@@ -82,7 +82,7 @@ class SlowStartBatchReportTest {
     fun `write simulated single transfer 8mb half receiver bandwidth fifo packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20
+                latencyWindowParallelism = 32
             ).run(QuicScenarios.singleTransfer8MbHalfReceiverBandwidth()),
             outputPath = outputDir().resolve("single-transfer-8mb-half-receiver-bw-fifo-simulated-batches.csv")
         )
@@ -92,7 +92,7 @@ class SlowStartBatchReportTest {
     fun `write simulated single transfer 8mb half receiver bandwidth codel packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL
             ).run(QuicScenarios.singleTransfer8MbHalfReceiverBandwidth()),
             outputPath = outputDir().resolve("single-transfer-8mb-half-receiver-bw-codel-simulated-batches.csv")
@@ -103,7 +103,7 @@ class SlowStartBatchReportTest {
     fun `write simulated single transfer 8mb half receiver bandwidth shadow like packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
             ).run(QuicScenarios.singleTransfer8MbHalfReceiverBandwidth()),
             outputPath = outputDir().resolve(
@@ -116,7 +116,7 @@ class SlowStartBatchReportTest {
     fun `write simulated single transfer 8mb fifo datagram trace csv`() {
         val traceRecorder = RecordingDatagramPacketTraceRecorder()
         SimulatedQuicScenarioRunner(
-            latencyWindowParallelism = 20,
+            latencyWindowParallelism = 32,
             datagramPacketTraceRecorder = traceRecorder
         ).run(QuicScenarios.singleTransfer8Mb())
 
@@ -138,7 +138,7 @@ class SlowStartBatchReportTest {
     fun `write simulated single transfer 8mb half receiver bandwidth codel udp packet report csv`() {
         val traceRecorder = RecordingDatagramPacketTraceRecorder()
         SimulatedQuicScenarioRunner(
-            latencyWindowParallelism = 20,
+            latencyWindowParallelism = 32,
             bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL,
             datagramPacketTraceRecorder = traceRecorder
         ).run(QuicScenarios.singleTransfer8MbHalfReceiverBandwidth())
@@ -233,7 +233,7 @@ class SlowStartBatchReportTest {
     fun `write simulated slow start codel datagram trace csv`() {
         val traceRecorder = RecordingDatagramPacketTraceRecorder()
         SimulatedQuicScenarioRunner(
-            latencyWindowParallelism = 20,
+            latencyWindowParallelism = 32,
             bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL,
             datagramPacketTraceRecorder = traceRecorder
         ).run(QuicScenarios.slowStart())

@@ -98,7 +98,7 @@ class SimVsShadowGossipScenarioComparisonTest {
         )
         val actual = messageReceipts(
             SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE,
                 random = seededSecureRandom(scenarioName)
             ).run(createScenario())

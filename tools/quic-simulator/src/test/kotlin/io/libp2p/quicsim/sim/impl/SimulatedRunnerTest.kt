@@ -173,7 +173,7 @@ class SimulatedRunnerTest {
             },
             udpNetwork = udpNetwork,
             maxSimulatedRunDuration = 10.minutes,
-            latencyWindowParallelism = 20,
+            latencyWindowParallelism = 32,
             nodeVisitorFactory = packetStats,
             quicAllocatorFactory = { nodeId ->
                 if (profiledAllocator != null && nodeId == profiledNodeId) {
