@@ -115,6 +115,8 @@ class SimulatedRunnerTest {
         val publishersCount = intProperty("quicsim.sendMessageFromNPublishers.publishersCount", nodeCount)
         val neighboursToConnect = intProperty("quicsim.sendMessageFromNPublishers.neighboursToConnect", 20)
         val messagesPerPublisher = intProperty("quicsim.sendMessageFromNPublishers.messagesPerPublisher", 1)
+        val maxPublishedMessagesPerRpc =
+            intProperty("quicsim.sendMessageFromNPublishers.maxPublishedMessagesPerRpc", 256)
         val bandwidth = Bandwidth(5_000_000L)
         val halfLatency = 20.milliseconds
         val messageSizeBytes = intProperty("quicsim.sendMessageFromNPublishers.messageSizeBytes", 130)
@@ -164,6 +166,7 @@ class SimulatedRunnerTest {
 //                            // switch off IHAVE
 //                            gossipFactor = 0.0,
 //                            DLazy = 0,
+                            maxPublishedMessages = maxPublishedMessagesPerRpc,
                             ),
                         randomSeed = id.toLong(),
                         messageSizeBytes = messageSizeBytes,

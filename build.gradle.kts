@@ -129,6 +129,7 @@ configure(
             "quicsim.parallel.advanceStepMillis",
             "quicsim.profile.rssSamplePeriodMillis",
             "quicsim.sampleGossip.log",
+            "quicsim.sendMessageFromNPublishers.maxPublishedMessagesPerRpc",
             "quicsim.sendMessageFromNPublishers.messageSizeBytes",
             "quicsim.sendMessageFromNPublishers.messagesPerPublisher",
             "quicsim.sendMessageFromNPublishers.neighboursToConnect",
