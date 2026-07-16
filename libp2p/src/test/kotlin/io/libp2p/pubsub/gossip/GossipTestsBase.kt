@@ -25,7 +25,7 @@ abstract class GossipTestsBase {
     protected fun newMessage(topic: Topic, seqNo: Long, data: ByteArray) =
         DefaultPubsubMessage(newProtoMessage(topic, seqNo, data))
 
-    protected fun getMessageId(msg: Rpc.Message): MessageId = msg.from.toWBytes() + msg.seqno.toWBytes()
+    protected fun getMessageId(msg: Rpc.Message): MessageId = defaultPubsubMessageId(msg)
 
     class ManyRoutersTest(
         val mockRouterCount: Int = 10,

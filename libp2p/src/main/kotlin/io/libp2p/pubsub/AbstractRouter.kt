@@ -24,7 +24,12 @@ const val DEFAULT_MAX_PUBSUB_MESSAGE_SIZE = 1 shl 20
 typealias PubsubMessageHandler = (PubsubMessage) -> CompletableFuture<ValidationResult>
 
 open class DefaultPubsubMessage(override val protobufMessage: Rpc.Message) : AbstractPubsubMessage() {
-    override val messageId: MessageId = protobufMessage.from.toWBytes() + protobufMessage.seqno.toWBytes()
+    override val messageId: MessageId = defaultPubsubMessageId(protobufMessage)
+}
+
+fun defaultPubsubMessageId(protobufMessage: Rpc.Message): MessageId {
+    val sourceId = protobufMessage.from.toByteArray() + protobufMessage.seqno.toByteArray()
+    return sourceId.takeLast(20).toByteArray().toWBytes()
 }
 
 private val logger = LoggerFactory.getLogger(AbstractRouter::class.java)
