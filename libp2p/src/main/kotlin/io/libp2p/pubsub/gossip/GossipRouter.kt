@@ -357,7 +357,7 @@ open class GossipRouter(
         msg.messageIDsList
             .mapNotNull { mCache.getMessageForPeer(peer.peerId, it.toWBytes()) }
             .filter { it.sentCount < params.gossipRetransmission }
-            .forEach { submitPublishMessage(peer, it.msg) }
+            .forEach { submitPublishMessageNoPromise(peer, it.msg) }
     }
 
     private fun handleIDontWant(msg: Rpc.ControlIDontWant, peer: PeerHandler) {
@@ -404,7 +404,7 @@ open class GossipRouter(
                 .distinct()
                 .minus(receivedFrom)
                 .filterNot { peerDoesNotWantMessage(it, pubMsg.messageId) }
-                .forEach { submitPublishMessage(it, pubMsg) }
+                .forEach { submitPublishMessageNoPromise(it, pubMsg) }
             mCache += pubMsg
         }
         flushAllPending()

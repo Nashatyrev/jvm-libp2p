@@ -78,10 +78,14 @@ abstract class AbstractRouter(
     }
 
     protected open fun submitPublishMessage(toPeer: PeerHandler, msg: PubsubMessage): CompletableFuture<Unit> {
-        pendingRpcParts.getQueue(toPeer).addPublish(msg.protobufMessage)
+        submitPublishMessageNoPromise(toPeer, msg)
         val sendPromise = CompletableFuture<Unit>()
         pendingMessagePromises[toPeer] += sendPromise
         return sendPromise
+    }
+
+    protected open fun submitPublishMessageNoPromise(toPeer: PeerHandler, msg: PubsubMessage) {
+        pendingRpcParts.getQueue(toPeer).addPublish(msg.protobufMessage)
     }
 
     internal open fun validateMessageListLimits(msg: Rpc.RPCOrBuilder): Boolean {
