@@ -151,6 +151,10 @@ configure(
         if (project.path == ":tools:quic-simulator") {
             maxHeapSize = System.getProperty("quicsim.test.maxHeap", "16g")
             jvmArgs("-XX:MaxDirectMemorySize=${System.getProperty("quicsim.test.maxDirectMemory", "16g")}")
+            systemProperty(
+                "quicsim.sampleGossip.log",
+                System.getProperty("quicsim.sampleGossip.log", "false")
+            )
             System.getProperty("quicsim.test.jfrFile")?.let { jfrFile ->
                 jvmArgs("-XX:StartFlightRecording=filename=$jfrFile,settings=profile,dumponexit=true")
             }
