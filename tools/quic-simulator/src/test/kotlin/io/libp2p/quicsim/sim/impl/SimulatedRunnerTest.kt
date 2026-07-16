@@ -127,17 +127,24 @@ class SimulatedRunnerTest {
         val defaultAllocatorStats = DefaultAllocatorStatsSampler()
         val rssStats = RssStatsSampler()
         val heapStats = HeapStatsSampler()
-        val allocatorMode = System.getProperty("quicsim.profile.allocator", "unpooled")
+        val allocatorMode = System.getProperty("quicsim.profile.allocator", "adaptive")
         val forceHeapByteBufs = System.getProperty("quicsim.profile.heapByteBufs").toBoolean()
         val bridgeHeapPayloads = System.getProperty("quicsim.bridge.heapPayloads").toBoolean()
-        val globalAllocator = CountingByteBufAllocator(
-            delegate = quicAllocatorDelegate(allocatorMode, forceHeapByteBufs),
-            captureAllocationStacks = System.getProperty("quicsim.profile.globalAllocatorParanoid").toBoolean()
-        )
+        val useSharedAllocator = System.getProperty("quicsim.profile.sharedAllocator").toBoolean()
+        val globalAllocator =
+            if (useSharedAllocator) {
+                CountingByteBufAllocator(
+                    delegate = quicAllocatorDelegate(allocatorMode, forceHeapByteBufs),
+                    captureAllocationStacks = System.getProperty("quicsim.profile.globalAllocatorParanoid").toBoolean()
+                )
+            } else {
+                null
+            }
         val profiledNodeId = System.getProperty("quicsim.nodeHeapProfile.nodeId")?.toIntOrNull()
+        val profiledAllocatorMode = System.getProperty("quicsim.nodeHeapProfile.allocator", "unpooled")
         val profiledAllocator = profiledNodeId?.let {
             CountingByteBufAllocator(
-                delegate = quicAllocatorDelegate(allocatorMode, forceHeapByteBufs),
+                delegate = quicAllocatorDelegate(profiledAllocatorMode, forceHeapByteBufs),
                 captureAllocationStacks = System.getProperty("quicsim.profile.nodeAllocatorParanoid").toBoolean()
             )
         }
@@ -182,7 +189,7 @@ class SimulatedRunnerTest {
                 if (profiledAllocator != null && nodeId == profiledNodeId) {
                     profiledAllocator
                 } else {
-                    globalAllocator
+                    globalAllocator ?: quicAllocatorDelegate(allocatorMode, forceHeapByteBufs)
                 }
             }
         )
@@ -212,6 +219,10 @@ class SimulatedRunnerTest {
                 "publishersCount: $publishersCount, messagesPerPublisher: $messagesPerPublisher"
         )
         println("Allocator mode: ${if (forceHeapByteBufs) "heap" else allocatorMode}")
+        println("Allocator scope: ${if (useSharedAllocator) "shared-counted" else "per-node"}")
+        profiledNodeId?.let {
+            println("Profiled node allocator: nodeId=$it mode=${if (forceHeapByteBufs) "heap" else profiledAllocatorMode}")
+        }
         println("Bridge payload mode: ${if (bridgeHeapPayloads) "heap" else "bytebuf-ref"}")
         println("Packet stats: ${packetStats.snapshot()}")
         println("Direct buffer stats: ${directBufferStats.snapshot()}")
@@ -220,7 +231,9 @@ class SimulatedRunnerTest {
         println("Bridge direct copy stats: ${AbstractSimPacketBridge.bridgeDirectCopyStatsSnapshot()}")
         println("RSS stats: ${rssStats.snapshot()}")
         println("Heap stats: ${heapStats.snapshot()}")
-        println("Global shared allocation stats: ${globalAllocator.snapshot()}")
+        globalAllocator?.let { allocator ->
+            println("Global shared allocation stats: ${allocator.snapshot()}")
+        }
         profiledAllocator?.let { allocator ->
             println("Profiled node allocation stats: nodeId=$profiledNodeId ${allocator.snapshot()}")
             allocator.unreleasedAllocationReport(limit = 10)?.let { report ->
@@ -228,9 +241,11 @@ class SimulatedRunnerTest {
                 println(report)
             }
         }
-        globalAllocator.unreleasedAllocationReport(limit = 10)?.let { report ->
-            println("Global shared unreleased allocation report:")
-            println(report)
+        globalAllocator?.let { allocator ->
+            allocator.unreleasedAllocationReport(limit = 10)?.let { report ->
+                println("Global shared unreleased allocation report:")
+                println(report)
+            }
         }
         assertTrue(
             allProgramsComplete,

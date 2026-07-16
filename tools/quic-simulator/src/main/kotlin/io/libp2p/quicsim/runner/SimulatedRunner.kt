@@ -291,7 +291,7 @@ class SimulatedRunner(
                 return { defaultQuicAllocator }
             }
 
-            val targetAllocator = quicAllocatorFromSystemProperties()
+            val targetAllocator = quicAllocatorFromSystemProperties("quicsim.nodeHeapProfile.allocator", "unpooled")
             return { nodeId ->
                 if (nodeId == targetNodeId) {
                     targetAllocator
@@ -301,11 +301,14 @@ class SimulatedRunner(
             }
         }
 
-        private fun quicAllocatorFromSystemProperties(): ByteBufAllocator =
-            when (val allocatorMode = System.getProperty("quicsim.profile.allocator", "unpooled")) {
+        private fun quicAllocatorFromSystemProperties(
+            propertyName: String = "quicsim.profile.allocator",
+            defaultMode: String = "adaptive"
+        ): ByteBufAllocator =
+            when (val allocatorMode = System.getProperty(propertyName, defaultMode)) {
                 "adaptive" -> AdaptiveByteBufAllocator()
                 "unpooled" -> UnpooledByteBufAllocator(true)
-                else -> error("Unsupported quicsim.profile.allocator=$allocatorMode")
+                else -> error("Unsupported $propertyName=$allocatorMode")
             }
     }
 }
