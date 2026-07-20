@@ -118,18 +118,29 @@ configure(
             "simVsShadow.updateFixtures",
             "simVsShadow.updateGossipFixtures",
             "inboundCongestionReport.dir",
+            "io.netty.leakDetection.level",
             "quicsim.bridge.heapPayloads",
             "quicsim.profile.allocator",
             "quicsim.profile.allocatorSamplePeriodMillis",
+            "quicsim.profile.gossipRpcFrameStats",
+            "quicsim.profile.gossipRpcNodeStatsNodeId",
             "quicsim.profile.heapByteBufs",
             "quicsim.profile.heapRetainedGcSettleMillis",
             "quicsim.profile.heapRetainedSamplePeriodMillis",
             "quicsim.profile.heapSamplePeriodMillis",
             "quicsim.profile.nodeAllocatorParanoid",
-            "quicsim.parallel.advanceStepMillis",
+            "quicsim.profile.p2pWriteStats",
+            "quicsim.profile.peakAllocationReportStepBytes",
+            "quicsim.profile.protobufFrameDecoderStats",
+            "quicsim.profile.retainedHeapAtInFlightBytes",
             "quicsim.profile.sharedAllocator",
+            "quicsim.profile.simTimeCheckpointSeconds",
+            "quicsim.profile.stopAtCheckpoint",
+            "quicsim.parallel.advanceStepMillis",
             "quicsim.profile.rssSamplePeriodMillis",
             "quicsim.sampleGossip.log",
+            "quicsim.sendMessageFromNPublishers.initialPublishDelaySeconds",
+            "quicsim.sendMessageFromNPublishers.maxGossipMessageSizeBytes",
             "quicsim.sendMessageFromNPublishers.maxPublishedMessagesPerRpc",
             "quicsim.sendMessageFromNPublishers.messageSizeBytes",
             "quicsim.sendMessageFromNPublishers.messagesPerPublisher",
@@ -143,6 +154,7 @@ configure(
             "quicsim.nodeHeapProfile.maxObjects",
             "quicsim.nodeHeapProfile.nodeId",
             "quicsim.nodeHeapProfile.periodMillis",
+            "quicsim.nodeHeapProfile.retainedClasses",
             "slowStartReport.dir"
         ).forEach { propertyName ->
             System.getProperty(propertyName)?.let { propertyValue ->
@@ -152,7 +164,11 @@ configure(
 
         if (project.path == ":tools:quic-simulator") {
             maxHeapSize = System.getProperty("quicsim.test.maxHeap", "16g")
-            jvmArgs("-XX:MaxDirectMemorySize=${System.getProperty("quicsim.test.maxDirectMemory", "16g")}")
+            jvmArgs("-XX:MaxDirectMemorySize=${System.getProperty("quicsim.test.maxDirectMemory", "64g")}")
+            systemProperty(
+                "io.netty.leakDetection.level",
+                System.getProperty("io.netty.leakDetection.level", "disabled")
+            )
             systemProperty(
                 "quicsim.sampleGossip.log",
                 System.getProperty("quicsim.sampleGossip.log", "false")

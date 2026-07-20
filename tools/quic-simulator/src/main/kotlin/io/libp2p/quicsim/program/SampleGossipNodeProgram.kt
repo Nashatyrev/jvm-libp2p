@@ -18,6 +18,7 @@ import io.libp2p.quicsim.sim.SimContext
 import io.libp2p.quicsim.sim.SimNodeId
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
+import io.netty.channel.ChannelHandler
 import java.nio.charset.StandardCharsets
 import java.util.Optional
 import java.util.Random
@@ -39,7 +40,8 @@ class SampleGossipNodeProgram(
     val messagesPerPublisher: Int = 1,
     val initialPublishDelay: Duration = 1.minutes,
     private val eventSink: QuicScenarioEventSink = QuicScenarioEventSink.Noop,
-) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed) {
+    debugGossipHandler: ChannelHandler? = null,
+) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed, debugGossipHandler) {
     var log: (String) -> Unit = { println("[SampleGossipNodeProgram] $it") }
     private val verboseLog = System.getProperty("quicsim.sampleGossip.log", "true").toBoolean()
 

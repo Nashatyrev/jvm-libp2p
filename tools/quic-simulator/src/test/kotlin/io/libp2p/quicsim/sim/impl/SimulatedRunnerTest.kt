@@ -1,14 +1,18 @@
 package io.libp2p.quicsim.sim.impl
 
+import com.google.protobuf.CodedOutputStream
 import io.libp2p.core.Host
 import io.libp2p.core.ConnectionHandler
 import io.libp2p.core.Stream
 import io.libp2p.core.multistream.ProtocolBinding
 import io.libp2p.core.multistream.StrictProtocolBinding
+import io.libp2p.etc.util.P2PServiceWriteStats
+import io.libp2p.etc.util.netty.protobuf.ProtobufFrameDecoderStats
 import io.libp2p.etc.types.toByteArray
 import io.libp2p.etc.types.toByteBuf
 import io.libp2p.protocol.ProtocolHandler
 import io.libp2p.protocol.ProtocolMessageHandler
+import io.libp2p.pubsub.gossip.GossipRpcFrameStats
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.core.PacketProcessorVisitor
 import io.libp2p.quicsim.core.schedule.impl.submitAfterDelay
@@ -44,6 +48,10 @@ import io.netty.buffer.ByteBufAllocatorMetricProvider
 import io.netty.buffer.CompositeByteBuf
 import io.netty.buffer.UnpooledByteBufAllocator
 import io.netty.buffer.WrappedByteBuf
+import io.netty.channel.ChannelDuplexHandler
+import io.netty.channel.ChannelHandler
+import io.netty.channel.ChannelHandlerContext
+import io.netty.channel.ChannelPromise
 import io.netty.channel.socket.DatagramPacket
 import io.netty.util.IllegalReferenceCountException
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -60,11 +68,13 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.random.Random
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import pubsub.pb.Rpc
 
 class SimulatedRunnerTest {
     private data class TransferMetrics(
@@ -115,18 +125,27 @@ class SimulatedRunnerTest {
         val publishersCount = intProperty("quicsim.sendMessageFromNPublishers.publishersCount", nodeCount)
         val neighboursToConnect = intProperty("quicsim.sendMessageFromNPublishers.neighboursToConnect", 20)
         val messagesPerPublisher = intProperty("quicsim.sendMessageFromNPublishers.messagesPerPublisher", 1)
+        val initialPublishDelaySeconds =
+            intProperty("quicsim.sendMessageFromNPublishers.initialPublishDelaySeconds", 10)
         val maxPublishedMessagesPerRpc =
             intProperty("quicsim.sendMessageFromNPublishers.maxPublishedMessagesPerRpc", 256)
+        val maxGossipMessageSizeBytes =
+            intProperty("quicsim.sendMessageFromNPublishers.maxGossipMessageSizeBytes", 1 shl 20)
         val bandwidth = Bandwidth(5_000_000L)
         val halfLatency = 20.milliseconds
         val messageSizeBytes = intProperty("quicsim.sendMessageFromNPublishers.messageSizeBytes", 130)
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
-        val packetStats = PacketStatsNodeVisitorFactory()
+        val heapStats = HeapStatsSampler()
+        val packetStats = PacketStatsNodeVisitorFactory(
+            onRetainedHeapThreshold = {
+                val retainedBytes = heapStats.sampleRetainedNow()
+                println("Retained heap sample at packet in-flight threshold: retainedHeapUsedBytes=$retainedBytes")
+            }
+        )
         val directBufferStats = DirectBufferStatsSampler()
         val unpooledAllocatorStats = UnpooledAllocatorStatsSampler()
         val defaultAllocatorStats = DefaultAllocatorStatsSampler()
         val rssStats = RssStatsSampler()
-        val heapStats = HeapStatsSampler()
         val allocatorMode = System.getProperty("quicsim.profile.allocator", "adaptive")
         val forceHeapByteBufs = System.getProperty("quicsim.profile.heapByteBufs").toBoolean()
         val bridgeHeapPayloads = System.getProperty("quicsim.bridge.heapPayloads").toBoolean()
@@ -139,8 +158,12 @@ class SimulatedRunnerTest {
                 )
             } else {
                 null
-            }
+        }
         val profiledNodeId = System.getProperty("quicsim.nodeHeapProfile.nodeId")?.toIntOrNull()
+        val gossipRpcNodeStatsNodeId =
+            System.getProperty("quicsim.profile.gossipRpcNodeStatsNodeId")?.toIntOrNull()
+        val gossipRpcNodeStats = gossipRpcNodeStatsNodeId?.let { GossipRpcNodeStats() }
+        val gossipRpcNodeStatsHandler = gossipRpcNodeStats?.let { GossipRpcNodeStatsHandler(it) }
         val profiledAllocatorMode = System.getProperty("quicsim.nodeHeapProfile.allocator", "unpooled")
         val profiledAllocator = profiledNodeId?.let {
             CountingByteBufAllocator(
@@ -156,6 +179,9 @@ class SimulatedRunnerTest {
         val randomConnectionsByNode: Map<SimNodeId, List<SimNodeId>> =
             QuicScenarios.createBidirectionalRandomTopology(nodeCount, neighboursToConnect, seed = 1234)
 
+        P2PServiceWriteStats.reset()
+        ProtobufFrameDecoderStats.reset()
+        GossipRpcFrameStats.reset()
         val networkBuilder = TestStarNetworkBuilder2()
         (0 until nodeCount).map { networkBuilder.node("node-$it") }
         val qdiscFactory = fifoQDiscFactory(bandwidth)
@@ -174,11 +200,13 @@ class SimulatedRunnerTest {
 //                            gossipFactor = 0.0,
 //                            DLazy = 0,
                             maxPublishedMessages = maxPublishedMessagesPerRpc,
-                            ),
+                            maxGossipMessageSize = maxGossipMessageSizeBytes,
+                        ),
                         randomSeed = id.toLong(),
                         messageSizeBytes = messageSizeBytes,
                         messagesPerPublisher = messagesPerPublisher,
-                        initialPublishDelay = 30.seconds,
+                        initialPublishDelay = initialPublishDelaySeconds.seconds,
+                        debugGossipHandler = if (id == gossipRpcNodeStatsNodeId) gossipRpcNodeStatsHandler else null,
                     ).also { nodePrograms += it }
             },
             udpNetwork = udpNetwork,
@@ -216,7 +244,10 @@ class SimulatedRunnerTest {
 //        println("Total packet count: " + udpNetworkLogging.packetsCount + ", bytes: " + udpNetworkLogging.throughputBytes)
         println(
             "Params: neighboursToConnect: $neighboursToConnect, " +
-                "publishersCount: $publishersCount, messagesPerPublisher: $messagesPerPublisher"
+                "publishersCount: $publishersCount, messagesPerPublisher: $messagesPerPublisher, " +
+                "initialPublishDelaySeconds: $initialPublishDelaySeconds, " +
+                "maxPublishedMessagesPerRpc: $maxPublishedMessagesPerRpc, " +
+                "maxGossipMessageSizeBytes: $maxGossipMessageSizeBytes"
         )
         println("Allocator mode: ${if (forceHeapByteBufs) "heap" else allocatorMode}")
         println("Allocator scope: ${if (useSharedAllocator) "shared-counted" else "per-node"}")
@@ -229,6 +260,12 @@ class SimulatedRunnerTest {
         println("Unpooled allocator stats: ${unpooledAllocatorStats.snapshot()}")
         println("Default allocator stats: ${defaultAllocatorStats.snapshot()}")
         println("Bridge direct copy stats: ${AbstractSimPacketBridge.bridgeDirectCopyStatsSnapshot()}")
+        println("P2P write stats: ${P2PServiceWriteStats.snapshot()}")
+        println("Protobuf frame decoder stats: ${ProtobufFrameDecoderStats.snapshot()}")
+        println("Gossip RPC frame stats: ${GossipRpcFrameStats.snapshot()}")
+        gossipRpcNodeStats?.let {
+            println("Gossip RPC node stats: nodeId=$gossipRpcNodeStatsNodeId ${it.snapshot()}")
+        }
         println("RSS stats: ${rssStats.snapshot()}")
         println("Heap stats: ${heapStats.snapshot()}")
         globalAllocator?.let { allocator ->
@@ -236,6 +273,14 @@ class SimulatedRunnerTest {
         }
         profiledAllocator?.let { allocator ->
             println("Profiled node allocation stats: nodeId=$profiledNodeId ${allocator.snapshot()}")
+            allocator.activeAllocationSummaryReport(limit = 20)?.let { report ->
+                println("Profiled node active allocation summary:")
+                println(report)
+            }
+            allocator.peakActiveDirectAllocationReport()?.let { report ->
+                println("Profiled node peak active direct allocation report:")
+                println(report)
+            }
             allocator.unreleasedAllocationReport(limit = 10)?.let { report ->
                 println("Profiled node unreleased allocation report:")
                 println(report)
@@ -247,10 +292,14 @@ class SimulatedRunnerTest {
                 println(report)
             }
         }
-        assertTrue(
-            allProgramsComplete,
-            "Expected all sample gossip node programs to complete in 1000-node scenario"
-        )
+        if (System.getProperty("quicsim.profile.stopAtCheckpoint").toBoolean()) {
+            println("Checkpoint diagnostic run stopped before completion; complete=$allProgramsComplete")
+        } else {
+            assertTrue(
+                allProgramsComplete,
+                "Expected all sample gossip node programs to complete in 1000-node scenario"
+            )
+        }
     }
 
     private fun quicAllocatorDelegate(allocatorMode: String, forceHeapByteBufs: Boolean): ByteBufAllocator =
@@ -758,7 +807,9 @@ class SimulatedRunnerTest {
         }
     }
 
-    class PacketStatsNodeVisitorFactory : io.libp2p.quicsim.sim.SimNodeVisitorFactory<DatagramPacket> {
+    class PacketStatsNodeVisitorFactory(
+        private val onRetainedHeapThreshold: (() -> Unit)? = null
+    ) : io.libp2p.quicsim.sim.SimNodeVisitorFactory<DatagramPacket> {
         private val outboundPackets = AtomicLong()
         private val inboundPackets = AtomicLong()
         private val outboundBytes = AtomicLong()
@@ -768,8 +819,11 @@ class SimulatedRunnerTest {
         private val maxInFlightPackets = AtomicLong()
         private val maxInFlightBytes = AtomicLong()
         private val peakPauseTriggered = java.util.concurrent.atomic.AtomicBoolean()
+        private val retainedHeapThresholdTriggered = java.util.concurrent.atomic.AtomicBoolean()
         private val pauseAtInFlightBytes =
             System.getProperty("quicsim.profile.pauseAtInFlightBytes")?.toLongOrNull()
+        private val retainedHeapAtInFlightBytes =
+            System.getProperty("quicsim.profile.retainedHeapAtInFlightBytes")?.toLongOrNull()
 
         override fun create(ip: String): PacketProcessorVisitor<DatagramPacket> =
             object : PacketProcessorVisitor<DatagramPacket> {
@@ -780,6 +834,7 @@ class SimulatedRunnerTest {
                     updateMax(maxInFlightPackets, inFlightPackets.incrementAndGet())
                     val newInFlightBytes = inFlightBytes.addAndGet(packetBytes)
                     updateMax(maxInFlightBytes, newInFlightBytes)
+                    sampleRetainedHeapAtPeakIfNeeded(newInFlightBytes)
                     pauseAtPeakIfNeeded(newInFlightBytes)
                 }
 
@@ -818,6 +873,14 @@ class SimulatedRunnerTest {
             if (inFlightBytes >= threshold && peakPauseTriggered.compareAndSet(false, true)) {
                 println("Packet stats profiling pause at inFlightBytes=$inFlightBytes")
                 Thread.sleep(120_000)
+            }
+        }
+
+        private fun sampleRetainedHeapAtPeakIfNeeded(inFlightBytes: Long) {
+            val threshold = retainedHeapAtInFlightBytes ?: return
+            if (inFlightBytes >= threshold && retainedHeapThresholdTriggered.compareAndSet(false, true)) {
+                println("Packet stats retained heap threshold reached at inFlightBytes=$inFlightBytes")
+                onRetainedHeapThreshold?.invoke()
             }
         }
 
@@ -1156,6 +1219,9 @@ class SimulatedRunnerTest {
                 retainedSamples = retainedSamples.get()
             )
 
+        fun sampleRetainedNow(): Long =
+            sampleRetained()
+
         private fun sample(forceRetained: Boolean) {
             val heapUsage = memoryBean.heapMemoryUsage
             lastHeapUsedBytes.set(heapUsage.used)
@@ -1178,7 +1244,8 @@ class SimulatedRunnerTest {
             return true
         }
 
-        private fun sampleRetained() {
+        @Synchronized
+        private fun sampleRetained(): Long {
             System.gc()
             if (retainedGcSettleMillis > 0) {
                 Thread.sleep(retainedGcSettleMillis)
@@ -1187,6 +1254,7 @@ class SimulatedRunnerTest {
             lastRetainedHeapUsedBytes.set(retainedBytes)
             updateMax(maxRetainedHeapUsedBytes, retainedBytes)
             retainedSamples.incrementAndGet()
+            return retainedBytes
         }
 
         private fun updateMax(maxValue: AtomicLong, candidate: Long) {
@@ -1238,6 +1306,189 @@ class SimulatedRunnerTest {
 
         private fun sample() {
             allocators.forEach { it.sampleTrackedCapacitiesAndDelegateMetric() }
+        }
+    }
+
+    class GossipRpcNodeStats {
+        private val inbound = DirectionStats()
+        private val outbound = DirectionStats()
+
+        fun recordInbound(rpc: Rpc.RPC) {
+            inbound.record(rpc)
+        }
+
+        fun recordOutbound(rpc: Rpc.RPC) {
+            outbound.record(rpc)
+        }
+
+        fun snapshot(): Snapshot =
+            Snapshot(
+                inbound = inbound.snapshot(),
+                outbound = outbound.snapshot()
+            )
+
+        data class Snapshot(
+            val inbound: DirectionSnapshot,
+            val outbound: DirectionSnapshot
+        )
+
+        data class DirectionSnapshot(
+            val rpcFrames: Long,
+            val rpcBytes: Long,
+            val publishFrames: Long,
+            val publishMessages: Long,
+            val publishBytes: Long,
+            val controlFrames: Long,
+            val controlSubmessages: Long,
+            val controlBytes: Long,
+            val iHaveMessages: Long,
+            val iHaveMessageIds: Long,
+            val iHaveBytes: Long,
+            val iWantMessages: Long,
+            val iWantMessageIds: Long,
+            val iWantBytes: Long,
+            val graftMessages: Long,
+            val graftBytes: Long,
+            val pruneMessages: Long,
+            val prunePeers: Long,
+            val pruneBytes: Long,
+            val iDontWantMessages: Long,
+            val iDontWantMessageIds: Long,
+            val iDontWantBytes: Long
+        )
+
+        private class DirectionStats {
+            private val rpcFrames = AtomicLong()
+            private val rpcBytes = AtomicLong()
+            private val publishFrames = AtomicLong()
+            private val publishMessages = AtomicLong()
+            private val publishBytes = AtomicLong()
+            private val controlFrames = AtomicLong()
+            private val controlSubmessages = AtomicLong()
+            private val controlBytes = AtomicLong()
+            private val iHaveMessages = AtomicLong()
+            private val iHaveMessageIds = AtomicLong()
+            private val iHaveBytes = AtomicLong()
+            private val iWantMessages = AtomicLong()
+            private val iWantMessageIds = AtomicLong()
+            private val iWantBytes = AtomicLong()
+            private val graftMessages = AtomicLong()
+            private val graftBytes = AtomicLong()
+            private val pruneMessages = AtomicLong()
+            private val prunePeers = AtomicLong()
+            private val pruneBytes = AtomicLong()
+            private val iDontWantMessages = AtomicLong()
+            private val iDontWantMessageIds = AtomicLong()
+            private val iDontWantBytes = AtomicLong()
+
+            fun record(rpc: Rpc.RPC) {
+                rpcFrames.incrementAndGet()
+                rpcBytes.addAndGet(rpc.serializedSize.toLong())
+
+                if (rpc.publishCount > 0) {
+                    publishFrames.incrementAndGet()
+                    publishMessages.addAndGet(rpc.publishCount.toLong())
+                    publishBytes.addAndGet(
+                        rpc.publishList.sumOf {
+                            fieldSize(Rpc.RPC.PUBLISH_FIELD_NUMBER, it.serializedSize)
+                        }.toLong()
+                    )
+                }
+
+                if (rpc.hasControl()) {
+                    val control = rpc.control
+                    val iHaveBytesValue = control.ihaveList.sumOf {
+                        fieldSize(Rpc.ControlMessage.IHAVE_FIELD_NUMBER, it.serializedSize)
+                    }
+                    val iWantBytesValue = control.iwantList.sumOf {
+                        fieldSize(Rpc.ControlMessage.IWANT_FIELD_NUMBER, it.serializedSize)
+                    }
+                    val graftBytesValue = control.graftList.sumOf {
+                        fieldSize(Rpc.ControlMessage.GRAFT_FIELD_NUMBER, it.serializedSize)
+                    }
+                    val pruneBytesValue = control.pruneList.sumOf {
+                        fieldSize(Rpc.ControlMessage.PRUNE_FIELD_NUMBER, it.serializedSize)
+                    }
+                    val iDontWantBytesValue = control.idontwantList.sumOf {
+                        fieldSize(Rpc.ControlMessage.IDONTWANT_FIELD_NUMBER, it.serializedSize)
+                    }
+
+                    controlFrames.incrementAndGet()
+                    controlSubmessages.addAndGet(
+                        (control.ihaveCount + control.iwantCount + control.graftCount +
+                            control.pruneCount + control.idontwantCount).toLong()
+                    )
+                    controlBytes.addAndGet(
+                        fieldSize(Rpc.RPC.CONTROL_FIELD_NUMBER, control.serializedSize).toLong()
+                    )
+                    iHaveMessages.addAndGet(control.ihaveCount.toLong())
+                    iHaveMessageIds.addAndGet(control.ihaveList.sumOf { it.messageIDsCount }.toLong())
+                    iHaveBytes.addAndGet(iHaveBytesValue.toLong())
+                    iWantMessages.addAndGet(control.iwantCount.toLong())
+                    iWantMessageIds.addAndGet(control.iwantList.sumOf { it.messageIDsCount }.toLong())
+                    iWantBytes.addAndGet(iWantBytesValue.toLong())
+                    graftMessages.addAndGet(control.graftCount.toLong())
+                    graftBytes.addAndGet(graftBytesValue.toLong())
+                    pruneMessages.addAndGet(control.pruneCount.toLong())
+                    prunePeers.addAndGet(control.pruneList.sumOf { it.peersCount }.toLong())
+                    pruneBytes.addAndGet(pruneBytesValue.toLong())
+                    iDontWantMessages.addAndGet(control.idontwantCount.toLong())
+                    iDontWantMessageIds.addAndGet(control.idontwantList.sumOf { it.messageIDsCount }.toLong())
+                    iDontWantBytes.addAndGet(iDontWantBytesValue.toLong())
+                }
+            }
+
+            private companion object {
+                fun fieldSize(fieldNumber: Int, messageSize: Int): Int =
+                    CodedOutputStream.computeTagSize(fieldNumber) +
+                        CodedOutputStream.computeUInt32SizeNoTag(messageSize) +
+                        messageSize
+            }
+
+            fun snapshot(): DirectionSnapshot =
+                DirectionSnapshot(
+                    rpcFrames = rpcFrames.get(),
+                    rpcBytes = rpcBytes.get(),
+                    publishFrames = publishFrames.get(),
+                    publishMessages = publishMessages.get(),
+                    publishBytes = publishBytes.get(),
+                    controlFrames = controlFrames.get(),
+                    controlSubmessages = controlSubmessages.get(),
+                    controlBytes = controlBytes.get(),
+                    iHaveMessages = iHaveMessages.get(),
+                    iHaveMessageIds = iHaveMessageIds.get(),
+                    iHaveBytes = iHaveBytes.get(),
+                    iWantMessages = iWantMessages.get(),
+                    iWantMessageIds = iWantMessageIds.get(),
+                    iWantBytes = iWantBytes.get(),
+                    graftMessages = graftMessages.get(),
+                    graftBytes = graftBytes.get(),
+                    pruneMessages = pruneMessages.get(),
+                    prunePeers = prunePeers.get(),
+                    pruneBytes = pruneBytes.get(),
+                    iDontWantMessages = iDontWantMessages.get(),
+                    iDontWantMessageIds = iDontWantMessageIds.get(),
+                    iDontWantBytes = iDontWantBytes.get()
+                )
+        }
+    }
+
+    @ChannelHandler.Sharable
+    class GossipRpcNodeStatsHandler(
+        private val stats: GossipRpcNodeStats
+    ) : ChannelDuplexHandler() {
+        override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
+            if (msg is Rpc.RPC) {
+                stats.recordInbound(msg)
+            }
+            super.channelRead(ctx, msg)
+        }
+
+        override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
+            if (msg is Rpc.RPC) {
+                stats.recordOutbound(msg)
+            }
+            super.write(ctx, msg, promise)
         }
     }
 
@@ -1333,6 +1584,15 @@ class SimulatedRunnerTest {
         ) {
             var trackedCapacityBytes: Long = initialCapacityBytes
             var trackedDirectCapacityBytes: Long = initialDirectCapacityBytes
+
+            fun bufferRefCnt(): Int =
+                runCatching { buffer.refCnt() }.getOrDefault(-1)
+
+            fun bufferCapacity(): Int =
+                runCatching { buffer.capacity() }.getOrDefault(-1)
+
+            fun bufferReadableBytes(): Int =
+                runCatching { buffer.readableBytes() }.getOrDefault(-1)
         }
 
         private val allocationIds = AtomicLong()
@@ -1357,6 +1617,8 @@ class SimulatedRunnerTest {
         private val activeDirectAtMaxDelegateUsedDirectMemory = AtomicLong()
         private val untrackedOrPooledDirectAtMaxDelegateUsedDirectMemory = AtomicLong()
         private val delegateMetricSampleLock = Any()
+        private val peakActiveDirectReportBytes = AtomicLong()
+        private val peakActiveDirectReport = AtomicReference<String?>()
 
         override fun buffer(): ByteBuf =
             track(delegate.buffer(), requestedBytes = 0)
@@ -1461,9 +1723,13 @@ class SimulatedRunnerTest {
                     .sortedByDescending { it.initialCapacityBytes }
                     .take(limit)
                     .forEachIndexed { index, record ->
+                        val state = activeAllocationStates[record.id]
                         appendLine(
                             "#${index + 1} id=${record.id} requestedBytes=${record.requestedBytes} " +
-                                "initialCapacityBytes=${record.initialCapacityBytes} direct=${record.direct}"
+                                "initialCapacityBytes=${record.initialCapacityBytes} direct=${record.direct} " +
+                                "refCnt=${state?.bufferRefCnt() ?: -1} " +
+                                "capacity=${state?.bufferCapacity() ?: -1} " +
+                                "readableBytes=${state?.bufferReadableBytes() ?: -1}"
                         )
                         record.stack
                             .dropWhile { it.className == CountingByteBufAllocator::class.java.name ||
@@ -1473,6 +1739,100 @@ class SimulatedRunnerTest {
                             .take(24)
                             .forEach { appendLine("  at $it") }
                     }
+            }
+        }
+
+        fun activeAllocationSummaryReport(limit: Int): String? {
+            if (!captureAllocationStacks || activeAllocationRecords.isEmpty()) return null
+
+            refreshActiveCapacities(sampleDelegate = false)
+            return activeAllocationSummaryReport(limit, refreshCapacities = false)
+        }
+
+        private fun activeAllocationSummaryReport(limit: Int, refreshCapacities: Boolean): String? {
+            if (!captureAllocationStacks || activeAllocationRecords.isEmpty()) return null
+
+            if (refreshCapacities) {
+                refreshActiveCapacities(sampleDelegate = false)
+            }
+            val summaries = mutableMapOf<String, AllocationSummary>()
+            activeAllocationRecords.values.forEach { record ->
+                val state = activeAllocationStates[record.id] ?: return@forEach
+                val label = classifyAllocation(record.stack)
+                val summary = summaries.getOrPut(label) { AllocationSummary(label) }
+                summary.count++
+                summary.requestedBytes += record.requestedBytes
+                summary.initialCapacityBytes += record.initialCapacityBytes
+                val capacity = synchronized(state) { state.trackedCapacityBytes }
+                val readableBytes = state.bufferReadableBytes().coerceAtLeast(0)
+                summary.currentCapacityBytes += capacity
+                summary.currentReadableBytes += readableBytes.toLong()
+                if (record.direct) {
+                    summary.directCapacityBytes += capacity
+                }
+            }
+
+            return buildString {
+                appendLine("activeAllocationRecords=${activeAllocationRecords.size}")
+                summaries.values
+                    .sortedWith(compareByDescending<AllocationSummary> { it.currentCapacityBytes }
+                        .thenByDescending { it.count })
+                    .take(limit)
+                    .forEachIndexed { index, summary ->
+                        appendLine(
+                            "#${index + 1} ${summary.label} " +
+                                "count=${summary.count} " +
+                                "requestedBytes=${summary.requestedBytes} " +
+                                "initialCapacityBytes=${summary.initialCapacityBytes} " +
+                                "currentCapacityBytes=${summary.currentCapacityBytes} " +
+                                "directCapacityBytes=${summary.directCapacityBytes} " +
+                                "readableBytes=${summary.currentReadableBytes}"
+                        )
+                    }
+            }
+        }
+
+        fun peakActiveDirectAllocationReport(): String? =
+            peakActiveDirectReport.get()
+
+        private data class AllocationSummary(
+            val label: String,
+            var count: Long = 0,
+            var requestedBytes: Long = 0,
+            var initialCapacityBytes: Long = 0,
+            var currentCapacityBytes: Long = 0,
+            var directCapacityBytes: Long = 0,
+            var currentReadableBytes: Long = 0
+        )
+
+        private fun classifyAllocation(stack: Array<StackTraceElement>): String {
+            fun contains(classNamePart: String, methodNamePart: String? = null): Boolean =
+                stack.any { frame ->
+                    frame.className.contains(classNamePart) &&
+                        (methodNamePart == null || frame.methodName.contains(methodNamePart))
+                }
+
+            return when {
+                contains("QuicheQuicStreamChannel", "recv") ->
+                    "QUIC stream recv"
+                contains("QuicheQuicChannel", "connectionSend") ->
+                    "QUIC connection send"
+                contains("P2PService") ->
+                    "P2PService write path"
+                contains("ProtobufEncoder") || contains("ProtobufVarint32LengthFieldPrepender") ->
+                    "protobuf outbound encode"
+                contains("LimitedProtobufVarint32FrameDecoder") || contains("ProtobufDecoder") ->
+                    "protobuf inbound decode"
+                contains("UdpSimNetworkEngine") || contains("AbstractSimPacketBridge") ->
+                    "sim UDP bridge/network"
+                else -> stack
+                    .dropWhile { it.className == CountingByteBufAllocator::class.java.name ||
+                        it.className == CountingByteBuf::class.java.name ||
+                        it.className.startsWith("java.lang.Thread")
+                    }
+                    .firstOrNull()
+                    ?.let { "${it.className}.${it.methodName}" }
+                    ?: "unknown"
             }
         }
 
@@ -1487,7 +1847,8 @@ class SimulatedRunnerTest {
             updateMax(maxActiveBuffers, activeBuffers.incrementAndGet())
             updateMax(maxActiveRequestedBytes, activeRequestedBytes.addAndGet(requestedBytes.toLong()))
             updateMax(maxActiveCapacityBytes, activeCapacityBytes.addAndGet(capacityBytes))
-            updateMax(maxActiveDirectCapacityBytes, activeDirectCapacityBytes.addAndGet(directCapacityBytes))
+            val newActiveDirectCapacityBytes = activeDirectCapacityBytes.addAndGet(directCapacityBytes)
+            updateMax(maxActiveDirectCapacityBytes, newActiveDirectCapacityBytes)
             sampleDelegateMetric()
 
             val allocationId = allocationIds.incrementAndGet()
@@ -1507,6 +1868,7 @@ class SimulatedRunnerTest {
                     direct = buffer.isDirect,
                     stack = Thread.currentThread().stackTrace
                 )
+                maybeCapturePeakActiveDirectReport(newActiveDirectCapacityBytes)
             }
 
             return CountingByteBuf(allocationId, buffer, activeState)
@@ -1514,7 +1876,11 @@ class SimulatedRunnerTest {
 
         private fun release(allocationId: Long, state: ActiveAllocationState) {
             refreshActiveCapacity(state, sampleDelegate = false)
-            activeAllocationStates.remove(allocationId)
+            markReleased(allocationId, state)
+        }
+
+        private fun markReleased(allocationId: Long, state: ActiveAllocationState) {
+            if (activeAllocationStates.remove(allocationId) == null) return
             activeAllocationRecords.remove(allocationId)
             releasedBuffers.incrementAndGet()
             activeBuffers.decrementAndGet()
@@ -1522,6 +1888,8 @@ class SimulatedRunnerTest {
             synchronized(state) {
                 activeCapacityBytes.addAndGet(-state.trackedCapacityBytes)
                 activeDirectCapacityBytes.addAndGet(-state.trackedDirectCapacityBytes)
+                state.trackedCapacityBytes = 0
+                state.trackedDirectCapacityBytes = 0
             }
             sampleDelegateMetric()
         }
@@ -1529,9 +1897,40 @@ class SimulatedRunnerTest {
         private fun adjustCapacity(deltaCapacityBytes: Long, deltaDirectCapacityBytes: Long, sampleDelegate: Boolean) {
             if (deltaCapacityBytes == 0L && deltaDirectCapacityBytes == 0L) return
             updateMax(maxActiveCapacityBytes, activeCapacityBytes.addAndGet(deltaCapacityBytes))
-            updateMax(maxActiveDirectCapacityBytes, activeDirectCapacityBytes.addAndGet(deltaDirectCapacityBytes))
+            val newActiveDirectCapacityBytes = activeDirectCapacityBytes.addAndGet(deltaDirectCapacityBytes)
+            updateMax(maxActiveDirectCapacityBytes, newActiveDirectCapacityBytes)
+            maybeCapturePeakActiveDirectReport(newActiveDirectCapacityBytes)
             if (sampleDelegate) {
                 sampleDelegateMetric()
+            }
+        }
+
+        private fun maybeCapturePeakActiveDirectReport(currentActiveDirectBytes: Long) {
+            if (!captureAllocationStacks || currentActiveDirectBytes <= 0) return
+            while (true) {
+                val currentReportedPeak = peakActiveDirectReportBytes.get()
+                if (currentActiveDirectBytes <= currentReportedPeak) return
+                if (peakActiveDirectReportBytes.compareAndSet(currentReportedPeak, currentActiveDirectBytes)) {
+                    val summaryReport = activeAllocationSummaryReport(limit = 20, refreshCapacities = false)
+                    val stackReport = unreleasedAllocationReport(limit = 10)
+                    if (summaryReport != null || stackReport != null) {
+                        val report = buildString {
+                            appendLine("activeDirectCapacityBytes=$currentActiveDirectBytes")
+                            summaryReport?.let {
+                                appendLine("Peak active allocation summary:")
+                                append(it)
+                            }
+                            stackReport?.let {
+                                appendLine("Peak active allocation top stacks:")
+                                append(it)
+                            }
+                        }.trimEnd()
+                        if (peakActiveDirectReportBytes.get() == currentActiveDirectBytes) {
+                            peakActiveDirectReport.set(report)
+                        }
+                    }
+                    return
+                }
             }
         }
 
@@ -1543,11 +1942,15 @@ class SimulatedRunnerTest {
             var actualCapacityBytes: Long
             var actualDirectCapacityBytes: Long
             try {
+                if (state.buffer.refCnt() <= 0) {
+                    markReleased(state.id, state)
+                    return
+                }
                 actualCapacityBytes = state.buffer.capacity().toLong()
                 actualDirectCapacityBytes = if (state.buffer.isDirect) actualCapacityBytes else 0L
             } catch (e: IllegalReferenceCountException) {
-                actualCapacityBytes = 0
-                actualDirectCapacityBytes = 0
+                markReleased(state.id, state)
+                return
             }
             synchronized(state) {
                 val deltaCapacityBytes = actualCapacityBytes - state.trackedCapacityBytes

@@ -265,7 +265,7 @@ abstract class PubsubRouterTest(val routerFactory: DeterministicFuzzRouterFactor
         }
 
         run {
-            val msg1 = newMessage("topic1", 1L, "Hello".toByteArray())
+            val msg1 = newMessage("topic1", 1L, "Hello-1".toByteArray())
             routerCenter.router.publish(msg1)
 
             Assertions.assertTrue(routerCenter.inboundMessages.isEmpty())
@@ -333,7 +333,7 @@ abstract class PubsubRouterTest(val routerFactory: DeterministicFuzzRouterFactor
         }
 
         run {
-            val msg1 = newMessage("topic1", 1L, "Hello".toByteArray())
+            val msg1 = newMessage("topic1", 1L, "Hello-1".toByteArray())
             allRouters[0].router.publish(msg1)
 
             Assertions.assertTrue(allRouters[0].inboundMessages.isEmpty())
@@ -389,7 +389,7 @@ abstract class PubsubRouterTest(val routerFactory: DeterministicFuzzRouterFactor
 
         router1.connectSemiDuplex(router2, LogLevel.ERROR, LogLevel.ERROR)
 
-        val msg = newMessage("topic1", 1L, "Hello".toByteArray())
+        val msg = newMessage("topic1", 1L, "Hello-1".toByteArray())
         val publishFut = router1.router.publish(msg)
 
         publishFut.get(5, TimeUnit.SECONDS)
@@ -440,7 +440,8 @@ abstract class PubsubRouterTest(val routerFactory: DeterministicFuzzRouterFactor
         fuzz.timeController.addTime(Duration.ofSeconds(2))
 
         val publisher = apis[0].createPublisher(routers[0].keyPair.first)
-        val msg = { "Hello".toByteArray().toByteBuf() }
+        var messageIndex = 0
+        val msg = { "Hello-${messageIndex++}".toByteArray().toByteBuf() }
         topics.forEach { publisher.publish(msg(), it) }
 
         Assertions.assertEquals(1, subs2[0].count)

@@ -135,8 +135,9 @@ class GossipV1_2Tests : GossipTestsBase() {
             ).build()
         )
 
-        // 1 heartbeat - the IDONTWANT should have expired
-        test.fuzz.timeController.addTime(1.seconds)
+        // Deliver IDONTWANT, then wait for the next heartbeat to expire it.
+        test.fuzz.timeController.addTime(100.millis)
+        test.fuzz.timeController.addTime(2.seconds)
 
         publisher.sendToSingle(
             Rpc.RPC.newBuilder().addPublish(msg.protobufMessage).build()

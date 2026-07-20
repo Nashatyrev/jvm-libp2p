@@ -3,6 +3,7 @@ package io.libp2p.pubsub
 import io.libp2p.core.BadPeerException
 import io.libp2p.core.PeerId
 import io.libp2p.core.Stream
+import io.libp2p.core.crypto.sha256
 import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.etc.types.*
 import io.libp2p.etc.util.P2PServiceSemiDuplex
@@ -20,17 +21,26 @@ import java.util.concurrent.ScheduledExecutorService
 
 // 1 MB default max message size
 const val DEFAULT_MAX_PUBSUB_MESSAGE_SIZE = 1 shl 20
+const val DEFAULT_PUBSUB_MESSAGE_ID_LENGTH = 20
 
 typealias PubsubMessageHandler = (PubsubMessage) -> CompletableFuture<ValidationResult>
 
-open class DefaultPubsubMessage(override val protobufMessage: Rpc.Message) : AbstractPubsubMessage() {
-    override val messageId: MessageId = defaultPubsubMessageId(protobufMessage)
+open class DefaultPubsubMessage(protobufMessage: Rpc.Message) : AbstractPubsubMessage() {
+    override val protobufMessage: Rpc.Message = defaultPubsubProtobufMessage(protobufMessage)
+    override val messageId: MessageId by lazy { messageSha256().copyOf(DEFAULT_PUBSUB_MESSAGE_ID_LENGTH).toWBytes() }
 }
 
 fun defaultPubsubMessageId(protobufMessage: Rpc.Message): MessageId {
-    val sourceId = protobufMessage.from.toByteArray() + protobufMessage.seqno.toByteArray()
-    return sourceId.takeLast(20).toByteArray().toWBytes()
+    return sha256(defaultPubsubProtobufMessage(protobufMessage).toByteArray())
+        .copyOf(DEFAULT_PUBSUB_MESSAGE_ID_LENGTH)
+        .toWBytes()
 }
+
+fun defaultPubsubProtobufMessage(protobufMessage: Rpc.Message): Rpc.Message =
+    Rpc.Message.newBuilder()
+        .setData(protobufMessage.data)
+        .addAllTopicIDs(protobufMessage.topicIDsList)
+        .build()
 
 private val logger = LoggerFactory.getLogger(AbstractRouter::class.java)
 
