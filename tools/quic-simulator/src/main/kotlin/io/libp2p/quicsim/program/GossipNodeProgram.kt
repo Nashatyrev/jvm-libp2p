@@ -12,6 +12,7 @@ import io.libp2p.quicsim.core.schedule.impl.toCurrentTimeSupplier
 import io.libp2p.quicsim.core.schedule.impl.toScheduledExecutorService
 import io.libp2p.quicsim.sim.SimContext
 import io.libp2p.quicsim.sim.SimNodeId
+import io.netty.channel.ChannelHandler
 import java.util.Random
 
 abstract class GossipNodeProgram(
@@ -20,6 +21,7 @@ abstract class GossipNodeProgram(
     val params: GossipParams,
     val scoreParams: GossipScoreParams = GossipScoreParams(),
     val randomSeed: Long = 0,
+    private val debugGossipHandler: ChannelHandler? = null,
 ) : AbstractNodeProgram(simNodeId, connectToNodeIds) {
 
     lateinit var gossipRouter: GossipRouter
@@ -37,7 +39,7 @@ abstract class GossipNodeProgram(
         }.build()
 
         messageApi = createPubsubApi(gossipRouter)
-        gossipProtocol = Gossip(router = gossipRouter, api = messageApi)
+        gossipProtocol = Gossip(router = gossipRouter, api = messageApi, debugGossipHandler = debugGossipHandler)
         return listOf(gossipProtocol)
     }
 

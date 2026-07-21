@@ -18,11 +18,12 @@ import io.libp2p.quicsim.sim.SimContext
 import io.libp2p.quicsim.sim.SimNodeId
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
+import io.netty.channel.ChannelHandler
 import java.nio.charset.StandardCharsets
 import java.util.Optional
 import java.util.Random
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.Consumer
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -39,15 +40,16 @@ class SampleGossipNodeProgram(
     val messagesPerPublisher: Int = 1,
     val initialPublishDelay: Duration = 1.minutes,
     private val eventSink: QuicScenarioEventSink = QuicScenarioEventSink.Noop,
-) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed) {
+    debugGossipHandler: ChannelHandler? = null,
+) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed, debugGossipHandler) {
     var log: (String) -> Unit = { println("[SampleGossipNodeProgram] $it") }
     private val verboseLog = System.getProperty("quicsim.sampleGossip.log", "true").toBoolean()
 
     private val random = Random(randomSeed)
     private val testTopic = Topic(testTopicName)
-    private val receivedMessageIds = ConcurrentHashMap.newKeySet<MessageId>()
+    private val receivedMessageCount = AtomicInteger()
     @Volatile
-    private var expectedMessageIds: Set<MessageId> = emptySet()
+    private var expectedMessageCount = 0
     @Volatile
     private var publishScheduled = false
     @Volatile
@@ -72,27 +74,24 @@ class SampleGossipNodeProgram(
     }
 
     override fun onAllConnected(simContext: SimContext, networkContext: NetworkContext) {
-        expectedMessageIds = (networkContext.allNodes.keys.filter { it < publishersCount }.toSet() - simNodeId)
-            .flatMap { publisherNodeId ->
-                (0 until messagesPerPublisher).map { messageIndex ->
-                    MessageId(publisherNodeId, messageIndex)
-                }
-            }
-            .toSet()
-        log("[$simNodeId] expected messages: $expectedMessageIds")
+        expectedMessageCount = (networkContext.allNodes.keys.count { it < publishersCount && it != simNodeId }) *
+            messagesPerPublisher
+        log("[$simNodeId] expected message count: $expectedMessageCount")
         installRouterEventLogger()
 
         messageApi.subscribe(Consumer { msg ->
-            parseSenderMessageId(msg.data)?.let { messageId ->
-                receivedMessageIds += messageId
-                completeIfReady()
-                eventSink.record(
-                    QuicScenarioEvent.GossipMessageReceived(
-                        nodeId = simNodeId,
-                        at = simContext.timer.time() - epoch,
-                        publisherNodeId = messageId.publisherNodeId
+            parsePublisherNodeId(msg.data)?.let { publisherNodeId ->
+                if (publisherNodeId in 0 until publishersCount && publisherNodeId != simNodeId) {
+                    receivedMessageCount.incrementAndGet()
+                    completeIfReady()
+                    eventSink.record(
+                        QuicScenarioEvent.GossipMessageReceived(
+                            nodeId = simNodeId,
+                            at = simContext.timer.time() - epoch,
+                            publisherNodeId = publisherNodeId
+                        )
                     )
-                )
+                }
             }
         }, testTopic)
         log("[$simNodeId] subscribed to ${testTopic.topic}")
@@ -131,7 +130,7 @@ class SampleGossipNodeProgram(
     }
 
     private fun isComplete(): Boolean =
-        expectedMessageIds.isNotEmpty() && receivedMessageIds.containsAll(expectedMessageIds)
+        expectedMessageCount > 0 && receivedMessageCount.get() >= expectedMessageCount
 
     private fun completeIfReady() {
         if (isComplete()) {
@@ -140,8 +139,7 @@ class SampleGossipNodeProgram(
     }
 
     fun debugState(): String {
-        val received = receivedMessageIds.toList().sorted()
-        val missing = (expectedMessageIds - receivedMessageIds).sorted()
+        val received = receivedMessageCount.get()
         val meshPeers = gossipRouter.mesh[testTopic.topic]
             ?.map { it.peerId.toBase58().take(12) }
             ?.sorted()
@@ -153,7 +151,8 @@ class SampleGossipNodeProgram(
         return "scheduled=$publishScheduled attempted=$publishAttempted " +
             "publishSucceeded=$publishSucceeded lastPublishError=${lastPublishError ?: "-"} " +
             "meshPeers=$meshPeers fanoutPeers=$fanoutPeers " +
-            "expected=$expectedMessageIds received=$received missing=$missing complete=${completeFuture.isDone}"
+            "expectedCount=$expectedMessageCount receivedCount=$received " +
+            "missingCount=${(expectedMessageCount - received).coerceAtLeast(0)} complete=${completeFuture.isDone}"
     }
 
     private fun installRouterEventLogger() {
@@ -221,7 +220,7 @@ class SampleGossipNodeProgram(
         }
     }
 
-    private fun parseSenderMessageId(data: ByteBuf): MessageId? {
+    private fun parsePublisherNodeId(data: ByteBuf): SimNodeId? {
         val readerIndex = data.readerIndex()
         val readableBytes = data.readableBytes()
         val prefix = SENDER_PREFIX_BYTES
@@ -232,34 +231,29 @@ class SampleGossipNodeProgram(
         }
 
         val idStart = readerIndex + prefix.size
-        val idEnd = findNewlineIndex(data, idStart, readerIndex + readableBytes)
+        val idEnd = findSenderIdEndIndex(data, idStart, readerIndex + readableBytes)
         if (idEnd <= idStart) return null
 
-        val idAndIndexBytes = ByteArray(idEnd - idStart)
-        data.getBytes(idStart, idAndIndexBytes)
-        val idAndIndex = String(idAndIndexBytes, StandardCharsets.UTF_8).split(':', limit = 2)
-        val publisherNodeId = idAndIndex[0].toInt()
-        val messageIndex = idAndIndex.getOrNull(1)?.toInt() ?: 0
-        return MessageId(publisherNodeId, messageIndex)
+        var publisherNodeId = 0
+        for (i in idStart until idEnd) {
+            val digit = data.getByte(i) - '0'.code
+            if (digit !in 0..9) return null
+            publisherNodeId = publisherNodeId * 10 + digit
+        }
+        return publisherNodeId
     }
 
-    private fun findNewlineIndex(data: ByteBuf, start: Int, endExclusive: Int): Int {
+    private fun findSenderIdEndIndex(data: ByteBuf, start: Int, endExclusive: Int): Int {
         for (i in start until endExclusive) {
-            if (data.getByte(i) == NEW_LINE_BYTE) return i
+            val byte = data.getByte(i)
+            if (byte == MESSAGE_INDEX_SEPARATOR_BYTE || byte == NEW_LINE_BYTE) return i
         }
         return -1
     }
 
     companion object {
         private const val NEW_LINE_BYTE: Byte = '\n'.code.toByte()
+        private const val MESSAGE_INDEX_SEPARATOR_BYTE: Byte = ':'.code.toByte()
         private val SENDER_PREFIX_BYTES = "sender:".toByteArray(StandardCharsets.UTF_8)
-    }
-
-    private data class MessageId(
-        val publisherNodeId: SimNodeId,
-        val messageIndex: Int
-    ) : Comparable<MessageId> {
-        override fun compareTo(other: MessageId): Int =
-            compareValuesBy(this, other, MessageId::publisherNodeId, MessageId::messageIndex)
     }
 }

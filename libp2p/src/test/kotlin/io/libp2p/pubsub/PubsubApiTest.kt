@@ -1,17 +1,19 @@
 package io.libp2p.pubsub
 
+import io.libp2p.core.crypto.sha256
 import io.libp2p.core.pubsub.MessageApi
 import io.libp2p.core.pubsub.Subscriber
 import io.libp2p.core.pubsub.Topic
 import io.libp2p.core.pubsub.createPubsubApi
 import io.libp2p.etc.types.toByteArray
 import io.libp2p.etc.types.toByteBuf
-import io.libp2p.etc.types.toLongBigEndian
+import io.libp2p.etc.types.toProtobuf
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
+import pubsub.pb.Rpc
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.concurrent.LinkedBlockingQueue
@@ -103,8 +105,37 @@ class PubsubApiTest {
         val rawMsg = router2.inboundMessages.poll(1, TimeUnit.SECONDS)!!.protobufMessage
         println(rawMsg)
         assertFalse(rawMsg.hasSignature())
-        assertEquals(333, rawMsg.seqno.toByteArray().copyOfRange(0, 8).toLongBigEndian())
-        assertArrayEquals(byteArrayOf(1, 2, 3), rawMsg.from.toByteArray())
+        assertFalse(rawMsg.hasSeqno())
+        assertFalse(rawMsg.hasFrom())
         assertEquals("Message", rawMsg.data.toByteArray().toString(StandardCharsets.UTF_8))
+    }
+
+    @Test
+    fun testDefaultPubsubMessageKeepsOnlyDataAndTopics() {
+        val rawMsg = Rpc.Message.newBuilder()
+            .setFrom(byteArrayOf(1, 2, 3).toProtobuf())
+            .setSeqno(byteArrayOf(4, 5, 6).toProtobuf())
+            .setSignature(byteArrayOf(7, 8, 9).toProtobuf())
+            .setKey(byteArrayOf(10, 11, 12).toProtobuf())
+            .setData("Message".toByteArray().toProtobuf())
+            .addTopicIDs("myTopic")
+            .build()
+        val canonicalMsg = Rpc.Message.newBuilder()
+            .setData(rawMsg.data)
+            .addAllTopicIDs(rawMsg.topicIDsList)
+            .build()
+
+        val msg = DefaultPubsubMessage(rawMsg)
+
+        assertEquals(canonicalMsg, msg.protobufMessage)
+        assertFalse(msg.protobufMessage.hasFrom())
+        assertFalse(msg.protobufMessage.hasSeqno())
+        assertFalse(msg.protobufMessage.hasSignature())
+        assertFalse(msg.protobufMessage.hasKey())
+        assertArrayEquals(
+            sha256(canonicalMsg.toByteArray()).copyOf(DEFAULT_PUBSUB_MESSAGE_ID_LENGTH),
+            msg.messageId.array
+        )
+        assertEquals(defaultPubsubMessageId(rawMsg), msg.messageId)
     }
 }

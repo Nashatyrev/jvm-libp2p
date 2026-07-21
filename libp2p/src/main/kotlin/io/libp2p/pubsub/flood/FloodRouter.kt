@@ -28,7 +28,7 @@ class FloodRouter(executor: ScheduledExecutorService = Executors.newSingleThread
 
     // msg: validated unseen messages received from wire
     override fun broadcastInbound(msgs: List<PubsubMessage>, receivedFrom: PeerHandler) {
-        msgs.forEach { broadcast(it, receivedFrom) }
+        msgs.forEach { broadcastNoPromise(it, receivedFrom) }
         flushAllPending()
     }
 
@@ -37,12 +37,21 @@ class FloodRouter(executor: ScheduledExecutorService = Executors.newSingleThread
     }
 
     private fun broadcast(msg: PubsubMessage, receivedFrom: PeerHandler?): CompletableFuture<Unit> {
-        val peers = msg.topics
-            .map { getTopicPeers(it) }
-            .reduce { p1, p2 -> p1 + p2 }
-        val sentFutures = peers
+        val sentFutures = peersForBroadcast(msg)
             .filter { it != receivedFrom }
             .map { submitPublishMessage(it, msg) }
         return anyComplete(sentFutures)
+    }
+
+    private fun broadcastNoPromise(msg: PubsubMessage, receivedFrom: PeerHandler?) {
+        peersForBroadcast(msg)
+            .filter { it != receivedFrom }
+            .forEach { submitPublishMessageNoPromise(it, msg) }
+    }
+
+    private fun peersForBroadcast(msg: PubsubMessage): Set<PeerHandler> {
+        return msg.topics
+            .map { getTopicPeers(it) }
+            .reduce { p1, p2 -> p1 + p2 }
     }
 }

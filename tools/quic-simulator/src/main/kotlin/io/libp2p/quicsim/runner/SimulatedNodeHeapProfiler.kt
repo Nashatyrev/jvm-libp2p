@@ -44,12 +44,19 @@ interface SimulatedNodeHeapProfiler : AutoCloseable {
                 ?: 2_000_000
             val maxDepth = System.getProperty("quicsim.nodeHeapProfile.maxDepth")?.toIntOrNull()
                 ?: 256
+            val retainedClasses = System.getProperty("quicsim.nodeHeapProfile.retainedClasses")
+                ?.split(',')
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?.toSet()
+                ?: emptySet()
             return CsvSimulatedNodeHeapProfiler(
                 targetNodeId = targetNodeId,
                 outputDir = outputDir,
                 samplePeriod = periodMillis?.milliseconds,
                 maxObjects = maxObjects,
-                maxDepth = maxDepth
+                maxDepth = maxDepth,
+                retainedClasses = retainedClasses
             )
         }
     }
@@ -61,10 +68,12 @@ class CsvSimulatedNodeHeapProfiler(
     private val samplePeriod: Duration? = null,
     private val maxObjects: Int = 2_000_000,
     private val maxDepth: Int = 256,
+    private val retainedClasses: Set<String> = emptySet(),
 ) : SimulatedNodeHeapProfiler {
     private val summaryPath = outputDir.resolve("node-$targetNodeId-heap-summary.csv")
     private val classesPath = outputDir.resolve("node-$targetNodeId-heap-classes.csv")
-    private val measurer = ReachableObjectGraphMeasurer(maxObjects, maxDepth)
+    private val retainedPath = outputDir.resolve("node-$targetNodeId-heap-retained.csv")
+    private val measurer = ReachableObjectGraphMeasurer(maxObjects, maxDepth, retainedClasses = retainedClasses)
     private var lastPeriodicSample: Duration? = null
     private var sampleIndex = 0
 
@@ -80,6 +89,13 @@ class CsvSimulatedNodeHeapProfiler(
             classesPath,
             "sample_index,phase,sim_time_ns,class_name,object_count,bytes"
         )
+        if (retainedClasses.isNotEmpty()) {
+            initializeCsv(
+                retainedPath,
+                "sample_index,phase,sim_time_ns,target_class,target_object_count,target_shallow_bytes," +
+                    "retained_object_count,retained_shallow_bytes"
+            )
+        }
     }
 
     @Synchronized
@@ -90,6 +106,7 @@ class CsvSimulatedNodeHeapProfiler(
         val currentIndex = sampleIndex++
         appendSummary(currentIndex, phase, simTime, measured, roots)
         appendClasses(currentIndex, phase, simTime, measured)
+        appendRetained(currentIndex, phase, simTime, measured)
         println(
             "Node heap profile sample=$currentIndex node=$targetNodeId phase=$phase " +
                 "reachableBytes=${measured.totalReachableBytes} visitedObjects=${measured.visitedObjects} " +
@@ -172,6 +189,37 @@ class CsvSimulatedNodeHeapProfiler(
         }
     }
 
+    private fun appendRetained(
+        sampleIndex: Int,
+        phase: String,
+        simTime: Duration?,
+        snapshot: ObjectGraphSnapshot
+    ) {
+        if (snapshot.retainedStats.isEmpty()) return
+        Files.newBufferedWriter(
+            retainedPath,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.APPEND
+        ).use { writer ->
+            snapshot.retainedStats.values
+                .sortedByDescending { it.retainedShallowBytes }
+                .forEach { retained ->
+                    writer.appendLine(
+                        listOf(
+                            sampleIndex,
+                            phase,
+                            simTime?.inWholeNanoseconds ?: "",
+                            retained.targetClass,
+                            retained.targetObjectCount,
+                            retained.targetShallowBytes,
+                            retained.retainedObjectCount,
+                            retained.retainedShallowBytes
+                        ).toCsvRow()
+                    )
+                }
+        }
+    }
+
     private fun initializeCsv(path: Path, header: String) {
         if (Files.notExists(path)) {
             appendLine(path, header)
@@ -211,46 +259,70 @@ data class ObjectGraphSnapshot(
     val durationMillis: Long,
     val classStats: Map<String, ClassMemoryStats>,
     val byteBufCapacityStats: Map<String, ClassMemoryStats>,
-    val uniqueByteBufStorageStats: Map<String, ClassMemoryStats>
+    val uniqueByteBufStorageStats: Map<String, ClassMemoryStats>,
+    val retainedStats: Map<String, RetainedClassStats> = emptyMap()
+)
+
+data class RetainedClassStats(
+    val targetClass: String,
+    val targetObjectCount: Long,
+    val targetShallowBytes: Long,
+    val retainedObjectCount: Long,
+    val retainedShallowBytes: Long
 )
 
 class ReachableObjectGraphMeasurer(
     private val maxObjects: Int = 2_000_000,
     private val maxDepth: Int = 256,
-    private val layout: HeapLayout = HeapLayout.current()
+    private val layout: HeapLayout = HeapLayout.current(),
+    private val retainedClasses: Set<String> = emptySet()
 ) {
     fun measure(roots: List<NamedRoot>): ObjectGraphSnapshot {
         val startedAt = System.nanoTime()
-        val visited = IdentityHashMap<Any, Unit>(maxObjects.coerceAtMost(1_000_000))
-        val queue = java.util.ArrayDeque<QueuedObject>()
+        val visited = IdentityHashMap<Any, Int>(maxObjects.coerceAtMost(1_000_000))
+        val nodes = mutableListOf<GraphNode>()
+        val queue = java.util.ArrayDeque<Int>()
+        val rootIds = mutableListOf<Int>()
         val classStats = linkedMapOf<String, ClassMemoryStats>()
         val byteBufStorageTracker = ByteBufStorageTracker()
 
         roots.forEach { root ->
-            queue.add(QueuedObject(root.value, 0))
+            registerObject(root.value, 0, visited, nodes)?.let { rootId ->
+                rootIds += rootId
+                queue.add(rootId)
+            }
         }
 
         var truncated = false
         while (!queue.isEmpty()) {
-            if (visited.size >= maxObjects) {
-                truncated = true
-                break
-            }
-            val queued = queue.removeFirst()
-            val value = queued.value
-            if (visited.containsKey(value) || shouldSkipObject(value)) continue
-            visited[value] = Unit
+            val nodeId = queue.removeFirst()
+            val node = nodes[nodeId]
+            if (node.processed) continue
+            node.processed = true
+            val value = node.value
 
-            val objectSize = layout.shallowSize(value)
-            addClassStats(classStats, value.javaClass.name, 1, objectSize)
+            addClassStats(classStats, node.className, 1, node.shallowBytes)
             if (value is ByteBuf) {
                 byteBufStorageTracker.record(value)
             }
-            enqueueReferences(value, queued.depth, queue, classStats)
+            collectReferences(value, node.depth, classStats).forEach { ref ->
+                if (nodes.size >= maxObjects && !visited.containsKey(ref)) {
+                    truncated = true
+                    return@forEach
+                }
+                val childId = registerObject(ref, node.depth + 1, visited, nodes) ?: return@forEach
+                node.references += childId
+                if (!nodes[childId].processed) {
+                    queue.add(childId)
+                }
+            }
         }
 
         val durationMillis = (System.nanoTime() - startedAt) / 1_000_000
         val shallowBytes = classStats.values.sumOf { it.shallowBytes }
+        val retainedStats = retainedClasses.associateWith { targetClass ->
+            calculateRetainedStats(targetClass, nodes, rootIds)
+        }
         return ObjectGraphSnapshot(
             totalReachableBytes = shallowBytes + byteBufStorageTracker.uniqueStorageBytes,
             shallowBytes = shallowBytes,
@@ -262,8 +334,99 @@ class ReachableObjectGraphMeasurer(
             durationMillis = durationMillis,
             classStats = classStats,
             byteBufCapacityStats = byteBufStorageTracker.capacityStats,
-            uniqueByteBufStorageStats = byteBufStorageTracker.uniqueStorageStats
+            uniqueByteBufStorageStats = byteBufStorageTracker.uniqueStorageStats,
+            retainedStats = retainedStats
         )
+    }
+
+    private fun registerObject(
+        value: Any,
+        depth: Int,
+        visited: IdentityHashMap<Any, Int>,
+        nodes: MutableList<GraphNode>
+    ): Int? {
+        if (shouldSkipObject(value)) return null
+        visited[value]?.let { return it }
+        val nodeId = nodes.size
+        nodes += GraphNode(
+            value = value,
+            className = value.javaClass.name,
+            shallowBytes = layout.shallowSize(value),
+            depth = depth
+        )
+        visited[value] = nodeId
+        return nodeId
+    }
+
+    private fun collectReferences(
+        value: Any,
+        depth: Int,
+        classStats: MutableMap<String, ClassMemoryStats>
+    ): List<Any> {
+        if (depth >= maxDepth) return emptyList()
+        val references = mutableListOf<Any>()
+        when (value) {
+            is Map<*, *> -> {
+                addContainerBackingEstimate(value, classStats)
+                collectMapEntries(value, references)
+            }
+            is Iterable<*> -> {
+                addContainerBackingEstimate(value, classStats)
+                collectIterableEntries(value, references)
+            }
+            is Optional<*> -> value.ifPresent { references += it }
+            is AtomicReference<*> -> value.get()?.let { references += it }
+            is ByteBuf -> collectByteBufBackingArray(value, references)
+            is Array<*> -> value.forEach { it?.let { item -> references += item } }
+        }
+
+        if (value is Reference<*>) return references
+        if (value.javaClass.isArray) return references
+        collectFieldReferences(value, references)
+        return references
+    }
+
+    private fun collectMapEntries(value: Map<*, *>, references: MutableList<Any>) {
+        try {
+            value.forEach { (key, mapValue) ->
+                key?.let { references += it }
+                mapValue?.let { references += it }
+            }
+        } catch (_: RuntimeException) {
+            // Diagnostic walk over live simulator state: skip containers that mutate while being sampled.
+        }
+    }
+
+    private fun collectIterableEntries(value: Iterable<*>, references: MutableList<Any>) {
+        try {
+            value.forEach { item ->
+                item?.let { references += item }
+            }
+        } catch (_: RuntimeException) {
+            // Diagnostic walk over live simulator state: skip containers that mutate while being sampled.
+        }
+    }
+
+    private fun collectByteBufBackingArray(value: ByteBuf, references: MutableList<Any>) {
+        runCatching {
+            if (value.hasArray()) {
+                references += value.array()
+            }
+        }
+    }
+
+    private fun collectFieldReferences(value: Any, references: MutableList<Any>) {
+        var clazz: Class<*>? = value.javaClass
+        while (clazz != null && clazz != Any::class.java) {
+            val currentClass = clazz
+            if (shouldSkipFieldsForClass(currentClass)) return
+            currentClass.declaredFields.forEach { field ->
+                if (shouldSkipField(currentClass, field)) return@forEach
+                val fieldValue = getFieldValue(field, value) ?: return@forEach
+                references += fieldValue
+            }
+            clazz = currentClass.superclass
+        }
     }
 
     private fun enqueueReferences(
@@ -406,6 +569,62 @@ class ReachableObjectGraphMeasurer(
         stats.count += count
         stats.shallowBytes += shallowBytes
     }
+
+    private fun calculateRetainedStats(
+        targetClass: String,
+        nodes: List<GraphNode>,
+        rootIds: List<Int>
+    ): RetainedClassStats {
+        val targetIds = nodes.indices.filter { nodes[it].className == targetClass }.toSet()
+        val reachableWithoutTargets = BooleanArray(nodes.size)
+        val queue = java.util.ArrayDeque<Int>()
+
+        rootIds.forEach { rootId ->
+            if (rootId !in targetIds) {
+                reachableWithoutTargets[rootId] = true
+                queue.add(rootId)
+            }
+        }
+
+        while (!queue.isEmpty()) {
+            val nodeId = queue.removeFirst()
+            nodes[nodeId].references.forEach { childId ->
+                if (childId in targetIds || reachableWithoutTargets[childId]) return@forEach
+                reachableWithoutTargets[childId] = true
+                queue.add(childId)
+            }
+        }
+
+        var retainedObjectCount = 0L
+        var retainedShallowBytes = 0L
+        var targetShallowBytes = 0L
+        targetIds.forEach { targetId ->
+            targetShallowBytes += nodes[targetId].shallowBytes
+        }
+        nodes.indices.forEach { nodeId ->
+            if (!reachableWithoutTargets[nodeId]) {
+                retainedObjectCount++
+                retainedShallowBytes += nodes[nodeId].shallowBytes
+            }
+        }
+
+        return RetainedClassStats(
+            targetClass = targetClass,
+            targetObjectCount = targetIds.size.toLong(),
+            targetShallowBytes = targetShallowBytes,
+            retainedObjectCount = retainedObjectCount,
+            retainedShallowBytes = retainedShallowBytes
+        )
+    }
+
+    private data class GraphNode(
+        val value: Any,
+        val className: String,
+        val shallowBytes: Long,
+        val depth: Int,
+        val references: MutableList<Int> = mutableListOf(),
+        var processed: Boolean = false
+    )
 
     private data class QueuedObject(
         val value: Any,

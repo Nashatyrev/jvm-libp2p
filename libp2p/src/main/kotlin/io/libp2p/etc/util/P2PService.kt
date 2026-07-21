@@ -8,14 +8,144 @@ import io.libp2p.etc.types.toVoidCompletableFuture
 import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInboundHandlerAdapter
+import io.netty.buffer.ByteBuf
 import io.netty.util.ReferenceCountUtil
 import org.slf4j.LoggerFactory
+import pubsub.pb.Rpc
 import java.nio.channels.ClosedChannelException
 import java.util.ArrayDeque
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.atomic.AtomicLong
 
 private val logger = LoggerFactory.getLogger(P2PService::class.java)
+
+object P2PServiceWriteStats {
+    private val enabled = System.getProperty("quicsim.profile.p2pWriteStats").toBoolean()
+
+    private val enqueuedSequences = AtomicLong()
+    private val completedSequences = AtomicLong()
+    private val writeCalls = AtomicLong()
+    private val estimatedWriteBytes = AtomicLong()
+    private val currentPendingSequences = AtomicLong()
+    private val maxPendingSequences = AtomicLong()
+    private val blockedDrainAttempts = AtomicLong()
+    private val unwritableChannels = AtomicLong()
+    private val currentWriteFutures = AtomicLong()
+    private val maxWriteFutures = AtomicLong()
+    private val maxChannelOutboundBytes = AtomicLong()
+    private val maxBytesBeforeWritable = AtomicLong()
+
+    fun reset() {
+        listOf(
+            enqueuedSequences,
+            completedSequences,
+            writeCalls,
+            estimatedWriteBytes,
+            currentPendingSequences,
+            maxPendingSequences,
+            blockedDrainAttempts,
+            unwritableChannels,
+            currentWriteFutures,
+            maxWriteFutures,
+            maxChannelOutboundBytes,
+            maxBytesBeforeWritable
+        ).forEach { it.set(0) }
+    }
+
+    fun onEnqueued(currentQueueSize: Int) {
+        if (!enabled) return
+        enqueuedSequences.incrementAndGet()
+        updateMax(maxPendingSequences, currentPendingSequences.incrementAndGet())
+        updateMax(maxPendingSequences, currentQueueSize.toLong())
+    }
+
+    fun onSequenceRemoved() {
+        if (!enabled) return
+        currentPendingSequences.decrementAndGet()
+    }
+
+    fun onSequenceCompleted() {
+        if (!enabled) return
+        completedSequences.incrementAndGet()
+    }
+
+    fun onWrite(msg: Any) {
+        if (!enabled) return
+        writeCalls.incrementAndGet()
+        estimatedWriteBytes.addAndGet(estimatedSize(msg).coerceAtLeast(0).toLong())
+    }
+
+    fun onWriteFutureStarted() {
+        if (!enabled) return
+        updateMax(maxWriteFutures, currentWriteFutures.incrementAndGet())
+    }
+
+    fun onWriteFutureDone() {
+        if (!enabled) return
+        currentWriteFutures.decrementAndGet()
+    }
+
+    fun onDrainBlocked(ctx: ChannelHandlerContext, pendingQueueSize: Int) {
+        if (!enabled) return
+        if (pendingQueueSize <= 0) return
+        blockedDrainAttempts.incrementAndGet()
+        if (!ctx.channel().isWritable) {
+            unwritableChannels.incrementAndGet()
+        }
+        updateMax(maxPendingSequences, pendingQueueSize.toLong())
+        updateMax(maxBytesBeforeWritable, runCatching { ctx.channel().bytesBeforeWritable() }.getOrDefault(0))
+        val outboundBytes = runCatching { ctx.channel().unsafe().outboundBuffer()?.totalPendingWriteBytes() ?: 0 }
+            .getOrDefault(0)
+        updateMax(maxChannelOutboundBytes, outboundBytes)
+    }
+
+    fun snapshot(): Snapshot =
+        Snapshot(
+            enqueuedSequences = enqueuedSequences.get(),
+            completedSequences = completedSequences.get(),
+            writeCalls = writeCalls.get(),
+            estimatedWriteBytes = estimatedWriteBytes.get(),
+            currentPendingSequences = currentPendingSequences.get(),
+            maxPendingSequences = maxPendingSequences.get(),
+            blockedDrainAttempts = blockedDrainAttempts.get(),
+            unwritableChannels = unwritableChannels.get(),
+            currentWriteFutures = currentWriteFutures.get(),
+            maxWriteFutures = maxWriteFutures.get(),
+            maxChannelOutboundBytes = maxChannelOutboundBytes.get(),
+            maxBytesBeforeWritable = maxBytesBeforeWritable.get()
+        )
+
+    private fun estimatedSize(msg: Any): Int =
+        when (msg) {
+            is Rpc.RPC -> msg.serializedSize
+            is ByteBuf -> msg.readableBytes()
+            else -> 0
+        }
+
+    private fun updateMax(max: AtomicLong, value: Long) {
+        while (true) {
+            val cur = max.get()
+            if (value <= cur) return
+            if (max.compareAndSet(cur, value)) return
+        }
+    }
+
+    data class Snapshot(
+        val enqueuedSequences: Long,
+        val completedSequences: Long,
+        val writeCalls: Long,
+        val estimatedWriteBytes: Long,
+        val currentPendingSequences: Long,
+        val maxPendingSequences: Long,
+        val blockedDrainAttempts: Long,
+        val unwritableChannels: Long,
+        val currentWriteFutures: Long,
+        val maxWriteFutures: Long,
+        val maxChannelOutboundBytes: Long,
+        val maxBytesBeforeWritable: Long
+    )
+}
 
 /**
  * Base class for a service which manages many streams from different peers
@@ -143,7 +273,8 @@ abstract class P2PService(
                     if (closed) {
                         result.completeExceptionally(ClosedChannelException())
                     } else {
-                        pendingWrites.add(PendingWrite(messageSupplier().iterator(), result))
+                        pendingWrites.add(PendingWrite(messageSupplier, result))
+                        P2PServiceWriteStats.onEnqueued(pendingWrites.size)
                         drainPendingWrites()
                     }
                 } catch (e: Exception) {
@@ -161,19 +292,23 @@ abstract class P2PService(
             while (context.channel().isWritable && pendingWrites.isNotEmpty()) {
                 val pendingWrite = pendingWrites.peek()
                 try {
-                    if (pendingWrite.iterator.hasNext()) {
-                        pendingWrite.write(context.write(pendingWrite.iterator.next()))
-                        flushed = true
-                    } else {
-                        pendingWrites.remove()
-                        pendingWrite.endOfInput()
-                    }
+                    val msg = pendingWrite.nextMessage()
+                    P2PServiceWriteStats.onWrite(msg)
+                    pendingWrite.write(context.write(msg))
+                    flushed = true
+                } catch (e: NoSuchElementException) {
+                    pendingWrites.remove()
+                    P2PServiceWriteStats.onSequenceRemoved()
+                    pendingWrite.endOfInput()
                 } catch (e: Exception) {
                     pendingWrites.remove()
+                    P2PServiceWriteStats.onSequenceRemoved()
                     pendingWrite.result.completeExceptionally(e)
                     onServiceException(peerHandler, null, e)
                 }
             }
+
+            P2PServiceWriteStats.onDrainBlocked(context, pendingWrites.size)
 
             if (flushed) {
                 context.flush()
@@ -182,23 +317,33 @@ abstract class P2PService(
 
         private fun failPendingWrites(cause: Throwable) {
             while (pendingWrites.isNotEmpty()) {
+                P2PServiceWriteStats.onSequenceRemoved()
                 pendingWrites.remove().result.completeExceptionally(cause)
             }
         }
 
         private inner class PendingWrite(
-            val iterator: Iterator<Any>,
+            private val sequenceSupplier: () -> Sequence<Any>,
             val result: CompletableFuture<Unit>
         ) {
+            private var iterator: Iterator<Any>? = null
+
             private var inputEnded = false
             private var pendingWriteFutures = 0
             private var failure: Throwable? = null
 
+            fun nextMessage(): Any {
+                val iterator = iterator ?: sequenceSupplier().iterator().also { iterator = it }
+                return iterator.next()
+            }
+
             fun write(writeFuture: ChannelFuture) {
                 pendingWriteFutures++
+                P2PServiceWriteStats.onWriteFutureStarted()
                 writeFuture.addListener {
                     runOnEventThread(peerHandler) {
                         pendingWriteFutures--
+                        P2PServiceWriteStats.onWriteFutureDone()
                         if (!it.isSuccess && failure == null) {
                             failure = it.cause()
                         }
@@ -217,6 +362,7 @@ abstract class P2PService(
 
                 val cause = failure
                 if (cause == null) {
+                    P2PServiceWriteStats.onSequenceCompleted()
                     result.complete(Unit)
                 } else {
                     result.completeExceptionally(cause)

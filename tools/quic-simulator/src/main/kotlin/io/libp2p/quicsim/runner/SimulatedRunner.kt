@@ -30,7 +30,9 @@ import io.netty.channel.socket.DatagramPacket
 import java.security.SecureRandom
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.BiFunction
 import kotlin.time.Duration
@@ -185,6 +187,7 @@ class SimulatedRunner(
 //        startHosts(nodesStuff.map { it.host })
         logger.log("Starting programs...")
         val startFuture = startPrograms(nodesStuff)
+        val programsStartedWallNanos = AtomicLong(-1)
         nodeHeapProfiler.sample("after_start_programs_scheduled", simTimer.elapsedTime(), nodesStuff)
         startFuture.handle { _, throwable ->
             if (throwable != null) {
@@ -192,6 +195,7 @@ class SimulatedRunner(
                 throwable.printStackTrace()
                 throw throwable
             } else {
+                programsStartedWallNanos.compareAndSet(-1, System.nanoTime())
                 logger.log("All connected and all programs are started.")
             }
         }
@@ -213,13 +217,48 @@ class SimulatedRunner(
 
             if (latencyWindowParallelism > 0) {
                 val parallelBridge = simPacketPump as ParallelSimPacketBridge
+                val simTimeCheckpoint = System.getProperty("quicsim.profile.simTimeCheckpointSeconds")
+                    ?.toLongOrNull()
+                    ?.seconds
+                    ?: 30.seconds
+                val checkpointWallNanos = AtomicLong(-1)
+                val stopAtCheckpoint = AtomicBoolean(false)
+                val stopAtCheckpointEnabled = System.getProperty("quicsim.profile.stopAtCheckpoint").toBoolean()
                 parallelBridge.advanceWhile(
-                    predicate = { completedCount.get() < nodePrograms.size && simTimer.elapsedTime() < maxSimulatedRunDuration },
+                    predicate = {
+                        !stopAtCheckpoint.get() &&
+                            (stopAtCheckpointEnabled || completedCount.get() < nodePrograms.size) &&
+                            simTimer.elapsedTime() < maxSimulatedRunDuration
+                    },
                     afterTimeAdvanced = { simTime ->
                         nodeHeapProfiler.maybeSample("parallel_periodic", simTime, nodesStuff)
+                        if (simTime >= simTimeCheckpoint && checkpointWallNanos.compareAndSet(-1, System.nanoTime())) {
+                            val startedAt = programsStartedWallNanos.get()
+                            val wallSinceProgramsStartedMillis =
+                                if (startedAt >= 0) {
+                                    (checkpointWallNanos.get() - startedAt) / 1_000_000
+                                } else {
+                                    -1
+                                }
+                            logger.log(
+                                "Sim time checkpoint reached: " +
+                                    "checkpoint=${simTimeCheckpoint.inWholeSeconds}s " +
+                                    "wallSinceProgramsStarted=${wallSinceProgramsStartedMillis}ms"
+                            )
+                            if (stopAtCheckpointEnabled) {
+                                stopAtCheckpoint.set(true)
+                            }
+                        }
                     }
                 )
                 nodeHeapProfiler.sample("after_parallel_advance", simTimer.elapsedTime(), nodesStuff)
+                if (stopAtCheckpoint.get()) {
+                    logger.log(
+                        "Stopped at sim time checkpoint; " +
+                            "completed=${completedCount.get()}/${nodePrograms.size}"
+                    )
+                    return
+                }
 
             } else {
 
@@ -291,7 +330,7 @@ class SimulatedRunner(
                 return { defaultQuicAllocator }
             }
 
-            val targetAllocator = quicAllocatorFromSystemProperties()
+            val targetAllocator = quicAllocatorFromSystemProperties("quicsim.nodeHeapProfile.allocator", "unpooled")
             return { nodeId ->
                 if (nodeId == targetNodeId) {
                     targetAllocator
@@ -301,11 +340,14 @@ class SimulatedRunner(
             }
         }
 
-        private fun quicAllocatorFromSystemProperties(): ByteBufAllocator =
-            when (val allocatorMode = System.getProperty("quicsim.profile.allocator", "unpooled")) {
+        private fun quicAllocatorFromSystemProperties(
+            propertyName: String = "quicsim.profile.allocator",
+            defaultMode: String = "adaptive"
+        ): ByteBufAllocator =
+            when (val allocatorMode = System.getProperty(propertyName, defaultMode)) {
                 "adaptive" -> AdaptiveByteBufAllocator()
                 "unpooled" -> UnpooledByteBufAllocator(true)
-                else -> error("Unsupported quicsim.profile.allocator=$allocatorMode")
+                else -> error("Unsupported $propertyName=$allocatorMode")
             }
     }
 }

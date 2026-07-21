@@ -16,7 +16,7 @@ class InboundCongestionBatchReportTest {
     @Test
     fun `write simulated inbound congestion packet batch csv`() {
         writeBatchCsv(
-            result = SimulatedQuicScenarioRunner(latencyWindowParallelism = 20).run(QuicScenarios.inboundCongestion()),
+            result = SimulatedQuicScenarioRunner(latencyWindowParallelism = 32).run(QuicScenarios.inboundCongestion()),
             outputPath = outputDir().resolve("inbound-congestion-simulated-batches.csv")
         )
     }
@@ -25,7 +25,7 @@ class InboundCongestionBatchReportTest {
     fun `write simulated inbound congestion fq codel packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.FQ_CODEL
             ).run(QuicScenarios.inboundCongestion()),
             outputPath = outputDir().resolve("inbound-congestion-fq-codel-simulated-batches.csv")
@@ -36,7 +36,7 @@ class InboundCongestionBatchReportTest {
     fun `write simulated inbound congestion codel packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.CODEL
             ).run(QuicScenarios.inboundCongestion()),
             outputPath = outputDir().resolve("inbound-congestion-codel-simulated-batches.csv")
@@ -47,7 +47,7 @@ class InboundCongestionBatchReportTest {
     fun `write simulated inbound congestion shadow like packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
             ).run(QuicScenarios.inboundCongestion()),
             outputPath = outputDir().resolve("inbound-congestion-shadow-like-simulated-batches.csv")
@@ -72,7 +72,7 @@ class InboundCongestionBatchReportTest {
     fun `write simulated inbound congestion shadow like packet receipt csv`() {
         writePacketReceiptCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
             ).run(QuicScenarios.inboundCongestion()),
             outputPath = outputDir().resolve("inbound-congestion-shadow-like-simulated-packet-receipts.csv")
@@ -97,7 +97,7 @@ class InboundCongestionBatchReportTest {
     fun `write simulated outbound congestion shadow like packet batch csv`() {
         writeBatchCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 bandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
             ).run(QuicScenarios.outboundCongestion()),
             outputPath = outputDir().resolve("outbound-congestion-shadow-like-simulated-batches.csv")

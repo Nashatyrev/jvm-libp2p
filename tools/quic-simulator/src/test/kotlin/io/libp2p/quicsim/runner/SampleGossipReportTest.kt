@@ -19,7 +19,7 @@ import kotlin.time.Duration
 class SampleGossipReportTest {
     @Test
     fun `write simulated sample gossip message receipt csv`() {
-        val result = SimulatedQuicScenarioRunner(latencyWindowParallelism = 20).run(sampleGossip100())
+        val result = SimulatedQuicScenarioRunner(latencyWindowParallelism = 32).run(sampleGossip100())
 
         writeMessagePublicationCsv(
             result = result,
@@ -54,7 +54,7 @@ class SampleGossipReportTest {
 
     @Test
     fun `write simulated sample gossip 20 sync publish message receipt csv`() {
-        val result = SimulatedQuicScenarioRunner(latencyWindowParallelism = 20)
+        val result = SimulatedQuicScenarioRunner(latencyWindowParallelism = 32)
             .run(QuicScenarios.sampleGossip20SyncPublish())
 
         writeMessagePublicationCsv(
@@ -92,7 +92,7 @@ class SampleGossipReportTest {
     fun `write simulated sample gossip large message receipt csv`() {
         writeMessageReceiptCsv(
             result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 random = simulatorRandom()
             ).run(sampleGossip100LargeMessages()),
             outputPath = outputDir().resolve(
@@ -110,7 +110,7 @@ class SampleGossipReportTest {
             val gossipSeedBase = seedBase * 10 + runIndex * 1_001L
             val simulatorSeed = seedBase * 100 + runIndex * 10_001L
             val result = SimulatedQuicScenarioRunner(
-                latencyWindowParallelism = 20,
+                latencyWindowParallelism = 32,
                 random = seededSecureRandom(simulatorSeed)
             ).run(
                 QuicScenarios.sampleGossip100LargeMessages(

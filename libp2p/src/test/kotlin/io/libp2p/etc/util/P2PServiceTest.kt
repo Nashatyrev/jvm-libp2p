@@ -85,6 +85,51 @@ class P2PServiceTest {
     }
 
     @Test
+    fun `enqueueWrite pulls sequence with next without probing hasNext`() {
+        val serviceThreadName = "p2p-service-test"
+        val executor = Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, serviceThreadName)
+        }
+
+        try {
+            val service = TestP2PService(executor)
+            service.addNewStream(StreamStub())
+            service.awaitEventThread()
+
+            val calls = mutableListOf<String>()
+            val result = service.streamHandler.enqueueWrite(
+                object : Sequence<Any> {
+                    override fun iterator(): Iterator<Any> =
+                        object : Iterator<Any> {
+                            private var emitted = false
+
+                            override fun hasNext(): Boolean {
+                                error("hasNext should not be used to pull queued writes")
+                            }
+
+                            override fun next(): Any {
+                                calls += "next:${Thread.currentThread().name}"
+                                if (!emitted) {
+                                    emitted = true
+                                    return "message"
+                                }
+                                throw NoSuchElementException()
+                            }
+                        }
+                }
+            )
+            service.awaitEventThread()
+            result.get(5, TimeUnit.SECONDS)
+
+            assertThat(calls).containsExactly("next:$serviceThreadName", "next:$serviceThreadName")
+            assertThat(service.channel.readOutbound<String>()).isEqualTo("message")
+            assertThat(service.channel.readOutbound<String>()).isNull()
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `enqueueWrite resumes sequence when channel becomes writable`() {
         val executor = Executors.newSingleThreadScheduledExecutor()
         val backpressure = OneWriteBackpressureHandler()

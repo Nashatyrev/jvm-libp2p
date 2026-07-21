@@ -99,7 +99,7 @@ class GossipPubsubRouterTest : PubsubRouterTest(
         // test the history roll up
         fuzz.timeController.addTime(Duration.ofSeconds(100))
 
-        val msg2 = newMessage("topic1", 1L, "Hello".toByteArray())
+        val msg2 = newMessage("topic1", 1L, "Hello-1".toByteArray())
         routerCenter.router.publish(msg2)
 
         // all routers should receive after 100 sec
