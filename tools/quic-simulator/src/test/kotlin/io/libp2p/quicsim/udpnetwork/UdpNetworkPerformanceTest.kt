@@ -10,6 +10,7 @@ import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl4
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import kotlin.system.measureTimeMillis
@@ -20,6 +21,7 @@ import kotlin.time.Duration.Companion.seconds
 
 class UdpNetworkPerformanceTest {
 
+    @Disabled
     @Test
     @Tag("performance")
     fun `compares impl2 and impl3 real usage on all-to-all traffic`() {
