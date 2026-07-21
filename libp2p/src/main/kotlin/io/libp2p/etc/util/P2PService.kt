@@ -273,7 +273,7 @@ abstract class P2PService(
                     if (closed) {
                         result.completeExceptionally(ClosedChannelException())
                     } else {
-                        pendingWrites.add(PendingWrite(messageSupplier().iterator(), result))
+                        pendingWrites.add(PendingWrite(messageSupplier, result))
                         P2PServiceWriteStats.onEnqueued(pendingWrites.size)
                         drainPendingWrites()
                     }
@@ -292,16 +292,14 @@ abstract class P2PService(
             while (context.channel().isWritable && pendingWrites.isNotEmpty()) {
                 val pendingWrite = pendingWrites.peek()
                 try {
-                    if (pendingWrite.iterator.hasNext()) {
-                        val msg = pendingWrite.iterator.next()
-                        P2PServiceWriteStats.onWrite(msg)
-                        pendingWrite.write(context.write(msg))
-                        flushed = true
-                    } else {
-                        pendingWrites.remove()
-                        P2PServiceWriteStats.onSequenceRemoved()
-                        pendingWrite.endOfInput()
-                    }
+                    val msg = pendingWrite.nextMessage()
+                    P2PServiceWriteStats.onWrite(msg)
+                    pendingWrite.write(context.write(msg))
+                    flushed = true
+                } catch (e: NoSuchElementException) {
+                    pendingWrites.remove()
+                    P2PServiceWriteStats.onSequenceRemoved()
+                    pendingWrite.endOfInput()
                 } catch (e: Exception) {
                     pendingWrites.remove()
                     P2PServiceWriteStats.onSequenceRemoved()
@@ -325,12 +323,19 @@ abstract class P2PService(
         }
 
         private inner class PendingWrite(
-            val iterator: Iterator<Any>,
+            private val sequenceSupplier: () -> Sequence<Any>,
             val result: CompletableFuture<Unit>
         ) {
+            private var iterator: Iterator<Any>? = null
+
             private var inputEnded = false
             private var pendingWriteFutures = 0
             private var failure: Throwable? = null
+
+            fun nextMessage(): Any {
+                val iterator = iterator ?: sequenceSupplier().iterator().also { iterator = it }
+                return iterator.next()
+            }
 
             fun write(writeFuture: ChannelFuture) {
                 pendingWriteFutures++
