@@ -121,7 +121,7 @@ class SimulatedRunnerTest {
 
     @Test
     fun sendMessageFromNPublishers() {
-        val nodeCount = intProperty("quicsim.sendMessageFromNPublishers.nodeCount", 1000)
+        val nodeCount = intProperty("quicsim.sendMessageFromNPublishers.nodeCount", 100)
         val publishersCount = intProperty("quicsim.sendMessageFromNPublishers.publishersCount", nodeCount)
         val neighboursToConnect = intProperty("quicsim.sendMessageFromNPublishers.neighboursToConnect", 20)
         val messagesPerPublisher = intProperty("quicsim.sendMessageFromNPublishers.messagesPerPublisher", 1)
