@@ -7,7 +7,9 @@ import io.libp2p.quicsim.udpnetwork.UdpSimLink
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
-import io.libp2p.quicsim.udpnetwork.UdpSimPacket
+import io.libp2p.quicsim.udpnetwork.udpSimDestinationNodeId
+import io.libp2p.quicsim.udpnetwork.udpSimSourceNodeId
+import io.netty.channel.socket.DatagramPacket
 import kotlin.collections.plusAssign
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.ZERO
@@ -23,7 +25,7 @@ class UdpSimNetworkEngineImpl3(
     val idToNodeMap = network.nodes.associateBy { it.id }
     data class WrappedLink(
         val link: UdpSimLink,
-        val wrapper: PacketProcessorB<UdpSimPacket> = PacketProcessorB(link.qdisc)
+        val wrapper: PacketProcessorB<DatagramPacket> = PacketProcessorB(link.qdisc)
     )
     private val wrappedLinks = network.links
         .map { WrappedLink(it) }
@@ -47,10 +49,10 @@ class UdpSimNetworkEngineImpl3(
         }
     }
 
-    private fun findNextLink(fromLink: UdpSimLink?, packet: UdpSimPacket): Pair<UdpSimNode, UdpSimNode>? {
-        val srcHopNode = fromLink?.to ?: idToNodeMap[packet.srcNodeId]!!
+    private fun findNextLink(fromLink: UdpSimLink?, packet: DatagramPacket): Pair<UdpSimNode, UdpSimNode>? {
+        val srcHopNode = fromLink?.to ?: idToNodeMap[packet.udpSimSourceNodeId()]!!
         val nextHopNode = routeResolver.findNextHop(
-            srcHopNode, idToNodeMap[packet.dstNodeId]!!
+            srcHopNode, idToNodeMap[packet.udpSimDestinationNodeId()]!!
         )
         return if (nextHopNode != null) {
             srcHopNode to nextHopNode
@@ -59,7 +61,7 @@ class UdpSimNetworkEngineImpl3(
         }
     }
 
-    private fun deliverInbound(packet: UdpSimPacket, fromLink: UdpSimLink?, deliveredPackets: MutableList<UdpSimPacket>) {
+    private fun deliverInbound(packet: DatagramPacket, fromLink: UdpSimLink?, deliveredPackets: MutableList<DatagramPacket>) {
         val linkKey = findNextLink(fromLink, packet)
         if (linkKey == null) {
             deliveredPackets += packet
@@ -73,10 +75,10 @@ class UdpSimNetworkEngineImpl3(
         }
     }
 
-    override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> = TODO("Shouldn't be called")
+    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> = TODO("Shouldn't be called")
 
     private fun deliverImpl() {
-        val deliveredPackets: MutableList<UdpSimPacket> = mutableListOf()
+        val deliveredPackets: MutableList<DatagramPacket> = mutableListOf()
 
         @Suppress("ControlFlowWithEmptyBody")
         while (

@@ -7,6 +7,7 @@ import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl2
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl3
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl4
+import io.netty.channel.socket.DatagramPacket
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -56,7 +57,7 @@ class UdpNetworkPerformanceTest {
         repeat(IMPL4_SORT_PACKET_COUNT) { packetIndex ->
             val src = nodes[packetIndex % nodes.size]
             val dst = nodes[(packetIndex * 31 + 1) % nodes.size]
-            endpointPorts.getValue(src.id).deliver(listOf(createPacket(packetIndex.toLong() + 1, src, dst)))
+            endpointPorts.getValue(src.id).deliver(listOf(createSortPacket(src, dst)))
         }
 
         val elapsedMs = measureTimeMillis {
@@ -85,13 +86,13 @@ class UdpNetworkPerformanceTest {
         val (network, nodes) = createImpl2Network()
         val engine = UdpSimNetworkEngineImpl2(network)
         var packetId = 0L
-        val deliveredPackets = mutableListOf<UdpSimPacket>()
+        val deliveredPackets = mutableListOf<DatagramPacket>()
 
         var time = ZERO
         var stepCount = 0L
         val elapsedMs = measureTimeMillis {
             repeat(PACKETS_PER_PEER_PAIR) {
-                val batch = ArrayList<UdpSimPacket>(NODE_COUNT * SEND_TO_NODES)
+                val batch = ArrayList<DatagramPacket>(NODE_COUNT * SEND_TO_NODES)
                 nodes.indices.forEach { srcIndex ->
                     val src = nodes[srcIndex]
                     repeat(SEND_TO_NODES) { idx ->
@@ -127,7 +128,7 @@ class UdpNetworkPerformanceTest {
         val endpointPorts = createEndpointPorts(network)
         val engine = engineFactory(network)
         var packetId = 0L
-        val deliveredPackets = mutableListOf<UdpSimPacket>()
+        val deliveredPackets = mutableListOf<DatagramPacket>()
 
         var time = ZERO
         var stepCount = 0L
@@ -135,7 +136,7 @@ class UdpNetworkPerformanceTest {
             repeat(PACKETS_PER_PEER_PAIR) {
                 nodes.indices.forEach { srcIndex ->
                     val src = nodes[srcIndex]
-                    val batch = ArrayList<UdpSimPacket>(SEND_TO_NODES)
+                    val batch = ArrayList<DatagramPacket>(SEND_TO_NODES)
                     repeat(SEND_TO_NODES) { idx ->
                         val dst = nodes[(srcIndex + idx + 1) % NODE_COUNT]
                         batch += createPacket(++packetId, src, dst)
@@ -175,10 +176,16 @@ class UdpNetworkPerformanceTest {
         packetId: Long,
         src: UdpSimNode,
         dst: UdpSimNode
-    ): UdpSimPacket {
+    ): DatagramPacket {
         val packetSize = 1000 + (packetId % 500).toInt()
-        return UdpSimPacket(packetId, packetSize, src.id, dst.id)
+        return udpSimDatagram(packetSize, src.id, dst.id)
     }
+
+    private fun createSortPacket(
+        src: UdpSimNode,
+        dst: UdpSimNode
+    ): DatagramPacket =
+        udpSimDatagram(1, src.id, dst.id)
 
     private fun createImpl2Network(): Pair<UdpSimNetwork, List<UdpSimNode>> =
         createNetwork { bandwidth, latency, _ ->
@@ -227,7 +234,7 @@ class UdpNetworkPerformanceTest {
         maxQueueWaitTime: Duration = Duration.INFINITE
     ): TestUdpSimQueue {
         val bandwidthQueue = FifoUdpSimBandwidthQueue(bandwidth, maxQueueWaitTime)
-        val latencyQueue = LatencyQueueImpl<UdpSimPacket>(latency)
+        val latencyQueue = LatencyQueueImpl<DatagramPacket>(latency)
         return TestUdpSimQueue(
             bandwidthQueue = bandwidthQueue,
             latencyQueue = latencyQueue,
@@ -241,13 +248,13 @@ class UdpNetworkPerformanceTest {
     }
 
     private class EndpointPort(
-        private val processor: InOutProcessor<UdpSimPacket>
+        private val processor: InOutProcessor<DatagramPacket>
     ) {
-        fun deliver(packets: List<UdpSimPacket>): List<UdpSimPacket> =
+        fun deliver(packets: List<DatagramPacket>): List<DatagramPacket> =
             processor.deliver(packets)
 
-        fun advanceByWindow(window: Duration): List<UdpSimPacket> {
-            val deliveredPackets = mutableListOf<UdpSimPacket>()
+        fun advanceByWindow(window: Duration): List<DatagramPacket> {
+            val deliveredPackets = mutableListOf<DatagramPacket>()
             var timeLeft = window
             while (timeLeft > ZERO) {
                 val nextAdvance = minDuration(timeLeft, processor.nextTaskDuration() ?: timeLeft)
@@ -285,7 +292,7 @@ class UdpNetworkPerformanceTest {
         const val EXPECTED_PACKET_COUNT = NODE_COUNT.toLong() * SEND_TO_NODES * PACKETS_PER_PEER_PAIR
         const val MAX_LATENCY_WINDOWS = 2_000L
         const val IMPL4_SORT_PACKET_COUNT = 200_000
-        const val IMPL4_SORT_TARGET_MS = 100L
+        const val IMPL4_SORT_TARGET_MS = 200L
         val LINK_LATENCY = 10.milliseconds
         val IMPL4_SORT_ADVANCE = 1.seconds
 

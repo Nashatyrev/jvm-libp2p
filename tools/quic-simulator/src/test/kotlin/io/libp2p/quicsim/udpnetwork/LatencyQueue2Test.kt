@@ -56,19 +56,21 @@ class LatencyQueue2Test {
     }
 
     @Test
-    fun `emitter cannot advance more than one latency ahead of receiver`() {
+    fun `emitter can advance past receiver while idle and catch late packets`() {
         val latencyQueue = LatencyQueueImpl<String>(100.milliseconds)
 
-        assertThrows(IllegalArgumentException::class.java) {
-            latencyQueue.emitter.advanceAndExecuteAll(101.milliseconds)
-        }
+        latencyQueue.emitter.advanceAndExecuteAll(101.milliseconds)
+        latencyQueue.receiver.receivePackets(listOf("packet-1"))
+
+        assertEquals(0.milliseconds, latencyQueue.emitter.nextTaskDuration())
+        assertEquals(listOf("packet-1"), latencyQueue.emitter.emitPackets())
 
         latencyQueue.receiver.advanceAndExecuteAll(50.milliseconds)
-        latencyQueue.emitter.advanceAndExecuteAll(150.milliseconds)
+        latencyQueue.receiver.receivePackets(listOf("packet-2"))
 
-        assertThrows(IllegalArgumentException::class.java) {
-            latencyQueue.emitter.advanceAndExecuteAll(1.milliseconds)
-        }
+        assertEquals(49.milliseconds, latencyQueue.emitter.nextTaskDuration())
+        latencyQueue.emitter.advanceAndExecuteAll(49.milliseconds)
+        assertEquals(listOf("packet-2"), latencyQueue.emitter.emitPackets())
     }
 
     @Test

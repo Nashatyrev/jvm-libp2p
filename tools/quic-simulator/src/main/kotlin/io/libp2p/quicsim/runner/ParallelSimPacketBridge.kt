@@ -2,7 +2,6 @@ package io.libp2p.quicsim.runner
 
 import io.libp2p.quicsim.core.ControllablePacketPump
 import io.libp2p.quicsim.core.InOutProcessor
-import io.libp2p.quicsim.core.MappingPacketProcessor.Companion.map
 import io.libp2p.quicsim.core.schedule.Controllable.Companion.advanceAndExecuteUntil
 import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.sim.SimNode
@@ -16,9 +15,8 @@ import kotlin.time.Duration.Companion.milliseconds
 class ParallelSimPacketBridge(
     val simNet: SimNet<DatagramPacket>,
     val udpNet: UdpSimNetwork,
-    val idAndIp: Collection<IdMapEntry>,
     val parallelism: Int,
-) : AbstractSimPacketBridge(idAndIp) {
+) : AbstractSimPacketBridge() {
     init {
         require(parallelism > 0) { "parallelism must be positive" }
     }
@@ -50,10 +48,8 @@ class ParallelSimPacketBridge(
 
     private fun createAllNodes(): List<SimNodeWithUdpLinks> {
         val simNodeByIp = simNet.allNodes.associateBy { it.ip }
-        val udpNodeById = udpNet.nodes.associateBy { it.id }
-        val nodesWithLinks = idAndIp.map { (id, ip) ->
-            val simNode = simNodeByIp[ip]!!
-            val udpNode = udpNodeById[id]!!
+        val nodesWithLinks = udpNet.nodes.map { udpNode ->
+            val simNode = simNodeByIp[udpNode.id]!!
             createSimNodeWithUdpLinks(simNode, udpNode)
         }
         return nodesWithLinks
@@ -67,9 +63,7 @@ class ParallelSimPacketBridge(
         val outboundReceiver = outboundUdpLink.latencyQueue.receiver
 
         val aheadProcessor = InOutProcessor(inboundEmitter, outboundReceiver)
-        val aheadProcessorSim =
-            aheadProcessor.map(nettyDatagramToSimUdpPacketConverter, simUdpPacketToNettyDatagramConverter)
-        val controllable = ControllablePacketPump(simNode, aheadProcessorSim)
+        val controllable = ControllablePacketPump(simNode, aheadProcessor)
         return SimNodeWithUdpLinks(udpNode.id, simNode, controllable)
     }
 

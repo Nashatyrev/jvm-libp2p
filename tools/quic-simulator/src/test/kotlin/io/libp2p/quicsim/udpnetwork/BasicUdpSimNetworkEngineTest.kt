@@ -3,6 +3,7 @@ package io.libp2p.quicsim.udpnetwork
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimLinks
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
+import io.netty.channel.socket.DatagramPacket
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Disabled
@@ -28,21 +29,21 @@ class BasicUdpSimNetworkEngineTest {
                         .links
             ))
 
-        val packet = UdpSimPacket(1, 100, "a", "b")
+        val packet = udpSimDatagram(100, "a", "b")
 
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(listOf(packet)))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(listOf(packet)))
         assertEquals(100.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(100.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(emptyList()))
         assertEquals(10.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(10.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(emptyList()))
         assertEquals(100.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(100.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(emptyList()))
         assertEquals(10.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(10.milliseconds)
@@ -65,7 +66,7 @@ class BasicUdpSimNetworkEngineTest {
                         .links
             )
         )
-        val packet = UdpSimPacket(1, 100, "a", "a")
+        val packet = udpSimDatagram(100, "a", "a")
 
         assertThrows(IllegalStateException::class.java) {
             engine.deliver(listOf(packet))
@@ -88,13 +89,13 @@ class BasicUdpSimNetworkEngineTest {
                         .links
             )
         )
-        val packet1 = UdpSimPacket(1, 100, "a", "b")
-        val packet2 = UdpSimPacket(2, 100, "a", "b")
+        val packet1 = udpSimDatagram(100, "a", "b")
+        val packet2 = udpSimDatagram(100, "a", "b")
 
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(listOf(packet1, packet2)))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(listOf(packet1, packet2)))
         assertEquals(100.milliseconds, engine.nextTaskDuration())
 
-        val delivered = mutableListOf<UdpSimPacket>()
+        val delivered = mutableListOf<DatagramPacket>()
         while (engine.nextTaskDuration() != null) {
             engine.advanceAndExecuteAll(engine.nextTaskDuration()!!)
             delivered += engine.deliver(emptyList())
@@ -119,22 +120,22 @@ class BasicUdpSimNetworkEngineTest {
                         .links
             )
         )
-        val packetAb = UdpSimPacket(1, 100, "a", "b")
-        val packetBa = UdpSimPacket(2, 100, "b", "a")
+        val packetAb = udpSimDatagram(100, "a", "b")
+        val packetBa = udpSimDatagram(100, "b", "a")
 
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(listOf(packetAb, packetBa)))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(listOf(packetAb, packetBa)))
         assertEquals(100.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(100.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(emptyList()))
         assertEquals(10.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(10.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(emptyList()))
         assertEquals(100.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(100.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(emptyList()))
         assertEquals(10.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(10.milliseconds)
@@ -160,26 +161,26 @@ class BasicUdpSimNetworkEngineTest {
                         .links
             )
         )
-        val packetAb = UdpSimPacket(1, 100, "a", "b")
-        val packetAc = UdpSimPacket(2, 100, "a", "c")
+        val packetAb = udpSimDatagram(100, "a", "b")
+        val packetAc = udpSimDatagram(100, "a", "c")
 
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(listOf(packetAb, packetAc)))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(listOf(packetAb, packetAc)))
         assertEquals(100.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(100.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(emptyList()))
         assertEquals(10.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(10.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(emptyList()))
         assertEquals(90.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(90.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(emptyList()))
         assertEquals(10.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(10.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(emptyList()))
         assertEquals(10.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(10.milliseconds)
@@ -187,7 +188,7 @@ class BasicUdpSimNetworkEngineTest {
         assertEquals(90.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(90.milliseconds)
-        assertEquals(emptyList<UdpSimPacket>(), engine.deliver(emptyList()))
+        assertEquals(emptyList<DatagramPacket>(), engine.deliver(emptyList()))
         assertEquals(10.milliseconds, engine.nextTaskDuration())
 
         engine.advanceAndExecuteAll(10.milliseconds)

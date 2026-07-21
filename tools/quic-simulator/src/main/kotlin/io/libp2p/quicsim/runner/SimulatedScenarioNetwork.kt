@@ -5,21 +5,25 @@ import io.libp2p.quicsim.core.PacketReceiver.Companion.createPacketProcessorAdap
 import io.libp2p.quicsim.core.SerialPacketProcessor
 import io.libp2p.quicsim.core.schedule.impl.LatencyQueueImpl
 import io.libp2p.quicsim.scenario.QuicNetworkLink
+import io.libp2p.quicsim.scenario.QuicNetworkHost
 import io.libp2p.quicsim.scenario.QuicNetworkTopology
 import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.UdpSimLink
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
-import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.impl.CodelUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FqCodelUdpSimBandwidthQueue
+import io.netty.channel.socket.DatagramPacket
 
 internal fun QuicNetworkTopology.toUdpSimNetwork(
-    bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
+    bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE,
+    hostIdMapper: (Int, QuicNetworkHost) -> String = { _, host -> host.id }
 ): UdpSimNetwork {
-    val udpHosts = hosts.associate { it.id to UdpSimNode(it.id) }
+    val udpHosts = hosts.mapIndexed { index, host ->
+        host.id to UdpSimNode(hostIdMapper(index, host))
+    }.toMap()
     val udpRouters = routers.associate { it.id to UdpSimNode(it.id) }
     val udpNodesById = udpHosts + udpRouters
     val hostIds = udpHosts.keys
@@ -53,7 +57,7 @@ fun QuicNetworkLink.toUdpSimLink(
             CodelUdpSimBandwidthQueue(bandwidth)
         }
     }
-    val latencyQueue = LatencyQueueImpl<UdpSimPacket>(this.latency)
+    val latencyQueue = LatencyQueueImpl<DatagramPacket>(this.latency)
     val qdisc = if (isFromEndpoint)
         SerialPacketProcessor(
             listOf(

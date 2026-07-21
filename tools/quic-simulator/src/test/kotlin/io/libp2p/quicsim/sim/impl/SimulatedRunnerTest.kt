@@ -21,6 +21,7 @@ import io.libp2p.quicsim.program.DataChunkNodeProgramFactory
 import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
 import io.libp2p.quicsim.program.SampleGossipNodeProgram
+import io.libp2p.quicsim.runner.IPManager
 import io.libp2p.quicsim.runner.SimulatedRunner
 import io.libp2p.quicsim.runner.SimulatedQuicScenarioRunner
 import io.libp2p.quicsim.scenario.QuicScenarios
@@ -31,7 +32,6 @@ import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.TestStarNetworkBuilder2
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
-import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.TestUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.TestQDiscFactory
@@ -39,7 +39,6 @@ import io.libp2p.quicsim.udpnetwork.fifoUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.latencyThenBandwidthUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl2
-import io.libp2p.quicsim.runner.AbstractSimPacketBridge
 import io.netty.buffer.AdaptiveByteBufAllocator
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.ByteBufAllocator
@@ -92,7 +91,7 @@ class SimulatedRunnerTest {
         val publisherCount = 5
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val networkBuilder = TestStarNetworkBuilder2()
-        (0 until nodeCount).map { networkBuilder.node("node-$it") }
+        networkBuilder.addIpNodes(nodeCount)
         val qdiscFactory = fifoQDiscFactory(Bandwidth(1_000_000L))
         networkBuilder.linkAllToRouter(50.milliseconds, qdiscFactory)
 
@@ -148,7 +147,6 @@ class SimulatedRunnerTest {
         val rssStats = RssStatsSampler()
         val allocatorMode = System.getProperty("quicsim.profile.allocator", "adaptive")
         val forceHeapByteBufs = System.getProperty("quicsim.profile.heapByteBufs").toBoolean()
-        val bridgeHeapPayloads = System.getProperty("quicsim.bridge.heapPayloads").toBoolean()
         val useSharedAllocator = System.getProperty("quicsim.profile.sharedAllocator").toBoolean()
         val globalAllocator =
             if (useSharedAllocator) {
@@ -183,7 +181,7 @@ class SimulatedRunnerTest {
         ProtobufFrameDecoderStats.reset()
         GossipRpcFrameStats.reset()
         val networkBuilder = TestStarNetworkBuilder2()
-        (0 until nodeCount).map { networkBuilder.node("node-$it") }
+        networkBuilder.addIpNodes(nodeCount)
         val qdiscFactory = fifoQDiscFactory(bandwidth)
         networkBuilder.linkAllToRouter(halfLatency, qdiscFactory).build()
         val udpNetwork = networkBuilder.build()
@@ -222,7 +220,6 @@ class SimulatedRunnerTest {
             }
         )
 
-        AbstractSimPacketBridge.resetBridgeDirectCopyStats()
         directBufferStats.start()
         unpooledAllocatorStats.start()
         defaultAllocatorStats.start()
@@ -254,12 +251,10 @@ class SimulatedRunnerTest {
         profiledNodeId?.let {
             println("Profiled node allocator: nodeId=$it mode=${if (forceHeapByteBufs) "heap" else profiledAllocatorMode}")
         }
-        println("Bridge payload mode: ${if (bridgeHeapPayloads) "heap" else "bytebuf-ref"}")
         println("Packet stats: ${packetStats.snapshot()}")
         println("Direct buffer stats: ${directBufferStats.snapshot()}")
         println("Unpooled allocator stats: ${unpooledAllocatorStats.snapshot()}")
         println("Default allocator stats: ${defaultAllocatorStats.snapshot()}")
-        println("Bridge direct copy stats: ${AbstractSimPacketBridge.bridgeDirectCopyStatsSnapshot()}")
         println("P2P write stats: ${P2PServiceWriteStats.snapshot()}")
         println("Protobuf frame decoder stats: ${ProtobufFrameDecoderStats.snapshot()}")
         println("Gossip RPC frame stats: ${GossipRpcFrameStats.snapshot()}")
@@ -369,7 +364,7 @@ class SimulatedRunnerTest {
         )
 
         val builder = TestStarNetworkBuilder2()
-        (0 until nodeCount).forEach { builder.node("node-$it") }
+        builder.addIpNodes(nodeCount)
         builder.linkAllToRouter(
             10.milliseconds,
             qdiscFactory = fifoQDiscFactory(Bandwidth(1_000_000L))
@@ -415,7 +410,7 @@ class SimulatedRunnerTest {
         )
 
         val builder = TestStarNetworkBuilder2()
-        (0 until nodeCount).forEach { builder.node("node-$it") }
+        builder.addIpNodes(nodeCount)
         builder.linkAllToRouter(
             latency = 100.milliseconds,
             qdiscFactory = fifoQDiscFactory(Bandwidth(1_000_000L))
@@ -490,8 +485,7 @@ class SimulatedRunnerTest {
     @Test
     fun `2 nodes connect to each other`() {
         val builder = TestStarNetworkBuilder2()
-        builder.node("node-0")
-        builder.node("node-1")
+        builder.addIpNodes(2)
         builder.linkAllToRouter(
             100.milliseconds,
             qdiscFactory = fifoQDiscFactory(Bandwidth(10_000L))
@@ -578,8 +572,7 @@ class SimulatedRunnerTest {
         val receivedSize = CompletableFuture<Int>()
 
         val builder = TestStarNetworkBuilder2()
-        builder.node("node-0")
-        builder.node("node-1")
+        builder.addIpNodes(2)
         builder.linkAllToRouter(
             linkLatencyMs.milliseconds,
             qdiscFactory = fifoQDiscFactory(Bandwidth(bandwidthBytesPerSec))
@@ -1823,7 +1816,7 @@ class SimulatedRunnerTest {
                     "protobuf outbound encode"
                 contains("LimitedProtobufVarint32FrameDecoder") || contains("ProtobufDecoder") ->
                     "protobuf inbound decode"
-                contains("UdpSimNetworkEngine") || contains("AbstractSimPacketBridge") ->
+                contains("UdpSimNetworkEngine") || contains("SimPacketBridge") ->
                     "sim UDP bridge/network"
                 else -> stack
                     .dropWhile { it.className == CountingByteBufAllocator::class.java.name ||
@@ -2068,4 +2061,8 @@ class SimulatedRunnerTest {
         )
     }
 
+}
+
+private fun TestStarNetworkBuilder2.addIpNodes(nodeCount: Int) {
+    (0 until nodeCount).forEach { node(IPManager.Default.getIP(it)) }
 }

@@ -7,7 +7,8 @@ import io.libp2p.quicsim.udpnetwork.UdpSimLink
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork.Companion.findEndpoints
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
-import io.libp2p.quicsim.udpnetwork.UdpSimPacket
+import io.netty.channel.socket.DatagramPacket
+import java.net.InetSocketAddress
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.ZERO
 
@@ -17,12 +18,12 @@ class UdpSimNetworkEngineImpl4(
 
     private data class TimedPacket(
         val at: Duration,
-        val packet: UdpSimPacket
+        val packet: DatagramPacket
     )
 
     private data class LinkState(
         val link: UdpSimLink,
-        val latencyQueue: LatencyQueueImpl<UdpSimPacket>,
+        val latencyQueue: LatencyQueueImpl<DatagramPacket>,
         val bandwidthQueue: TimedBandwidthQueue
     )
 
@@ -31,7 +32,7 @@ class UdpSimNetworkEngineImpl4(
     ) {
         private val wrapper = PacketProcessorB(bandwidthQueue)
 
-        fun enqueue(packets: List<UdpSimPacket>, at: Duration) {
+        fun enqueue(packets: List<DatagramPacket>, at: Duration) {
             if (packets.isEmpty()) {
                 return
             }
@@ -75,13 +76,14 @@ class UdpSimNetworkEngineImpl4(
     private val inboundLinkIndexByNodeId = inboundLinks
         .mapIndexed { index, linkState -> linkState.link.to.id to index }
         .toMap()
+    private val inboundLinkIndexByRecipient = HashMap<InetSocketAddress, Int>()
 
     init {
         require(outboundLinks.size == endpoints.size) { "Impl4 expects one outbound link per endpoint" }
         require(inboundLinks.size == endpoints.size) { "Impl4 expects one inbound link per endpoint" }
     }
 
-    override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> = TODO("Shouldn't be called")
+    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> = TODO("Shouldn't be called")
 
     override fun advance(advanceDuration: Duration) = TODO("Short advances are not viable here. Use advanceUntil")
 
@@ -104,7 +106,7 @@ class UdpSimNetworkEngineImpl4(
 
         val routedByInboundLink = Array(inboundLinks.size) { ArrayList<TimedPacket>() }
         routedPackets.forEach { timedPacket ->
-            val inboundLinkIndex = inboundLinkIndexByNodeId.getValue(timedPacket.packet.dstNodeId)
+            val inboundLinkIndex = inboundLinkIndex(timedPacket.packet)
             routedByInboundLink[inboundLinkIndex] += timedPacket
             innerPacketsCounter++
         }
@@ -112,7 +114,7 @@ class UdpSimNetworkEngineImpl4(
         inboundLinks.forEachIndexed { index, inboundLink ->
             val arrivals = routedByInboundLink[index]
             if (arrivals.size > 1) {
-                arrivals.sortWith(compareBy<TimedPacket> { it.at }.thenBy { it.packet.id })
+                arrivals.sortBy { it.at }
             }
             val deliveredToEndpoint = ArrayList<TimedPacket>(arrivals.size)
             arrivals.firstOrNull()?.let {
@@ -121,7 +123,7 @@ class UdpSimNetworkEngineImpl4(
             var arrivalIndex = 0
             while (arrivalIndex < arrivals.size) {
                 val at = arrivals[arrivalIndex].at
-                val sameTimePackets = mutableListOf<UdpSimPacket>()
+                val sameTimePackets = mutableListOf<DatagramPacket>()
                 while (arrivalIndex < arrivals.size && arrivals[arrivalIndex].at == at) {
                     sameTimePackets += arrivals[arrivalIndex].packet
                     arrivalIndex++
@@ -175,8 +177,15 @@ class UdpSimNetworkEngineImpl4(
     private fun UdpSimLink.toLinkState(): LinkState =
         LinkState(
             link = this,
-            latencyQueue = latencyQueue as? LatencyQueueImpl<UdpSimPacket>
+            latencyQueue = latencyQueue as? LatencyQueueImpl<DatagramPacket>
                 ?: error("Impl4 fast path requires LatencyQueueImpl"),
             bandwidthQueue = TimedBandwidthQueue(bandwidthQueue)
         )
+
+    private fun inboundLinkIndex(packet: DatagramPacket): Int {
+        val recipient = packet.recipient()
+        return inboundLinkIndexByRecipient.getOrPut(recipient) {
+            inboundLinkIndexByNodeId.getValue(recipient.hostString)
+        }
+    }
 }

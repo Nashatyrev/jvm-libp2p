@@ -2,6 +2,7 @@ package io.libp2p.quicsim.udpnetwork
 
 import io.libp2p.quicsim.core.LatencyQueue
 import io.libp2p.quicsim.core.PacketProcessor
+import io.netty.channel.socket.DatagramPacket
 
 
 /**
@@ -18,8 +19,8 @@ data class UdpSimLink(
     val to: UdpSimNode,
 
     val bandwidthQueue: UdpSimBandwidthQueue,
-    val latencyQueue: LatencyQueue<UdpSimPacket>,
+    val latencyQueue: LatencyQueue<DatagramPacket>,
 
     /** Egress queue discipline applied on this directed link. Basically either `bandwidthQueue` -> `latencyQueue` or the opposite order */
-    val qdisc: PacketProcessor<UdpSimPacket>,
+    val qdisc: PacketProcessor<DatagramPacket>,
 )

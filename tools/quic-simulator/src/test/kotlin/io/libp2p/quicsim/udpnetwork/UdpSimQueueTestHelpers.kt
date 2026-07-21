@@ -6,9 +6,33 @@ import io.libp2p.quicsim.core.PacketProcessor
 import io.libp2p.quicsim.core.PacketReceiver.Companion.createPacketProcessorAdapter
 import io.libp2p.quicsim.core.SerialPacketProcessor
 import io.libp2p.quicsim.core.schedule.impl.LatencyQueueImpl
-import io.libp2p.quicsim.udpnetwork.UdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
+import io.netty.buffer.Unpooled
+import io.netty.channel.socket.DatagramPacket
+import java.net.InetSocketAddress
 import kotlin.time.Duration
+
+fun udpSimDatagram(
+    bytes: Int,
+    fromNodeId: String,
+    toNodeId: String,
+    fromPort: Int = 1,
+    toPort: Int = 1
+): DatagramPacket =
+    DatagramPacket(
+        Unpooled.wrappedBuffer(ByteArray(bytes)),
+        udpSimAddress(toNodeId, toPort),
+        udpSimAddress(fromNodeId, fromPort)
+    )
+
+private val udpSimAddresses = mutableMapOf<Pair<String, Int>, InetSocketAddress>()
+
+private fun udpSimAddress(nodeId: String, port: Int): InetSocketAddress =
+    synchronized(udpSimAddresses) {
+        udpSimAddresses.getOrPut(nodeId to port) {
+            InetSocketAddress.createUnresolved(nodeId, port)
+        }
+    }
 
 fun fifoUdpSimQueue(
     bandwidth: Bandwidth,
@@ -16,7 +40,7 @@ fun fifoUdpSimQueue(
     maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME
 ): TestUdpSimQueue {
     val bandwidthQueue = FifoUdpSimBandwidthQueue(bandwidth, maxQueueWaitTime)
-    val latencyQueue = LatencyQueueImpl<UdpSimPacket>(latency)
+    val latencyQueue = LatencyQueueImpl<DatagramPacket>(latency)
     return TestUdpSimQueue(
         bandwidthQueue = bandwidthQueue,
         latencyQueue = latencyQueue,
@@ -35,7 +59,7 @@ fun latencyThenBandwidthUdpSimQueue(
     maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME
 ): TestUdpSimQueue {
     val bandwidthQueue = FifoUdpSimBandwidthQueue(bandwidth, maxQueueWaitTime)
-    val latencyQueue = LatencyQueueImpl<UdpSimPacket>(latency)
+    val latencyQueue = LatencyQueueImpl<DatagramPacket>(latency)
     return TestUdpSimQueue(
         bandwidthQueue = bandwidthQueue,
         latencyQueue = latencyQueue,
@@ -50,11 +74,11 @@ fun latencyThenBandwidthUdpSimQueue(
 
 class TestUdpSimQueue(
     val bandwidthQueue: UdpSimBandwidthQueue,
-    val latencyQueue: LatencyQueue<UdpSimPacket>,
-    private val delegate: PacketProcessor<UdpSimPacket>
-) : PacketProcessor<UdpSimPacket> {
+    val latencyQueue: LatencyQueue<DatagramPacket>,
+    private val delegate: PacketProcessor<DatagramPacket>
+) : PacketProcessor<DatagramPacket> {
 
-    override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> =
+    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> =
         delegate.deliver(inboundData)
 
     override fun advance(advanceDuration: Duration) {

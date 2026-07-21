@@ -1,9 +1,6 @@
 package io.libp2p.quicsim.core
 
 import io.libp2p.quicsim.core.schedule.PacketProcessorB
-import io.libp2p.quicsim.udpnetwork.UdpSimLink
-import io.libp2p.quicsim.udpnetwork.UdpSimNode
-import io.libp2p.quicsim.udpnetwork.UdpSimPacket
 import kotlin.collections.plusAssign
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.ZERO

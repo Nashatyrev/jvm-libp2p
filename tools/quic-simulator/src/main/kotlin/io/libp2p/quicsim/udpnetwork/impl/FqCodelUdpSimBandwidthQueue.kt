@@ -3,7 +3,9 @@ package io.libp2p.quicsim.udpnetwork.impl
 import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.UdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkDefaults
-import io.libp2p.quicsim.udpnetwork.UdpSimPacket
+import io.libp2p.quicsim.udpnetwork.udpSimBytes
+import io.libp2p.quicsim.udpnetwork.udpSimFlowKey
+import io.netty.channel.socket.DatagramPacket
 import java.util.ArrayDeque
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -22,12 +24,12 @@ class FqCodelUdpSimBandwidthQueue(
     }
 
     private data class PacketEntry(
-        val packet: UdpSimPacket,
+        val packet: DatagramPacket,
         val enqueuedAt: Duration
     )
 
     private data class ScheduledPacket(
-        val packet: UdpSimPacket,
+        val packet: DatagramPacket,
         val deliverAt: Duration
     )
 
@@ -44,9 +46,9 @@ class FqCodelUdpSimBandwidthQueue(
     private val activeFlows = ArrayDeque<FlowState>()
     private val scheduledPackets = ArrayDeque<ScheduledPacket>()
 
-    override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
+    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
         inboundData.forEach { packet ->
-            val flow = flows.getOrPut(packet.flowKey) { FlowState() }
+            val flow = flows.getOrPut(packet.udpSimFlowKey()) { FlowState() }
             flow.packets += PacketEntry(packet, currentTime)
             if (!flow.active) {
                 flow.active = true
@@ -54,7 +56,7 @@ class FqCodelUdpSimBandwidthQueue(
             }
         }
 
-        val ready = mutableListOf<UdpSimPacket>()
+        val ready = mutableListOf<DatagramPacket>()
         do {
             scheduleNextIfNeeded()
             val drained = drainReady()
@@ -83,10 +85,10 @@ class FqCodelUdpSimBandwidthQueue(
         val deliverAt = maxOf(nextAvailableAt ?: currentTime, currentTime)
         val packet = selectNextPacket(deliverAt) ?: return
         scheduledPackets += ScheduledPacket(packet, deliverAt)
-        nextAvailableAt = deliverAt + bandwidth.durationToTransfer(packet.bytes)
+        nextAvailableAt = deliverAt + bandwidth.durationToTransfer(packet.udpSimBytes())
     }
 
-    private fun selectNextPacket(deliverAt: Duration): UdpSimPacket? {
+    private fun selectNextPacket(deliverAt: Duration): DatagramPacket? {
         while (activeFlows.isNotEmpty()) {
             val flow = activeFlows.removeFirst()
             dropOverduePackets(flow, deliverAt)
@@ -97,12 +99,12 @@ class FqCodelUdpSimBandwidthQueue(
                 continue
             }
 
-            while (flow.deficitBytes < head.packet.bytes) {
+            while (flow.deficitBytes < head.packet.udpSimBytes()) {
                 flow.deficitBytes += quantumBytes
             }
 
             val entry = flow.packets.removeFirst()
-            flow.deficitBytes -= entry.packet.bytes
+            flow.deficitBytes -= entry.packet.udpSimBytes()
             if (flow.packets.isEmpty()) {
                 flow.active = false
             } else {
@@ -141,8 +143,8 @@ class FqCodelUdpSimBandwidthQueue(
         }
     }
 
-    private fun drainReady(): List<UdpSimPacket> {
-        val ready = mutableListOf<UdpSimPacket>()
+    private fun drainReady(): List<DatagramPacket> {
+        val ready = mutableListOf<DatagramPacket>()
         while (scheduledPackets.isNotEmpty()) {
             val packet = scheduledPackets.peekFirst()
             if (packet.deliverAt < currentTime) {

@@ -119,7 +119,6 @@ configure(
             "simVsShadow.updateGossipFixtures",
             "inboundCongestionReport.dir",
             "io.netty.leakDetection.level",
-            "quicsim.bridge.heapPayloads",
             "quicsim.profile.allocator",
             "quicsim.profile.allocatorSamplePeriodMillis",
             "quicsim.profile.gossipRpcFrameStats",

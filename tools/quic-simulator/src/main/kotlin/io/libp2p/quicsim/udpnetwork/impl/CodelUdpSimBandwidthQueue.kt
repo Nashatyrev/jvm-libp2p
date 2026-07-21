@@ -2,7 +2,8 @@ package io.libp2p.quicsim.udpnetwork.impl
 
 import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.UdpSimBandwidthQueue
-import io.libp2p.quicsim.udpnetwork.UdpSimPacket
+import io.libp2p.quicsim.udpnetwork.udpSimBytes
+import io.netty.channel.socket.DatagramPacket
 import java.util.ArrayDeque
 import kotlin.math.sqrt
 import kotlin.time.Duration
@@ -26,17 +27,17 @@ class CodelUdpSimBandwidthQueue(
     }
 
     private data class PacketEntry(
-        val packet: UdpSimPacket,
+        val packet: DatagramPacket,
         val enqueuedAt: Duration
     )
 
     private data class ScheduledPacket(
-        val packet: UdpSimPacket,
+        val packet: DatagramPacket,
         val deliverAt: Duration
     )
 
     private data class CodelPopItem(
-        val packet: UdpSimPacket,
+        val packet: DatagramPacket,
         val okToDrop: Boolean
     )
 
@@ -56,15 +57,15 @@ class CodelUdpSimBandwidthQueue(
     private var currentDropCount = 0
     private var previousDropCount = 0
 
-    override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
+    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
         inboundData.forEach { packet ->
             if (queue.size < limitPackets) {
                 queue += PacketEntry(packet, currentTime)
-                totalBytesStored += packet.bytes
+                totalBytesStored += packet.udpSimBytes()
             }
         }
 
-        val ready = mutableListOf<UdpSimPacket>()
+        val ready = mutableListOf<DatagramPacket>()
         do {
             scheduleNextIfNeeded()
             val drained = drainReady()
@@ -92,10 +93,10 @@ class CodelUdpSimBandwidthQueue(
         val deliverAt = maxOf(nextAvailableAt ?: currentTime, currentTime)
         val packet = pop(deliverAt) ?: return
         scheduledPackets += ScheduledPacket(packet, deliverAt)
-        nextAvailableAt = deliverAt + bandwidth.durationToTransfer(packet.bytes)
+        nextAvailableAt = deliverAt + bandwidth.durationToTransfer(packet.udpSimBytes())
     }
 
-    private fun pop(now: Duration): UdpSimPacket? {
+    private fun pop(now: Duration): DatagramPacket? {
         val item = codelPop(now)
         val packet = when {
             item == null -> {
@@ -112,7 +113,7 @@ class CodelUdpSimBandwidthQueue(
         return packet
     }
 
-    private fun dropFromStoreMode(now: Duration): UdpSimPacket? {
+    private fun dropFromStoreMode(now: Duration): DatagramPacket? {
         dropPacket()
         val nextItem = codelPop(now)
         mode = Mode.DROP
@@ -129,7 +130,7 @@ class CodelUdpSimBandwidthQueue(
         return nextItem?.packet
     }
 
-    private fun dropFromDropMode(now: Duration, packet: UdpSimPacket): UdpSimPacket? {
+    private fun dropFromDropMode(now: Duration, packet: DatagramPacket): DatagramPacket? {
         var item: CodelPopItem? = CodelPopItem(packet, okToDrop = true)
         while (item != null && mode == Mode.DROP && shouldDrop(now)) {
             dropPacket()
@@ -152,7 +153,7 @@ class CodelUdpSimBandwidthQueue(
             return null
         }
 
-        totalBytesStored = (totalBytesStored - entry.packet.bytes).coerceAtLeast(0)
+        totalBytesStored = (totalBytesStored - entry.packet.udpSimBytes()).coerceAtLeast(0)
         val standingDelay = now - entry.enqueuedAt
         return CodelPopItem(
             packet = entry.packet,
@@ -191,8 +192,8 @@ class CodelUdpSimBandwidthQueue(
         // Dropped by CoDel.
     }
 
-    private fun drainReady(): List<UdpSimPacket> {
-        val ready = mutableListOf<UdpSimPacket>()
+    private fun drainReady(): List<DatagramPacket> {
+        val ready = mutableListOf<DatagramPacket>()
         while (scheduledPackets.isNotEmpty()) {
             val packet = scheduledPackets.peekFirst()
             if (packet.deliverAt < currentTime) {

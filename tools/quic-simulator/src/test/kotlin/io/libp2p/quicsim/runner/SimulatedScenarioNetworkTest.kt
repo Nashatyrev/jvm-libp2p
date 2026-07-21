@@ -1,7 +1,7 @@
 package io.libp2p.quicsim.runner
 
 import io.libp2p.quicsim.scenario.QuicNetworkTopology
-import io.libp2p.quicsim.udpnetwork.UdpSimPacket
+import io.libp2p.quicsim.udpnetwork.udpSimDatagram
 import io.libp2p.quicsim.udpnetwork.impl.CodelUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FqCodelUdpSimBandwidthQueue
@@ -22,7 +22,7 @@ class SimulatedScenarioNetworkTest {
         ).toUdpSimNetwork()
         val outbound = network.links.single { it.from.id == "node-0" && it.to.id == "router-0" }
         val inbound = network.links.single { it.from.id == "router-0" && it.to.id == "node-0" }
-        val packet = UdpSimPacket(1, 100, "node-0", "router-0")
+        val packet = udpSimDatagram(100, "node-0", "router-0")
 
         outbound.latencyQueue.receiver.receivePackets(listOf(packet))
         assertEquals(10.milliseconds, outbound.qdisc.nextTaskDuration())
@@ -76,7 +76,7 @@ class SimulatedScenarioNetworkTest {
             bandwidthBytesPerSecond = 1_000_000
         ).toUdpSimNetwork(BandwidthQueueDiscipline.FQ_CODEL)
         val engine = UdpSimNetworkEngineImpl4(network)
-        val packet = UdpSimPacket(1, 100, "node-0", "node-1")
+        val packet = udpSimDatagram(100, "node-0", "node-1")
         val outbound = network.links.single { it.from.id == "node-0" && it.to.id == "router-0" }
         val inbound = network.links.single { it.from.id == "router-0" && it.to.id == "node-1" }
 

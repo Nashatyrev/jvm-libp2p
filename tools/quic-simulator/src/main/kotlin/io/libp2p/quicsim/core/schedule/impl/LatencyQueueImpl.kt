@@ -68,7 +68,7 @@ class LatencyQueueImpl<TPacket>(
             check(at >= primaryReceiver.receiverTime)
             primaryReceiver.receiverTime = at
             packets.forEach { packet ->
-                queue.addLast(QueuedPacket(packet, primaryReceiver.receiverTime + latency))
+                enqueue(packet, primaryReceiver.receiverTime + latency)
             }
         }
     }
@@ -86,7 +86,7 @@ class LatencyQueueImpl<TPacket>(
                 val at = timeExtractor(input)
                 check(at >= primaryReceiver.receiverTime)
                 primaryReceiver.receiverTime = at
-                queue.addLast(QueuedPacket(packetExtractor(input), primaryReceiver.receiverTime + latency))
+                enqueue(packetExtractor(input), primaryReceiver.receiverTime + latency)
             }
         }
     }
@@ -111,6 +111,10 @@ class LatencyQueueImpl<TPacket>(
         return ready
     }
 
+    private fun enqueue(packet: TPacket, emitAt: Duration) {
+        queue.addLast(QueuedPacket(packet, emitAt.coerceAtLeast(primaryEmitter.emitterTime)))
+    }
+
     private inner class Emitter : PacketEmitter<TPacket> {
         var emitterTime: Duration = Duration.Companion.ZERO
 
@@ -120,13 +124,8 @@ class LatencyQueueImpl<TPacket>(
             }
 
         override fun advance(advanceDuration: Duration) {
-//            require(!advanceDuration.isNegative()) { "advanceDuration must be non-negative" }
             locked {
                 val nextTime = emitterTime + advanceDuration
-                val maxEmitterTime = primaryReceiver.receiverTime + latency
-//                require(nextTime <= maxEmitterTime) {
-//                    "Emitter cannot advance past latency bound $maxEmitterTime"
-//                }
                 emitterTime = nextTime
             }
         }
@@ -146,13 +145,12 @@ class LatencyQueueImpl<TPacket>(
         override fun receivePackets(packets: List<TPacket>) {
             locked {
                 packets.forEach { packet ->
-                    queue.addLast(QueuedPacket(packet, receiverTime + latency))
+                    enqueue(packet, receiverTime + latency)
                 }
             }
         }
 
         override fun advance(advanceDuration: Duration) {
-//            require(!advanceDuration.isNegative()) { "advanceDuration must be non-negative" }
             locked {
                 receiverTime += advanceDuration
             }

@@ -2,7 +2,6 @@ package io.libp2p.quicsim.runner
 
 import io.libp2p.quicsim.core.ControllablePacketPump
 import io.libp2p.quicsim.core.InOutProcessor
-import io.libp2p.quicsim.core.MappingPacketProcessor.Companion.map
 import io.libp2p.quicsim.core.schedule.Controllable.Companion.advanceAndExecuteUntil
 import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.sim.SimNode
@@ -15,12 +14,11 @@ import kotlin.time.Duration.Companion.ZERO
 
 class SimpleSimPacketBridge(
     simNet: SimNet<DatagramPacket>,
-    udpNet: UdpSimNetwork,
-    idAndIp: Collection<IdMapEntry>
-) : AbstractSimPacketBridge(idAndIp) {
+    udpNet: UdpSimNetwork
+) : AbstractSimPacketBridge() {
 
     private val udpNetworkEngine = UdpSimNetworkEngineImpl4(udpNet)
-    private val nodePumps = createNodePumps(simNet, udpNet, idAndIp)
+    private val nodePumps = createNodePumps(simNet, udpNet)
 
     override fun advanceImpl(advanceDuration: Duration) {
         nodePumps.forEach { pump ->
@@ -42,14 +40,11 @@ class SimpleSimPacketBridge(
 
     private fun createNodePumps(
         simNet: SimNet<DatagramPacket>,
-        udpNet: UdpSimNetwork,
-        idAndIp: Collection<IdMapEntry>
+        udpNet: UdpSimNetwork
     ): List<ControllablePacketPump<DatagramPacket>> {
         val simNodeByIp = simNet.allNodes.associateBy { it.ip }
-        val udpNodeById = udpNet.nodes.associateBy { it.id }
-        return idAndIp.map { (id, ip) ->
-            val simNode = simNodeByIp.getValue(ip)
-            val udpNode = udpNodeById.getValue(id)
+        return udpNet.nodes.map { udpNode ->
+            val simNode = simNodeByIp.getValue(udpNode.id)
             createSimNodeWithUdpLinks(simNode, udpNode, udpNet)
         }
     }
@@ -66,8 +61,6 @@ class SimpleSimPacketBridge(
             emitter = inboundUdpLink.latencyQueue.emitter,
             receiver = outboundUdpLink.latencyQueue.receiver
         )
-        val aheadProcessorSim =
-            aheadProcessor.map(nettyDatagramToSimUdpPacketConverter, simUdpPacketToNettyDatagramConverter)
-        return ControllablePacketPump(simNode, aheadProcessorSim)
+        return ControllablePacketPump(simNode, aheadProcessor)
     }
 }

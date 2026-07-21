@@ -170,15 +170,15 @@ class SimulatedRunner(
         val embeddedNodes = nodesStuff.map { it.simNodeImpl }
         println("Creating sim network...")
         val simCoreNet = SimNetImpl(embeddedNodes)
-        val idAndIp =
-            embeddedNodes.map { node ->
-                AbstractSimPacketBridge.IdMapEntry(udpNetwork.nodes[node.nodeId].id, node.ip)
-            }
+        val nodeIps = embeddedNodes.map { it.ip }.toSet()
+        require(udpNetwork.nodes.map { it.id }.toSet() == nodeIps) {
+            "UdpSimNetwork endpoint ids must match simulated node IPs"
+        }
         val simPacketPump =
             if (latencyWindowParallelism > 0) {
-                ParallelSimPacketBridge(simCoreNet, udpNetwork, idAndIp, latencyWindowParallelism)
+                ParallelSimPacketBridge(simCoreNet, udpNetwork, latencyWindowParallelism)
             } else {
-                SimpleSimPacketBridge(simCoreNet, udpNetwork, idAndIp)
+                SimpleSimPacketBridge(simCoreNet, udpNetwork)
             }
         simTimer = simPacketPump.monotonicTimer
         nodeHeapProfiler.sample("after_create_sim_network", simTimer.elapsedTime(), nodesStuff)

@@ -24,18 +24,15 @@ interface LatencyQueue<TPacket> {
      * changing link conditions, or externally supplied delivery floors. All timing
      * assumptions still hold when they are phrased in terms of this minimum bound:
      * no emitted packet can be scheduled earlier than receiver time plus
-     * [minimalLatency], and the emitter must not advance further than
-     * [minimalLatency] ahead of the receiver timeline.
+     * [minimalLatency].
      */
     val minimalLatency: Duration
 
     /**
      * Read end of the queue.
      *
-     * The emitter may be advanced independently, but must not advance further
-     * than [minimalLatency] ahead of the receiver timeline. Calling
-     * [PacketEmitter.emitPackets] drains all packets scheduled exactly at the
-     * emitter's current time.
+     * The emitter may be advanced independently. Calling [PacketEmitter.emitPackets]
+     * drains all packets scheduled exactly at the emitter's current time.
      */
     val emitter: PacketEmitter<TPacket>
 

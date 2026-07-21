@@ -5,7 +5,9 @@ import io.libp2p.quicsim.udpnetwork.RouteResolver
 import io.libp2p.quicsim.udpnetwork.UdpSimLink
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
-import io.libp2p.quicsim.udpnetwork.UdpSimPacket
+import io.libp2p.quicsim.udpnetwork.udpSimDestinationNodeId
+import io.libp2p.quicsim.udpnetwork.udpSimSourceNodeId
+import io.netty.channel.socket.DatagramPacket
 import kotlin.collections.plusAssign
 import kotlin.time.Duration
 
@@ -19,10 +21,10 @@ class UdpSimNetworkEngineImpl(
     private val aggregateControllable = AggregateControllable(network.links.map { it.qdisc })
     private val linksMap = network.links.associateBy { it.from to it.to }
 
-    private fun findNextLink(fromLink: UdpSimLink?, packet: UdpSimPacket): UdpSimLink? {
-        val srcHopNode = fromLink?.to ?: idToNodeMap[packet.srcNodeId]!!
+    private fun findNextLink(fromLink: UdpSimLink?, packet: DatagramPacket): UdpSimLink? {
+        val srcHopNode = fromLink?.to ?: idToNodeMap[packet.udpSimSourceNodeId()]!!
         val nextHopNode = routeResolver.findNextHop(
-            srcHopNode, idToNodeMap[packet.dstNodeId]!!
+            srcHopNode, idToNodeMap[packet.udpSimDestinationNodeId()]!!
         )
         return if (nextHopNode != null) {
             linksMap[srcHopNode to nextHopNode]!!
@@ -31,9 +33,9 @@ class UdpSimNetworkEngineImpl(
         }
     }
 
-    override fun deliver(inboundData: List<UdpSimPacket>): List<UdpSimPacket> {
+    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
         val packetsForLink =
-            network.links.associateWith { mutableListOf<UdpSimPacket>() }
+            network.links.associateWith { mutableListOf<DatagramPacket>() }
                 .toMutableMap()
 
         inboundData
@@ -43,7 +45,7 @@ class UdpSimNetworkEngineImpl(
                 packetsForLink[link]!! += inboundPacket
             }
 
-        val deliveredPackets = mutableListOf<UdpSimPacket>()
+        val deliveredPackets = mutableListOf<DatagramPacket>()
 
         while (packetsForLink.isNotEmpty()) {
             val (link, packets) = packetsForLink.removeFirst()
