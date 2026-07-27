@@ -1,16 +1,22 @@
 package io.libp2p.quicsim.runner.graph
 
+import io.libp2p.quicsim.runner.graph.TimedNetworkLink.Companion.connects
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.ZERO
 
 /**
  * Undirected acyclic network graph for experimenting with per-vertex time advancement.
  */
-class TimedNetworkGraph(
-    val vertices: List<TimedNetworkVertex>,
-    val links: List<TimedNetworkLink>
+class TimedNetworkGraph<TVert: TimedNetworkVertex, TLink: TimedNetworkLink<TVert>>(
+    val vertices: List<TVert>,
+    val links: List<TLink>
 ) {
-    val verticesById: Map<String, TimedNetworkVertex> = this.vertices.associateBy { it.id }
+    val verticesById: Map<String, TVert> = this.vertices.associateBy { it.id }
+
+    inner class TimedNetworkNeighbour(
+        val vertex: TVert,
+        val link: TLink
+    )
 
     private val adjacency: Map<String, List<TimedNetworkNeighbour>>
 
@@ -25,7 +31,7 @@ class TimedNetworkGraph(
         adjacency = adjacencyBuilder.mapValues { it.value.toList() }
     }
 
-    fun vertex(vertexId: String): TimedNetworkVertex =
+    fun vertex(vertexId: String): TVert =
         verticesById[vertexId] ?: error("Unknown network vertex: $vertexId")
 
     fun neighbours(vertexId: String): List<TimedNetworkNeighbour> {
@@ -33,14 +39,10 @@ class TimedNetworkGraph(
         return adjacency.getValue(vertexId)
     }
 
-    fun linkBetween(left: String, right: String): TimedNetworkLink? {
+    fun linkBetween(left: String, right: String): TLink? {
         val leftVertex = vertex(left)
         val rightVertex = vertex(right)
         return links.firstOrNull { it.connects(leftVertex) && it.connects(rightVertex) }
-    }
-
-    fun setTime(vertexId: String, time: Duration) {
-        vertex(vertexId).time = time
     }
 
     fun advanceVertex(vertexId: String, advanceDuration: Duration) {
@@ -54,14 +56,14 @@ class TimedNetworkGraph(
         val vertex = vertex(vertexId)
         val advancedTime = vertex.time + advanceDuration
         return neighbours(vertexId).all { neighbour ->
-            (advancedTime - neighbour.vertex.time).absoluteValue <= neighbour.latency
+            (advancedTime - neighbour.vertex.time).absoluteValue <= neighbour.link.latency
         }
     }
 
-    fun maxAdvanceWithoutViolatingNeighbours(vertexId: String): Duration? {
+    fun maxAdvance(vertexId: String): Duration {
         val vertex = vertex(vertexId)
-        return neighbours(vertexId).minOfOrNull { neighbour ->
-            val maxVertexTime = neighbour.vertex.time + neighbour.latency
+        return neighbours(vertexId).minOf { neighbour ->
+            val maxVertexTime = neighbour.vertex.time + neighbour.link.latency
             if (maxVertexTime <= vertex.time) ZERO else maxVertexTime - vertex.time
         }
     }

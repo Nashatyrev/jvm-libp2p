@@ -2,7 +2,7 @@ package io.libp2p.quicsim.runner.graph
 
 internal class TimedNetworkGraphValidator(
     private val vertices: List<TimedNetworkVertex>,
-    private val links: List<TimedNetworkLink>,
+    private val links: List<TimedNetworkLink<*>>,
     private val verticesById: Map<String, TimedNetworkVertex>
 ) {
     fun validate() {
@@ -71,6 +71,6 @@ internal class TimedNetworkGraphValidator(
         }
     }
 
-    private fun TimedNetworkLink.key(): Pair<String, String> =
+    private fun TimedNetworkLink<*>.key(): Pair<String, String> =
         if (left.id < right.id) left.id to right.id else right.id to left.id
 }
