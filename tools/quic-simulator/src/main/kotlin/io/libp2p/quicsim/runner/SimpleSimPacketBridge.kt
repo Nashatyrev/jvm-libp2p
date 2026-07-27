@@ -1,7 +1,9 @@
 package io.libp2p.quicsim.runner
 
 import io.libp2p.quicsim.core.ControllablePacketPump
+import io.libp2p.quicsim.core.ControllablePacketRouter
 import io.libp2p.quicsim.core.InOutProcessor
+import io.libp2p.quicsim.core.schedule.Controllable
 import io.libp2p.quicsim.core.schedule.Controllable.Companion.advanceAndExecuteUntil
 import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.sim.SimNode
@@ -41,7 +43,7 @@ class SimpleSimPacketBridge(
     private fun createNodePumps(
         simNet: SimNet<DatagramPacket>,
         udpNet: UdpSimNetwork
-    ): List<ControllablePacketPump<DatagramPacket>> {
+    ): List<Controllable> {
         val simNodeByIp = simNet.allNodes.associateBy { it.ip }
         return udpNet.nodes.map { udpNode ->
             val simNode = simNodeByIp.getValue(udpNode.id)
@@ -53,7 +55,7 @@ class SimpleSimPacketBridge(
         simNode: SimNode<DatagramPacket>,
         udpNode: UdpSimNode,
         udpNet: UdpSimNetwork
-    ): ControllablePacketPump<DatagramPacket> {
+    ): Controllable {
         val inboundUdpLink = udpNet.links.first { it.to == udpNode }
         val outboundUdpLink = udpNet.links.first { it.from == udpNode }
 
@@ -61,6 +63,6 @@ class SimpleSimPacketBridge(
             emitter = inboundUdpLink.latencyQueue.emitter,
             receiver = outboundUdpLink.latencyQueue.receiver
         )
-        return ControllablePacketPump(simNode, aheadProcessor)
+        return ControllablePacketRouter.createSimplePump(simNode, aheadProcessor)
     }
 }

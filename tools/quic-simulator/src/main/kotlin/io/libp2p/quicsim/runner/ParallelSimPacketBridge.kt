@@ -1,7 +1,9 @@
 package io.libp2p.quicsim.runner
 
 import io.libp2p.quicsim.core.ControllablePacketPump
+import io.libp2p.quicsim.core.ControllablePacketRouter
 import io.libp2p.quicsim.core.InOutProcessor
+import io.libp2p.quicsim.core.schedule.Controllable
 import io.libp2p.quicsim.core.schedule.Controllable.Companion.advanceAndExecuteUntil
 import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.sim.SimNode
@@ -24,7 +26,7 @@ class ParallelSimPacketBridge(
     data class SimNodeWithUdpLinks(
         val udpNodeId: String,
         val simNode: SimNode<DatagramPacket>,
-        val pump: ControllablePacketPump<DatagramPacket>
+        val packetPump: Controllable
     )
 
     val latency = calcLatency()
@@ -63,7 +65,8 @@ class ParallelSimPacketBridge(
         val outboundReceiver = outboundUdpLink.latencyQueue.receiver
 
         val aheadProcessor = InOutProcessor(inboundEmitter, outboundReceiver)
-        val controllable = ControllablePacketPump(simNode, aheadProcessor)
+        val controllable =
+            ControllablePacketRouter.createSimplePump(simNode, aheadProcessor)
         return SimNodeWithUdpLinks(udpNode.id, simNode, controllable)
     }
 
@@ -193,10 +196,10 @@ class ParallelSimPacketBridge(
                 currentTime = it.simNode.nodeTime.elapsedTime(),
                 linkedTasks = mutableListOf(udpNetTask),
                 advanceAction = { advanceDuration ->
-                    it.pump.advanceAndExecuteUntil(advanceDuration)
+                    it.packetPump.advanceAndExecuteUntil(advanceDuration)
                 },
                 nextTaskDurationAction = {
-                    it.pump.nextTaskDuration()
+                    it.packetPump.nextTaskDuration()
                 },
             )
             nodeTasksByUdpId[it.udpNodeId] = task
