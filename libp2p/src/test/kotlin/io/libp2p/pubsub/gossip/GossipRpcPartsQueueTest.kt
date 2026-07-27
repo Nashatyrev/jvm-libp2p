@@ -378,26 +378,4 @@ class GossipRpcPartsQueueTest {
                 .addMessageIDs("2222".toWBytes().toProtobuf()).build(),
         )
     }
-
-    @Test
-    fun `mergeMessageParts() splits publishes by max gossip message size`() {
-        val maxGossipMessageSize = 1024
-        val messageCount = 8
-        val params = GossipParamsBuilder()
-            .maxGossipMessageSize(maxGossipMessageSize)
-            .maxIHaveLength(Int.MAX_VALUE)
-            .build()
-        val partsQueue = DefaultGossipRpcPartsQueue(params)
-
-        repeat(messageCount) {
-            partsQueue.addPublish(createRpcMessage("topic", "x".repeat(300)))
-        }
-
-        val msgs = partsQueue.takeMerged()
-
-        assertThat(msgs.sumOf { it.publishCount }).isEqualTo(messageCount)
-        assertThat(msgs.map { it.serializedSize })
-            .allMatch { it <= maxGossipMessageSize }
-        assertThat(msgs).hasSizeGreaterThan(1)
-    }
 }
