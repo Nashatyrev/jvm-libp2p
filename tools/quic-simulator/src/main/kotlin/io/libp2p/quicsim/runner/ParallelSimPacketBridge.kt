@@ -1,6 +1,5 @@
 package io.libp2p.quicsim.runner
 
-import io.libp2p.quicsim.core.ControllablePacketPump
 import io.libp2p.quicsim.core.ControllablePacketRouter
 import io.libp2p.quicsim.core.InOutProcessor
 import io.libp2p.quicsim.core.schedule.Controllable
