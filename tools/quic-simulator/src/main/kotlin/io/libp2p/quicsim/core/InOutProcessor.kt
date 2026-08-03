@@ -1,5 +1,6 @@
 package io.libp2p.quicsim.core
 
+import io.libp2p.quicsim.minOrNUll
 import kotlin.time.Duration
 
 class InOutProcessor<TPacket>(
@@ -23,5 +24,5 @@ class InOutProcessor<TPacket>(
     }
 
     override fun nextTaskDuration(): Duration? =
-        emitter.nextTaskDuration()
+        minOrNUll(emitter.nextTaskDuration(), receiver.nextTaskDuration())
 }
