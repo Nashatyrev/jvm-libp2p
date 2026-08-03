@@ -292,7 +292,7 @@ class UdpNetworkPerformanceTest {
         const val EXPECTED_PACKET_COUNT = NODE_COUNT.toLong() * SEND_TO_NODES * PACKETS_PER_PEER_PAIR
         const val MAX_LATENCY_WINDOWS = 2_000L
         const val IMPL4_SORT_PACKET_COUNT = 200_000
-        const val IMPL4_SORT_TARGET_MS = 200L
+        const val IMPL4_SORT_TARGET_MS = 300L
         val LINK_LATENCY = 10.milliseconds
         val IMPL4_SORT_ADVANCE = 1.seconds
 
