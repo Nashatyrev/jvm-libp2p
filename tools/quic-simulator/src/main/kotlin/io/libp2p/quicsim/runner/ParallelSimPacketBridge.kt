@@ -60,8 +60,8 @@ class ParallelSimPacketBridge(
         val inboundUdpLink = udpNet.links.first { it.to == udpNode }
         val outboundUdpLink = udpNet.links.first { it.from == udpNode }
 
-        val inboundEmitter = inboundUdpLink.packetEmitter
-        val outboundReceiver = outboundUdpLink.packetReceiver
+        val inboundEmitter = inboundUdpLink.latencyQueue.emitter
+        val outboundReceiver = outboundUdpLink.latencyQueue.receiver
 
         val aheadProcessor = InOutProcessor(inboundEmitter, outboundReceiver)
         val controllable =
