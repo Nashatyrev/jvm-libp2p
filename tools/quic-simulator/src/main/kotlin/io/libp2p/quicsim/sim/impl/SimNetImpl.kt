@@ -1,6 +1,5 @@
 package io.libp2p.quicsim.sim.impl
 
-import io.libp2p.quicsim.core.DispatchingPacketProcessor
 import io.libp2p.quicsim.core.DispatchingPacketProcessor2
 import io.libp2p.quicsim.sim.SimNet
 import io.netty.channel.socket.DatagramPacket
@@ -15,8 +14,11 @@ class SimNetImpl(
     val nodePacketDispatcher =
         DispatchingPacketProcessor2(nodesByIp) { it.recipient().hostString }
 
-    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> =
-        nodePacketDispatcher.deliver(inboundData)
+    override fun receivePackets(packets: List<DatagramPacket>) =
+        nodePacketDispatcher.receivePackets(packets)
+
+    override fun emitPackets(): List<DatagramPacket> =
+        nodePacketDispatcher.emitPackets()
 
     override fun advance(advanceDuration: Duration) =
         nodePacketDispatcher.advance(advanceDuration)

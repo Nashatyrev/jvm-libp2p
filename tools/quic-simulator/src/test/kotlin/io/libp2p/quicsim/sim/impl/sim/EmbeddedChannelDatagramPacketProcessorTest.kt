@@ -1,5 +1,6 @@
 package io.libp2p.quicsim.sim.impl.sim
 
+import io.libp2p.quicsim.core.deliver
 import io.libp2p.quicsim.core.schedule.DeterministicScheduler
 import io.libp2p.quicsim.core.schedule.impl.NettyTicker
 import io.libp2p.quicsim.sim.impl.EmbeddedChannelDatagramPacketProcessor
@@ -73,4 +74,3 @@ class EmbeddedChannelDatagramPacketProcessorTest {
         assertEquals(listOf("ping"), receivedAtB)
     }
 }
-

@@ -14,13 +14,14 @@ class EmbeddedChannelDatagramPacketProcessor(
 ) : PacketProcessor<DatagramPacket> {
     private var nextScheduledTaskDelay: Duration? = null
 
-    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
-        inboundData.forEach {
+    override fun receivePackets(packets: List<DatagramPacket>) {
+        packets.forEach {
             channel.writeInbound(it)
         }
         runPendingAndScheduledTasks()
-        return drainOutbound()
     }
+
+    override fun emitPackets(): List<DatagramPacket> = drainOutbound()
 
     override fun advance(advanceDuration: Duration) {
         channel.ticker.time += advanceDuration

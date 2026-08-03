@@ -1,5 +1,6 @@
 package io.libp2p.quicsim.udpnetwork
 
+import io.libp2p.quicsim.core.deliver
 import io.libp2p.quicsim.core.InOutProcessor
 import io.libp2p.quicsim.core.SerialPacketProcessor
 import io.libp2p.quicsim.core.schedule.impl.LatencyQueueImpl

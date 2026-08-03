@@ -57,14 +57,16 @@ class CodelUdpSimBandwidthQueue(
     private var currentDropCount = 0
     private var previousDropCount = 0
 
-    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
-        inboundData.forEach { packet ->
+    override fun receivePackets(packets: List<DatagramPacket>) {
+        packets.forEach { packet ->
             if (queue.size < limitPackets) {
                 queue += PacketEntry(packet, currentTime)
                 totalBytesStored += packet.udpSimBytes()
             }
         }
+    }
 
+    override fun emitPackets(): List<DatagramPacket> {
         val ready = mutableListOf<DatagramPacket>()
         do {
             scheduleNextIfNeeded()

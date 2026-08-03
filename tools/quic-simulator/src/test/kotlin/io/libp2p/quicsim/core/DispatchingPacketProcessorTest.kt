@@ -177,10 +177,17 @@ class DispatchingPacketProcessorTest {
     ) : PacketProcessor<Packet> {
         val receivedInbound = mutableListOf<List<Packet>>()
         val advanceCalls = mutableListOf<Duration>()
+        val outbound = mutableListOf<Packet>()
 
-        override fun deliver(inboundData: List<Packet>): List<Packet> {
-            receivedInbound += inboundData
-            return inboundData.map { it.copy(payload = outboundPrefix + it.payload) }
+        override fun receivePackets(packets: List<Packet>) {
+            receivedInbound += packets
+            outbound += packets.map { it.copy(payload = outboundPrefix + it.payload) }
+        }
+
+        override fun emitPackets(): List<Packet> {
+            val emitted = outbound.toList()
+            outbound.clear()
+            return emitted
         }
 
         override fun advance(advanceDuration: Duration) {

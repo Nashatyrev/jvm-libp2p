@@ -7,16 +7,23 @@ class SerialPacketProcessor<TPacket>(
     private val stages: List<PacketProcessor<TPacket>>
 ) : PacketProcessor<TPacket> {
 
+    private val outboundPackets = mutableListOf<TPacket>()
+
     init {
         require(stages.isNotEmpty()) { "stages must not be empty" }
     }
 
-    override fun deliver(inboundData: List<TPacket>): List<TPacket> {
-        var outbound = deliverToStage(0, inboundData)
+    override fun receivePackets(packets: List<TPacket>) {
+        outboundPackets += deliverToStage(0, packets)
+    }
+
+    override fun emitPackets(): List<TPacket> {
         stages.indices.forEach { stageIndex ->
-            outbound += drainStage(stageIndex)
+            outboundPackets += drainStage(stageIndex)
         }
-        return outbound
+        val emitted = outboundPackets.toList()
+        outboundPackets.clear()
+        return emitted
     }
 
     override fun advance(advanceDuration: Duration) {

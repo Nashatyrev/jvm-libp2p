@@ -109,11 +109,15 @@ class ControllablePacketRouterTest {
         val receivedInbound = mutableListOf<List<Packet>>()
         val advanceCalls = mutableListOf<Duration>()
 
-        override fun deliver(inboundData: List<Packet>): List<Packet> {
-            receivedInbound += inboundData.toList()
-            val initialOutbound = outbound.toList()
+        override fun receivePackets(packets: List<Packet>) {
+            receivedInbound += packets.toList()
+            outbound += packets.mapNotNull(transformInbound)
+        }
+
+        override fun emitPackets(): List<Packet> {
+            val emitted = outbound.toList()
             outbound.clear()
-            return initialOutbound + inboundData.mapNotNull(transformInbound)
+            return emitted
         }
 
         override fun advance(advanceDuration: Duration) {

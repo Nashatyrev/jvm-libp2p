@@ -7,12 +7,10 @@ class InOutProcessor<TPacket>(
     val receiver: PacketReceiver<TPacket>,
 ) : PacketProcessor<TPacket> {
 
-    override fun deliver(inboundData: List<TPacket>): List<TPacket> {
-        if (inboundData.isNotEmpty()) {
-            receiver.receivePackets(inboundData)
-        }
-        return emitter.emitPackets()
-    }
+    override fun receivePackets(packets: List<TPacket>) =
+        receiver.receivePackets(packets)
+
+    override fun emitPackets(): List<TPacket> = emitter.emitPackets()
 
     override fun advance(advanceDuration: Duration) {
         emitter.advance(advanceDuration)

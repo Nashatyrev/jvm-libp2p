@@ -21,6 +21,8 @@ class UdpSimNetworkEngineImpl2(
 
     private var cumulativeAdvanceMutable: Duration = ZERO
     val cumulativeAdvance get() = cumulativeAdvanceMutable
+    private val outboundPackets = mutableListOf<DatagramPacket>()
+    private var emissionPrepared = false
 
     val idToNodeMap = network.nodes.associateBy { it.id }
     data class WrappedLink(
@@ -59,7 +61,22 @@ class UdpSimNetworkEngineImpl2(
         }
     }
 
-    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
+    override fun receivePackets(packets: List<DatagramPacket>) {
+        outboundPackets += processPackets(packets)
+        emissionPrepared = true
+    }
+
+    override fun emitPackets(): List<DatagramPacket> {
+        if (!emissionPrepared) {
+            outboundPackets += processPackets(emptyList())
+        }
+        emissionPrepared = false
+        val emitted = outboundPackets.toList()
+        outboundPackets.clear()
+        return emitted
+    }
+
+    private fun processPackets(inboundData: List<DatagramPacket>): List<DatagramPacket> {
         val deliveredPackets: MutableList<DatagramPacket> = mutableListOf()
 
         inboundData

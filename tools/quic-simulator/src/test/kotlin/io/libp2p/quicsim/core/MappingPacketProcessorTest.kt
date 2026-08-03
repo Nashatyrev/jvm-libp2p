@@ -16,7 +16,8 @@ class MappingPacketProcessorTest {
             mapToOuter = { inner: Int -> inner.toString() }
         )
 
-        val outbound = processor.deliver(listOf("1", "2", "3"))
+        processor.receivePackets(listOf("1", "2", "3"))
+        val outbound = processor.emitPackets()
 
         assertEquals(listOf(1, 2, 3), delegate.receivedInbound)
         assertEquals(listOf("10", "20", "30"), outbound)
@@ -42,10 +43,17 @@ class MappingPacketProcessorTest {
     ) : PacketProcessor<Int> {
         val receivedInbound = mutableListOf<Int>()
         val advanceCalls = mutableListOf<Duration>()
+        val outbound = mutableListOf<Int>()
 
-        override fun deliver(inboundData: List<Int>): List<Int> {
-            receivedInbound += inboundData
-            return inboundData.map { it * 10 }
+        override fun receivePackets(packets: List<Int>) {
+            receivedInbound += packets
+            outbound += packets.map { it * 10 }
+        }
+
+        override fun emitPackets(): List<Int> {
+            val emitted = outbound.toList()
+            outbound.clear()
+            return emitted
         }
 
         override fun advance(advanceDuration: Duration) {

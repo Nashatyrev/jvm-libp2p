@@ -1,5 +1,6 @@
 package io.libp2p.quicsim.udpnetwork
 
+import io.libp2p.quicsim.core.deliver
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimLinks
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl

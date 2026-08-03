@@ -16,9 +16,11 @@ abstract class QueueProcessorAdapter<TPacket> : PacketProcessor<TPacket> {
 
     protected val queue = ArrayDeque<QueuedPacket<TPacket>>()
 
-    final override fun deliver(inboundData: List<TPacket>): List<TPacket> {
-        return deliverAt(inboundData, cumulativeAdvance)
-    }
+    final override fun receivePackets(packets: List<TPacket>) =
+        enqueueInbound(packets, cumulativeAdvance)
+
+    final override fun emitPackets(): List<TPacket> =
+        drainReady(cumulativeAdvance)
 
     override fun advance(advanceDuration: Duration) {
         cumulativeAdvanceMutable += advanceDuration
@@ -32,11 +34,6 @@ abstract class QueueProcessorAdapter<TPacket> : PacketProcessor<TPacket> {
 
     protected fun enqueue(packet: TPacket, deliverAt: Duration) {
         queue.addLast(QueuedPacket(packet, deliverAt))
-    }
-
-    protected fun deliverAt(inboundData: List<TPacket>, at: Duration): List<TPacket> {
-        enqueueInbound(inboundData, at)
-        return drainReady(at)
     }
 
     protected fun nextTaskDurationAt(at: Duration): Duration? =

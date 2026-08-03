@@ -12,20 +12,21 @@ class DispatchingPacketProcessor<TKey, TPacket>(
     private val selector: (TPacket) -> TKey
 ) : PacketProcessor<TPacket> {
 
-    override fun deliver(inboundData: List<TPacket>): List<TPacket> {
-        val groupedByKey = inboundData.groupBy { selector(it) }
+    override fun receivePackets(packets: List<TPacket>) {
+        val groupedByKey = packets.groupBy { selector(it) }
 
         val nonDelivered = groupedByKey.keys - delegates.keys
         if (nonDelivered.isNotEmpty()) {
             throw IllegalStateException("Some packets cannot be delivered: $nonDelivered")
         }
 
-        val ret = delegates.flatMap { (key, delegate) ->
-            val inboundForDelegate = groupedByKey[key] ?: emptyList()
-            delegate.deliver(inboundForDelegate)
+        delegates.forEach { (key, delegate) ->
+            delegate.receivePackets(groupedByKey[key] ?: emptyList())
         }
-        return ret
     }
+
+    override fun emitPackets(): List<TPacket> =
+        delegates.values.flatMap { it.emitPackets() }
 
     override fun advance(advanceDuration: Duration) {
         delegates.values.forEach { it.advance(advanceDuration) }

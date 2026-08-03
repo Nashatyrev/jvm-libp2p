@@ -2,7 +2,6 @@ package io.libp2p.quicsim.sim.impl
 
 import io.libp2p.etc.types.toCompletableFuture
 import io.libp2p.quicsim.core.DispatchingPacketProcessor
-import io.libp2p.quicsim.core.PacketProcessor
 import io.libp2p.quicsim.core.PacketProcessorVisitor
 import io.libp2p.quicsim.core.schedule.AggregateControllable
 import io.libp2p.quicsim.core.schedule.DeterministicScheduler
@@ -60,13 +59,16 @@ class SimNodeImpl(
         return bindFuture.toCompletableFuture()
     }
 
-    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
+    override fun receivePackets(packets: List<DatagramPacket>) {
         cachedNextTaskDuration = null
-        inboundData.forEach { nodeVisitor.onDeliverInbound(it)}
+        packets.forEach { nodeVisitor.onDeliverInbound(it) }
+        dispatchingPacketProcessor.receivePackets(packets)
+    }
 
-        val ret = dispatchingPacketProcessor.deliver(inboundData)
-        ret.forEach { nodeVisitor.onDeliverOutbound(it)}
-        return ret
+    override fun emitPackets(): List<DatagramPacket> {
+        val packets = dispatchingPacketProcessor.emitPackets()
+        packets.forEach { nodeVisitor.onDeliverOutbound(it) }
+        return packets
     }
 
     override fun advance(advanceDuration: Duration) {

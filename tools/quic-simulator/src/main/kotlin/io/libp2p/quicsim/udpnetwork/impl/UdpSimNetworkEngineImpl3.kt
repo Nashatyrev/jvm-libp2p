@@ -75,7 +75,9 @@ class UdpSimNetworkEngineImpl3(
         }
     }
 
-    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> = TODO("Shouldn't be called")
+    override fun receivePackets(packets: List<DatagramPacket>) = TODO("Shouldn't be called")
+
+    override fun emitPackets(): List<DatagramPacket> = TODO("Shouldn't be called")
 
     private fun deliverImpl() {
         val deliveredPackets: MutableList<DatagramPacket> = mutableListOf()

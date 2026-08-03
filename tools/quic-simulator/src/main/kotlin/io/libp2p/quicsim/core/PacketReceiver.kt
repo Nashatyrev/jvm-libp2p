@@ -11,10 +11,10 @@ interface PacketReceiver<TPacket> : Controllable {
 
         fun <TPacket> PacketReceiver<TPacket>.createPacketProcessorAdapter() = object : PacketProcessor<TPacket> {
 
-            override fun deliver(inboundData: List<TPacket>): List<TPacket> {
-                this@createPacketProcessorAdapter.receivePackets(inboundData)
-                return emptyList()
-            }
+            override fun receivePackets(packets: List<TPacket>) =
+                this@createPacketProcessorAdapter.receivePackets(packets)
+
+            override fun emitPackets(): List<TPacket> = emptyList()
 
             override fun advance(advanceDuration: Duration) {
                 this@createPacketProcessorAdapter.advance(advanceDuration)

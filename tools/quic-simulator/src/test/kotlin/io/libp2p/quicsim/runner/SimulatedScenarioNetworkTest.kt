@@ -268,7 +268,9 @@ class SimulatedScenarioNetworkTest {
     private class TestSimNet(
         override val allNodes: List<SimNode<DatagramPacket>>
     ) : SimNet<DatagramPacket> {
-        override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> = emptyList()
+        override fun receivePackets(packets: List<DatagramPacket>) {
+        }
+        override fun emitPackets(): List<DatagramPacket> = emptyList()
         override fun advance(advanceDuration: Duration) {
         }
         override fun executePending() {
@@ -285,12 +287,14 @@ class SimulatedScenarioNetworkTest {
 
         override val nodeTime: MonotonicTimer = NanoMonotonicTimer { elapsed.inWholeNanoseconds }
 
-        override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
-            repeat(inboundData.size) {
+        override fun receivePackets(packets: List<DatagramPacket>) {
+            repeat(packets.size) {
                 receivedAt += elapsed
             }
-            return outbound.toList().also { outbound.clear() }
         }
+
+        override fun emitPackets(): List<DatagramPacket> =
+            outbound.toList().also { outbound.clear() }
 
         override fun advance(advanceDuration: Duration) {
             elapsed += advanceDuration

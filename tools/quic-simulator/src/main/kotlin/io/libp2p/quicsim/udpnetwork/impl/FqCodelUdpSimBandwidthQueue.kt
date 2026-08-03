@@ -46,8 +46,8 @@ class FqCodelUdpSimBandwidthQueue(
     private val activeFlows = ArrayDeque<FlowState>()
     private val scheduledPackets = ArrayDeque<ScheduledPacket>()
 
-    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
-        inboundData.forEach { packet ->
+    override fun receivePackets(packets: List<DatagramPacket>) {
+        packets.forEach { packet ->
             val flow = flows.getOrPut(packet.udpSimFlowKey()) { FlowState() }
             flow.packets += PacketEntry(packet, currentTime)
             if (!flow.active) {
@@ -55,7 +55,9 @@ class FqCodelUdpSimBandwidthQueue(
                 activeFlows += flow
             }
         }
+    }
 
+    override fun emitPackets(): List<DatagramPacket> {
         val ready = mutableListOf<DatagramPacket>()
         do {
             scheduleNextIfNeeded()

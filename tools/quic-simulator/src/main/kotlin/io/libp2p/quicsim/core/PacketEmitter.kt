@@ -11,9 +11,10 @@ interface PacketEmitter<TPacket> : Controllable {
 
         fun <TPacket> PacketEmitter<TPacket>.createPacketProcessorAdapter() = object : PacketProcessor<TPacket> {
 
-            override fun deliver(inboundData: List<TPacket>): List<TPacket> {
-                return this@createPacketProcessorAdapter.emitPackets()
-            }
+            override fun receivePackets(packets: List<TPacket>) = Unit
+
+            override fun emitPackets(): List<TPacket> =
+                this@createPacketProcessorAdapter.emitPackets()
 
             override fun advance(advanceDuration: Duration) {
                 this@createPacketProcessorAdapter.advance(advanceDuration)

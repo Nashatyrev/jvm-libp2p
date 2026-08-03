@@ -15,14 +15,15 @@ class DispatchingPacketProcessor2<TKey, TPacket>(
     private val aggregatePacketProcessor =
         AggregatePacketProcessor(delegates)
 
-    override fun deliver(inboundData: List<TPacket>): List<TPacket> {
-        inboundData.forEach { inPacket ->
+    override fun receivePackets(packets: List<TPacket>) {
+        packets.forEach { inPacket ->
             val destKey = selector(inPacket)
             aggregatePacketProcessor.deliverInbound(listOf(inPacket), destKey)
         }
-        return aggregatePacketProcessor.deliverOutbound()
     }
 
+    override fun emitPackets(): List<TPacket> =
+        aggregatePacketProcessor.deliverOutbound()
 
     override fun advance(advanceDuration: Duration) {
         aggregatePacketProcessor.advance(advanceDuration)

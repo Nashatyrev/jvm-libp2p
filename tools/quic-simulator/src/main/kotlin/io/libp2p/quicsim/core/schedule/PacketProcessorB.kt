@@ -1,6 +1,7 @@
 package io.libp2p.quicsim.core.schedule
 
 import io.libp2p.quicsim.core.PacketProcessor
+import io.libp2p.quicsim.core.deliver
 import kotlin.time.Duration
 
 class PacketProcessorB<T>(

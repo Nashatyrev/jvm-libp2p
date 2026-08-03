@@ -1,6 +1,7 @@
 package io.libp2p.quicsim.udpnetwork.impl
 
 import io.libp2p.quicsim.core.schedule.AggregateControllable
+import io.libp2p.quicsim.core.deliver
 import io.libp2p.quicsim.udpnetwork.RouteResolver
 import io.libp2p.quicsim.udpnetwork.UdpSimLink
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
@@ -20,6 +21,8 @@ class UdpSimNetworkEngineImpl(
 
     private val aggregateControllable = AggregateControllable(network.links.map { it.qdisc })
     private val linksMap = network.links.associateBy { it.from to it.to }
+    private val outboundPackets = mutableListOf<DatagramPacket>()
+    private var emissionPrepared = false
 
     private fun findNextLink(fromLink: UdpSimLink?, packet: DatagramPacket): UdpSimLink? {
         val srcHopNode = fromLink?.to ?: idToNodeMap[packet.udpSimSourceNodeId()]!!
@@ -33,7 +36,22 @@ class UdpSimNetworkEngineImpl(
         }
     }
 
-    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> {
+    override fun receivePackets(packets: List<DatagramPacket>) {
+        outboundPackets += processPackets(packets)
+        emissionPrepared = true
+    }
+
+    override fun emitPackets(): List<DatagramPacket> {
+        if (!emissionPrepared) {
+            outboundPackets += processPackets(emptyList())
+        }
+        emissionPrepared = false
+        val emitted = outboundPackets.toList()
+        outboundPackets.clear()
+        return emitted
+    }
+
+    private fun processPackets(inboundData: List<DatagramPacket>): List<DatagramPacket> {
         val packetsForLink =
             network.links.associateWith { mutableListOf<DatagramPacket>() }
                 .toMutableMap()

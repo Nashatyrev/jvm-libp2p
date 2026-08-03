@@ -5,7 +5,7 @@ import kotlin.time.Duration
 /**
  * Adapts a [PacketProcessor] with packet type [TInner] to work with packet type [TOuter].
  *
- * Packets are mapped to [TInner] before delegate delivery and mapped back to [TOuter] on delegate output.
+ * Received packets are mapped to [TInner] and emitted packets are mapped back to [TOuter].
  */
 class MappingPacketProcessor<TOuter, TInner>(
     private val delegate: PacketProcessor<TInner>,
@@ -13,10 +13,11 @@ class MappingPacketProcessor<TOuter, TInner>(
     private val mapToOuter: (TInner) -> TOuter
 ) : PacketProcessor<TOuter> {
 
-    override fun deliver(inboundData: List<TOuter>): List<TOuter> {
-        val mappedInbound = inboundData.map(mapToInner)
-        return delegate.deliver(mappedInbound).map(mapToOuter)
-    }
+    override fun receivePackets(packets: List<TOuter>) =
+        delegate.receivePackets(packets.map(mapToInner))
+
+    override fun emitPackets(): List<TOuter> =
+        delegate.emitPackets().map(mapToOuter)
 
     override fun advance(advanceDuration: Duration) {
         delegate.advance(advanceDuration)

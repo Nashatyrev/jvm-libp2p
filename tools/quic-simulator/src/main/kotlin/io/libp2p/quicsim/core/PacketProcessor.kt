@@ -1,8 +1,9 @@
 package io.libp2p.quicsim.core
 
-import io.libp2p.quicsim.core.schedule.Controllable
+interface PacketProcessor<TPacket> : PacketEmitter<TPacket>, PacketReceiver<TPacket>
 
-interface PacketProcessor<TPacket> : Controllable {
-
-    fun deliver(inboundData: List<TPacket>): List<TPacket>
+/** Receives [inboundData] and immediately emits all ready packets. */
+fun <TPacket> PacketProcessor<TPacket>.deliver(inboundData: List<TPacket>): List<TPacket> {
+    receivePackets(inboundData)
+    return emitPackets()
 }

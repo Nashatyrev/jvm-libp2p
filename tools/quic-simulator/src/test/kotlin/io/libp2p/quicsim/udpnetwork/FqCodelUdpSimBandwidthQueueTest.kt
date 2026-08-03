@@ -1,5 +1,6 @@
 package io.libp2p.quicsim.udpnetwork
 
+import io.libp2p.quicsim.core.deliver
 import io.libp2p.quicsim.udpnetwork.impl.FqCodelUdpSimBandwidthQueue
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test

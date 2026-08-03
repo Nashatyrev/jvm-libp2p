@@ -83,7 +83,9 @@ class UdpSimNetworkEngineImpl4(
         require(inboundLinks.size == endpoints.size) { "Impl4 expects one inbound link per endpoint" }
     }
 
-    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> = TODO("Shouldn't be called")
+    override fun receivePackets(packets: List<DatagramPacket>) = TODO("Shouldn't be called")
+
+    override fun emitPackets(): List<DatagramPacket> = TODO("Shouldn't be called")
 
     override fun advance(advanceDuration: Duration) = TODO("Short advances are not viable here. Use advanceUntil")
 

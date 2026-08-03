@@ -78,8 +78,11 @@ class TestUdpSimQueue(
     private val delegate: PacketProcessor<DatagramPacket>
 ) : PacketProcessor<DatagramPacket> {
 
-    override fun deliver(inboundData: List<DatagramPacket>): List<DatagramPacket> =
-        delegate.deliver(inboundData)
+    override fun receivePackets(packets: List<DatagramPacket>) =
+        delegate.receivePackets(packets)
+
+    override fun emitPackets(): List<DatagramPacket> =
+        delegate.emitPackets()
 
     override fun advance(advanceDuration: Duration) {
         delegate.advance(advanceDuration)
