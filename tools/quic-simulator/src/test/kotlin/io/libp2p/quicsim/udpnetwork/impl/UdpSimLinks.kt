@@ -19,7 +19,6 @@ class UdpSimLinks {
             to = to,
             bandwidthQueue = qdisc.bandwidthQueue,
             latencyQueue = qdisc.latencyQueue,
-            qdisc = qdisc
         )
     }
 

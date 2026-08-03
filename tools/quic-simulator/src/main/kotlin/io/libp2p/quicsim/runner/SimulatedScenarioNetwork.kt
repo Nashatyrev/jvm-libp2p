@@ -58,19 +58,11 @@ fun QuicNetworkLink.toUdpSimLink(
         }
     }
     val latencyQueue = LatencyQueueImpl<DatagramPacket>(this.latency)
-    val qdisc =
-        SerialPacketProcessor(
-            listOf(
-                bandwidthQueue,
-                latencyQueue.receiver.createPacketProcessorAdapter()
-            )
-        )
     return UdpSimLink(
         from = from,
         to = to,
         bandwidthQueue = bandwidthQueue,
         latencyQueue = latencyQueue,
-        qdisc = qdisc
     )
 }
 
