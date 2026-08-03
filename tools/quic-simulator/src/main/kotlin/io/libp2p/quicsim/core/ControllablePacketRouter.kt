@@ -39,9 +39,11 @@ open class ControllablePacketRouter<TPacket>(
                 unprocessedPacketsCount -= inboundPackets[i].size
                 outboundPackets.forEach { outboundPacket ->
                     val destinationRouteId = routeSelector(i, outboundPacket)
+                    assert(destinationRouteId != i)
                     inboundPackets[destinationRouteId] += outboundPacket
                 }
                 unprocessedPacketsCount += outboundPackets.size
+                inboundPackets[i].clear()
             }
         } while (unprocessedPacketsCount > 0)
     }

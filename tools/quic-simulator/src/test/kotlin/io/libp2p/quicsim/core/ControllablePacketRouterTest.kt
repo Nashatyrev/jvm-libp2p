@@ -3,6 +3,7 @@ package io.libp2p.quicsim.core
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -47,6 +48,29 @@ class ControllablePacketRouterTest {
         assertEquals(listOf(emptyList<Packet>()), first.receivedInbound)
         assertEquals(listOf(listOf(Packet(route = 1, payload = "first-to-second"))), second.receivedInbound)
         assertEquals(listOf(listOf(Packet(route = 2, payload = "first-to-second-to-third"))), third.receivedInbound)
+    }
+
+    @Test
+    @Timeout(1)
+    fun `consumes inbound packets after routing them`() {
+        val left = RecordingPacketProcessor(
+            outbound = mutableListOf(Packet(route = 0, payload = "request"))
+        )
+        val right = RecordingPacketProcessor(
+            transformInbound = { Packet(route = 0, payload = "response") }
+        )
+        val router = ControllablePacketRouter.createSimplePump(left, right)
+
+        router.pumpPackets()
+
+        assertEquals(
+            listOf(emptyList(), listOf(Packet(route = 0, payload = "response"))),
+            left.receivedInbound
+        )
+        assertEquals(
+            listOf(listOf(Packet(route = 0, payload = "request")), emptyList()),
+            right.receivedInbound
+        )
     }
 
     @Test
