@@ -1,5 +1,6 @@
 package io.libp2p.quicsim.runner
 
+import com.google.common.base.Supplier
 import io.libp2p.core.Host
 import io.libp2p.core.crypto.PrivKey
 import io.libp2p.core.dsl.HostBuilder
@@ -27,6 +28,7 @@ import io.netty.buffer.AdaptiveByteBufAllocator
 import io.netty.buffer.ByteBufAllocator
 import io.netty.buffer.UnpooledByteBufAllocator
 import io.netty.channel.socket.DatagramPacket
+import io.netty.incubator.codec.quic.QuicheConfig
 import java.security.SecureRandom
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -52,11 +54,21 @@ class SimulatedRunner(
         SimNodeVisitorFactory { PacketProcessorVisitor.none() },
     val datagramPacketTraceRecorder: DatagramPacketTraceRecorder = DatagramPacketTraceRecorder.Noop,
     val quicAllocatorFactory: (SimNodeId) -> ByteBufAllocator = defaultQuicAllocatorFactoryFromSystemProperties(),
-    val nodeHeapProfiler: SimulatedNodeHeapProfiler = SimulatedNodeHeapProfiler.fromSystemProperties()
+    val nodeHeapProfiler: SimulatedNodeHeapProfiler = SimulatedNodeHeapProfiler.fromSystemProperties(),
+    // creating QuicheConfig is CPU heavy, may be used as a singleton
+    // but with a risk that free() is called on it upon transport shutdown
+    // basically should be safe in a single run
+    val optimizePerfByCreatingSingleQuicheConfig: Boolean = true
 ) {
     val nodeCount: Int = udpNetwork.nodes.size
 
     lateinit var simTimer: MonotonicTimer
+    private val quicheConfigSupplier : Supplier<QuicheConfig> = object : Supplier<QuicheConfig> {
+        val configSingleton = QuicTransport.createDefaultQuicheClientConfig()
+        override fun get(): QuicheConfig =
+            if (optimizePerfByCreatingSingleQuicheConfig) configSingleton
+            else QuicTransport.createDefaultQuicheClientConfig()
+    }
 
     class NodeStuff(
         val id: SimNodeId,
@@ -135,7 +147,8 @@ class SimulatedRunner(
                     timeSupplier = { simContext.timer.elapsedTime() },
                     traceRecorder = datagramPacketTraceRecorder
                 ),
-                allocator = allocator
+                allocator = allocator,
+                clientQuicheConfig = quicheConfigSupplier.get()
             )
         }
 

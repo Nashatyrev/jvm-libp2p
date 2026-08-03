@@ -56,7 +56,8 @@ class QuicTransport @JvmOverloads constructor(
     private val certAlgorithm: String,
     private val protocols: List<ProtocolBinding<*>>,
     private val datagramChannelFactory: DatagramChannelFactory = DefaultDatagramChannelFactory(),
-    private val allocator: ByteBufAllocator = AdaptiveByteBufAllocator(true)
+    private val allocator: ByteBufAllocator = AdaptiveByteBufAllocator(true),
+    private val clientQuicheConfig: QuicheConfig = createDefaultQuicheClientConfig()
 ) : NettyTransport {
 
     private val deterministicRandom = SecureRandom(localKey.publicKey().bytes())
@@ -105,7 +106,7 @@ class QuicTransport @JvmOverloads constructor(
             return stream
         }
 
-        private val quicheClientConfig = QuicClientCodecBuilder()
+        fun createDefaultQuicheClientConfig() = QuicClientCodecBuilder()
             .maxIdleTimeout(60000, TimeUnit.MILLISECONDS)
             .initialMaxData(1 shl 20)
             .initialMaxStreamsBidirectional(64)
@@ -283,7 +284,7 @@ class QuicTransport @JvmOverloads constructor(
         return QuicClientCodecBuilder()
             .sslEngineProvider { q -> sslContext.newEngine(q.alloc()) }
             .sslTaskExecutor(null) // IMMEDIATE Executor
-            .quicheConfig(quicheClientConfig)
+            .quicheConfig(clientQuicheConfig)
             .build()
     }
 

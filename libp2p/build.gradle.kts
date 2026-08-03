@@ -18,7 +18,7 @@ dependencies {
     implementation("io.netty:netty-transport-classes-epoll")
     implementation("io.netty.incubator:netty-incubator-codec-classes-quic:0.0.76.Final-SNAPSHOT")
     implementation("io.netty.incubator:netty-incubator-codec-native-quic:0.0.76.Final-SNAPSHOT")
-    runtimeOnly("io.netty.incubator:netty-incubator-codec-native-quic:0.0.76.Final-SNAPSHOT:${nativeClassifier()}")
+    api("io.netty.incubator:netty-incubator-codec-native-quic:0.0.76.Final-SNAPSHOT:${nativeClassifier()}")
     implementation("io.netty:netty-tcnative-boringssl-static::linux-x86_64")
     implementation("io.netty:netty-tcnative-boringssl-static::linux-aarch_64")
     implementation("io.netty:netty-tcnative-boringssl-static::osx-x86_64")
