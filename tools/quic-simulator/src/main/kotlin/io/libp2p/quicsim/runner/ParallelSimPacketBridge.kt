@@ -17,7 +17,7 @@ class ParallelSimPacketBridge(
     val simNet: SimNet<DatagramPacket>,
     val udpNet: UdpSimNetwork,
     val parallelism: Int,
-) : AbstractSimPacketBridge() {
+) : AbstractSimPacketBridge(), NetworkController {
     init {
         require(parallelism > 0) { "parallelism must be positive" }
     }
@@ -80,9 +80,9 @@ class ParallelSimPacketBridge(
         fun nextTaskDuration(): Duration?
     }
 
-    fun advanceWhile(
+    override fun advanceWhile(
         predicate: () -> Boolean,
-        afterTimeAdvanced: (Duration) -> Unit = {}
+//        afterTimeAdvanced: (Duration) -> Unit = {}
     ) {
         val lock = Any()
         val executor = PrioritizedQuiescentExecutor(parallelism)
@@ -184,7 +184,7 @@ class ParallelSimPacketBridge(
                     parallelUdpNet.lastDeliveredEndpointNodeIds.forEach { nodeId ->
                         nodeTasksByUdpId[nodeId]?.invalidateNextTaskDuration()
                     }
-                    afterTimeAdvanced(udpNetTask.currentTime)
+//                    afterTimeAdvanced(udpNetTask.currentTime)
                 },
             )
 

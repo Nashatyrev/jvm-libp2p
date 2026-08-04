@@ -6,10 +6,10 @@ import io.libp2p.quicsim.core.schedule.impl.NanoMonotonicTimer
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 
-abstract class AbstractSimPacketBridge : Controllable {
+abstract class AbstractSimPacketBridge : Controllable, NetworkController {
 
     protected var nanosPassed = AtomicLong(0)
-    val monotonicTimer: MonotonicTimer = NanoMonotonicTimer(nanosPassed::get)
+    override val monotonicTimer: MonotonicTimer = NanoMonotonicTimer(nanosPassed::get)
 
     override fun advance(advanceDuration: Duration) {
         nanosPassed.updateAndGet { it + advanceDuration.inWholeNanoseconds }

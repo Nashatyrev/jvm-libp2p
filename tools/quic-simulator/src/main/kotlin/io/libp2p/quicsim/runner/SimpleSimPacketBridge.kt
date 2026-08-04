@@ -64,4 +64,8 @@ class SimpleSimPacketBridge(
         )
         return ControllablePacketRouter.createSimplePump(simNode, aheadProcessor)
     }
+
+    override fun advanceWhile(predicate: () -> Boolean) {
+        TODO("Not yet implemented")
+    }
 }
