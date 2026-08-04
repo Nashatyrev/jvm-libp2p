@@ -13,7 +13,7 @@ import io.libp2p.quicsim.sim.SimNode
 import io.libp2p.quicsim.udpnetwork.RouteResolver
 import io.libp2p.quicsim.udpnetwork.UdpSimLink
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
-import io.libp2p.quicsim.udpnetwork.UdpSimNetwork.Companion.findEndpoints
+import io.libp2p.quicsim.udpnetwork.UdpSimNetwork.Companion.routers
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.udpSimDestinationNodeId
 import io.netty.channel.socket.DatagramPacket
@@ -83,7 +83,7 @@ class TimedNetworkImpl(
     }
     val endpointNodesById = endpointNodes.associateBy { it.udpNode.id }
 
-    val routers = (udpNet.nodes - udpNet.findEndpoints())
+    val routers = udpNet.routers
         .map { udpNode -> RouterNode(udpNode) }
 
     val allNodes = endpointNodes + routers
@@ -121,9 +121,9 @@ class TimedNetworkImpl(
             .withIndex()
             .associateBy { it.value.udpNode }
             .mapValues { it.value.index }
-        node.router = ControllablePacketRouter(processors) { from, packet ->
+        node.router = ControllablePacketRouter(processors) { _, packet ->
             val destNode = endpointNodesById[packet.udpSimDestinationNodeId()]!!
-            val nextHopNode = routeResolver.findNextHop(routeNodes[from].udpNode, destNode.udpNode)!!
+            val nextHopNode = routeResolver.findNextHop(node.udpNode, destNode.udpNode)!!
             routeNodesIndices[nextHopNode]!!
         }
     }

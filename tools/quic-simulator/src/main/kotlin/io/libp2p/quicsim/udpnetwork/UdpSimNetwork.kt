@@ -9,7 +9,10 @@ interface UdpSimNetwork {
     /** Directed links between nodes. */
     val links: List<UdpSimLink>
 
+
     companion object {
+        val UdpSimNetwork.nodesAndRouters get() = links.flatMap { listOf(it.from, it.to) }.distinct()
+        val UdpSimNetwork.routers get() = nodesAndRouters - this.findEndpoints()
         fun UdpSimNetwork.findEndpoints(): Set<UdpSimNode> =
             links
                 .map { it.from }
