@@ -19,11 +19,11 @@ import io.libp2p.quicsim.udpnetwork.udpSimDestinationNodeId
 import io.netty.channel.socket.DatagramPacket
 import kotlin.time.Duration
 
-class SimpleGeneralPacketBridge(
+class TimedNetworkImpl(
     val simNet: SimNet<DatagramPacket>,
     val udpNet: UdpSimNetwork,
     val routeResolver: RouteResolver
-) : AbstractSimPacketBridge() {
+) {
 
     abstract class GeneralNode(
         val udpNode: UdpSimNode,
@@ -86,7 +86,8 @@ class SimpleGeneralPacketBridge(
     val routers = (udpNet.nodes - udpNet.findEndpoints())
         .map { udpNode -> RouterNode(udpNode) }
 
-    val allNodesByUdp = (endpointNodes + routers).associateBy { it.udpNode }
+    val allNodes = endpointNodes + routers
+    val allNodesByUdp = allNodes.associateBy { it.udpNode }
 
     val bidiLinks = udpNet.links
         .groupBy { setOf(it.from, it.to) }
@@ -126,19 +127,4 @@ class SimpleGeneralPacketBridge(
             routeNodesIndices[nextHopNode]!!
         }
     }
-
-    fun advanceWhile(
-        predicate: () -> Boolean,
-        afterTimeAdvanced: (Duration) -> Unit = {}
-    ) {
-
-    }
-
-    override fun advanceImpl(advanceDuration: Duration) {
-    }
-
-    override fun executePending() {
-    }
-
-    override fun nextTaskDuration(): Duration? = TODO()
 }

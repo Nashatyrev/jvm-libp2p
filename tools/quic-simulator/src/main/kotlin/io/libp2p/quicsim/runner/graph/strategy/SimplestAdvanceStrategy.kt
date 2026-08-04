@@ -5,9 +5,9 @@ import io.libp2p.quicsim.runner.graph.TimedNetworkGraph
 import io.libp2p.quicsim.runner.graph.TimedNetworkLink
 import io.libp2p.quicsim.runner.graph.TimedNetworkVertex
 
-class SimplestAdvanceStrategy<TVert: TimedNetworkVertex, TLink: TimedNetworkLink<TVert>> : TimeAdvanceStrategy<TVert, TLink> {
+class SimplestAdvanceStrategy : TimeAdvanceStrategy {
 
-    override fun selectNextToAdvance(graph: TimedNetworkGraph<TVert, TLink>): TVert {
+    override fun selectNextToAdvance(graph: TimedNetworkGraph<*, *>): TimedNetworkVertex {
         return graph.vertices.maxByOrNull { graph.maxAdvance(it.id) }!!
     }
 }
