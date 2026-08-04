@@ -6,7 +6,7 @@ import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.udpnetwork.RouteResolver
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.netty.channel.socket.DatagramPacket
-import kotlin.time.Duration
+import kotlin.time.Duration.Companion.ZERO
 
 class TimedNetworkController(
     val simNet: SimNet<DatagramPacket>,
@@ -20,9 +20,9 @@ class TimedNetworkController(
 
     fun advanceWhile(predicate: () -> Boolean) {
         while (predicate()) {
-            val node  = timeAdvanceStrategy.selectNextToAdvance(timedGraph) as TimedNetworkImpl.EndpointNode
+            val node  = timeAdvanceStrategy.selectNextToAdvance(timedGraph) as TimedNetworkImpl.GeneralNode
             val advance = timedGraph.maxAdvance(node.id)
-            node.advanceAndExecuteAll(advance)
+            timedGraph.advanceVertex(node.id, advance)
         }
     }
 }

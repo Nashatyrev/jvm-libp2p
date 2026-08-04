@@ -5,6 +5,7 @@ import io.libp2p.quicsim.core.ControllablePacketRouter
 import io.libp2p.quicsim.core.InOutProcessor
 import io.libp2p.quicsim.core.PacketProcessor
 import io.libp2p.quicsim.core.schedule.Controllable
+import io.libp2p.quicsim.core.schedule.Controllable.Companion.advanceAndExecuteUntil
 import io.libp2p.quicsim.runner.graph.TimedNetworkLink
 import io.libp2p.quicsim.runner.graph.TimedNetworkLink.Companion.other
 import io.libp2p.quicsim.runner.graph.TimedNetworkVertex
@@ -27,9 +28,15 @@ class TimedNetworkImpl(
 
     abstract class GeneralNode(
         val udpNode: UdpSimNode,
-    ) : TimedNetworkVertex, Controllable {
+    ) : TimedNetworkVertex {
         override val id: String get() = udpNode.id
+        abstract val controllable: Controllable
         override var time: Duration = Duration.ZERO
+            set(value) {
+                val increment = value - field
+                field = value
+                controllable.advanceAndExecuteUntil(increment)
+            }
 
         override fun equals(other: Any?)=
             id == (other as GeneralNode).id
@@ -39,23 +46,17 @@ class TimedNetworkImpl(
 
     class RouterNode(
         udpNode: UdpSimNode,
-    ) : GeneralNode(udpNode), Controllable {
+    ) : GeneralNode(udpNode) {
         lateinit var router: ControllablePacketRouter<DatagramPacket>
-
-        override fun advance(advanceDuration: Duration) = router.advance(advanceDuration)
-        override fun executePending() = router.executePending()
-        override fun nextTaskDuration(): Duration? = router.nextTaskDuration()
+        override val controllable get() = router
     }
 
     class EndpointNode(
         udpNode: UdpSimNode,
         val simNode: SimNode<DatagramPacket>,
-    ) : GeneralNode(udpNode), Controllable {
+    ) : GeneralNode(udpNode) {
         lateinit var packetPump: Controllable
-
-        override fun advance(advanceDuration: Duration) = packetPump.advance(advanceDuration)
-        override fun executePending() = packetPump.executePending()
-        override fun nextTaskDuration(): Duration? = packetPump.nextTaskDuration()
+        override val controllable get() = packetPump
     }
 
     data class GeneralBidiLink(
