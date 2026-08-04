@@ -53,9 +53,7 @@ open class ControllablePacketRouter<TPacket>(
         fun <TPacket> createSimplePump(
             packetProcessor1: PacketProcessor<TPacket>,
             packetProcessor2: PacketProcessor<TPacket>,
-        ) = ControllablePacketRouter(
-            listOf(packetProcessor1, packetProcessor2),
-            { from, _ -> 1 - from }
-        )
+        ) =
+            ControllablePacketPump(packetProcessor1, packetProcessor2)
     }
 }
