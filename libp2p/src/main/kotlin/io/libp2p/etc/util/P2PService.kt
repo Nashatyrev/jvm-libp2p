@@ -20,6 +20,17 @@ import java.util.concurrent.atomic.AtomicLong
 
 private val logger = LoggerFactory.getLogger(P2PService::class.java)
 
+private class NullOnEndIterator<T : Any>(
+    private val delegate: Iterator<T>
+) {
+    fun next(): T? =
+        if (delegate.hasNext()) {
+            delegate.next()
+        } else {
+            null
+        }
+}
+
 object P2PServiceWriteStats {
     private val enabled = System.getProperty("quicsim.profile.p2pWriteStats").toBoolean()
 
@@ -292,14 +303,16 @@ abstract class P2PService(
             while (context.channel().isWritable && pendingWrites.isNotEmpty()) {
                 val pendingWrite = pendingWrites.peek()
                 try {
-                    val msg = pendingWrite.nextMessage()
+                    val msg = pendingWrite.nextMessageOrNull()
+                    if (msg == null) {
+                        pendingWrites.remove()
+                        P2PServiceWriteStats.onSequenceRemoved()
+                        pendingWrite.endOfInput()
+                        continue
+                    }
                     P2PServiceWriteStats.onWrite(msg)
                     pendingWrite.write(context.write(msg))
                     flushed = true
-                } catch (e: NoSuchElementException) {
-                    pendingWrites.remove()
-                    P2PServiceWriteStats.onSequenceRemoved()
-                    pendingWrite.endOfInput()
                 } catch (e: Exception) {
                     pendingWrites.remove()
                     P2PServiceWriteStats.onSequenceRemoved()
@@ -326,14 +339,14 @@ abstract class P2PService(
             private val sequenceSupplier: () -> Sequence<Any>,
             val result: CompletableFuture<Unit>
         ) {
-            private var iterator: Iterator<Any>? = null
+            private var iterator: NullOnEndIterator<Any>? = null
 
             private var inputEnded = false
             private var pendingWriteFutures = 0
             private var failure: Throwable? = null
 
-            fun nextMessage(): Any {
-                val iterator = iterator ?: sequenceSupplier().iterator().also { iterator = it }
+            fun nextMessageOrNull(): Any? {
+                val iterator = iterator ?: NullOnEndIterator(sequenceSupplier().iterator()).also { iterator = it }
                 return iterator.next()
             }
 

@@ -85,7 +85,7 @@ class P2PServiceTest {
     }
 
     @Test
-    fun `enqueueWrite pulls sequence with next without probing hasNext`() {
+    fun `enqueueWrite detects sequence end without calling next on exhausted iterator`() {
         val serviceThreadName = "p2p-service-test"
         val executor = Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, serviceThreadName)
@@ -104,7 +104,8 @@ class P2PServiceTest {
                             private var emitted = false
 
                             override fun hasNext(): Boolean {
-                                error("hasNext should not be used to pull queued writes")
+                                calls += "hasNext:${Thread.currentThread().name}"
+                                return !emitted
                             }
 
                             override fun next(): Any {
@@ -113,7 +114,7 @@ class P2PServiceTest {
                                     emitted = true
                                     return "message"
                                 }
-                                throw NoSuchElementException()
+                                error("next should not be called after iterator is exhausted")
                             }
                         }
                 }
@@ -121,7 +122,11 @@ class P2PServiceTest {
             service.awaitEventThread()
             result.get(5, TimeUnit.SECONDS)
 
-            assertThat(calls).containsExactly("next:$serviceThreadName", "next:$serviceThreadName")
+            assertThat(calls).containsExactly(
+                "hasNext:$serviceThreadName",
+                "next:$serviceThreadName",
+                "hasNext:$serviceThreadName"
+            )
             assertThat(service.channel.readOutbound<String>()).isEqualTo("message")
             assertThat(service.channel.readOutbound<String>()).isNull()
         } finally {
