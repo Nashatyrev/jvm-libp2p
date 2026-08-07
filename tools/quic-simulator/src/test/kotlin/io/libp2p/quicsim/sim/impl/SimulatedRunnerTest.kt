@@ -209,7 +209,7 @@ class SimulatedRunnerTest {
             },
             udpNetwork = udpNetwork,
             maxSimulatedRunDuration = 10.minutes,
-            latencyWindowParallelism = 32,
+            latencyWindowParallelism = 1,
             nodeVisitorFactory = packetStats,
             quicAllocatorFactory = { nodeId ->
                 if (profiledAllocator != null && nodeId == profiledNodeId) {
@@ -217,7 +217,8 @@ class SimulatedRunnerTest {
                 } else {
                     globalAllocator ?: quicAllocatorDelegate(allocatorMode, forceHeapByteBufs)
                 }
-            }
+            },
+            newNetworkController = true
         )
 
         directBufferStats.start()

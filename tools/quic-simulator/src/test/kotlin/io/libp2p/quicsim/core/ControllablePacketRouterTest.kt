@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import io.libp2p.quicsim.core.schedule.impl.LatencyQueueImpl
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -43,9 +44,10 @@ class ControllablePacketRouterTest {
             routeSelector = { _, packet -> packet.route }
         )
 
-        router.pumpPackets()
+        router.advanceAndExecuteAll(Duration.ZERO)
+        router.advanceAndExecuteAll(Duration.ZERO)
 
-        assertEquals(listOf(emptyList<Packet>()), first.receivedInbound)
+        assertEquals(emptyList<List<Packet>>(), first.receivedInbound)
         assertEquals(listOf(listOf(Packet(route = 1, payload = "first-to-second"))), second.receivedInbound)
         assertEquals(listOf(listOf(Packet(route = 2, payload = "first-to-second-to-third"))), third.receivedInbound)
     }
@@ -105,6 +107,24 @@ class ControllablePacketRouterTest {
         assertNull(router.nextTaskDuration())
     }
 
+    @Test
+    fun `syncs idle route before delivering packets to it`() {
+        val outboundQueue = LatencyQueueImpl<Packet>(60.milliseconds)
+        val inboundQueue = LatencyQueueImpl<Packet>(10.milliseconds)
+        outboundQueue.receiver.receivePackets(listOf(Packet(route = 1, payload = "from-left")))
+        val router = ControllablePacketRouter(
+            routeProcessors = listOf(
+                InOutProcessor(outboundQueue.emitter, outboundQueue.receiver),
+                InOutProcessor(inboundQueue.emitter, inboundQueue.receiver)
+            ),
+            routeSelector = { _, packet -> packet.route }
+        )
+
+        router.advanceAndExecuteAll(router.nextTaskDuration()!!)
+
+        assertEquals(10.milliseconds, router.nextTaskDuration())
+    }
+
     private data class Packet(
         val route: RouteId,
         val payload: String
@@ -156,7 +176,7 @@ class ControllablePacketRouterTest {
         }
 
         override fun nextTaskDuration(): Duration? =
-            nextTask
+            if (outbound.isNotEmpty()) Duration.ZERO else nextTask
     }
 
     private class RecordingReceiver(
