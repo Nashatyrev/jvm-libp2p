@@ -42,7 +42,7 @@ open class AggregateProcessor2<TControllable, TPacket>(
         }
 
         fun advanceTillAbsolute(absoluteTime: Duration) {
-            if (absoluteTime == currentAbsoluteTime) {
+            if (absoluteTime == curTime) {
                 return
             }
             val relativeAdvance = absoluteTime - curTime
