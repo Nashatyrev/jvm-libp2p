@@ -1,7 +1,9 @@
 package io.libp2p.quicsim.core
 
-import io.libp2p.quicsim.core.schedule.AggregateProcessor2
+import io.libp2p.quicsim.core.schedule.AggregateProcessor
+import io.libp2p.quicsim.core.schedule.impl.OptimizedAggregateProcessor
 import io.libp2p.quicsim.core.schedule.Controllable
+import io.libp2p.quicsim.core.schedule.impl.SimpleAggregateProcessor
 import kotlin.time.Duration
 
 typealias RouteId = Int
@@ -13,7 +15,8 @@ open class ControllablePacketRouter<TPacket>(
 
     private val routeCount: RouteId = routeProcessors.size
 
-    private val aggregateProcessor = AggregateProcessor2(routeProcessors)
+    private val aggregateProcessor: AggregateProcessor<TPacket> = OptimizedAggregateProcessor(routeProcessors)
+//    private val aggregateProcessor: AggregateProcessor<TPacket> = SimpleAggregateProcessor(routeProcessors)
 
     override fun advance(advanceDuration: Duration) {
         aggregateProcessor.advance(advanceDuration)

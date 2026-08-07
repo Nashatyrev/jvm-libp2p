@@ -1,36 +1,36 @@
-package io.libp2p.quicsim.core.schedule
+package io.libp2p.quicsim.core.schedule.impl
 
 import io.libp2p.quicsim.core.NotifyingPacketEmitter
 import io.libp2p.quicsim.core.PacketProcessor
+import io.libp2p.quicsim.core.schedule.AggregateProcessor
 import java.util.SortedMap
 import java.util.TreeMap
-import kotlin.collections.isNotEmpty
 import kotlin.time.Duration
 
-open class AggregateProcessor2<TControllable, TPacket>(
-    processors: List<TControllable>
-) : Controllable where TControllable : PacketProcessor<TPacket>, TControllable : NotifyingPacketEmitter<TPacket> {
+open class OptimizedAggregateProcessor<TProcessor, TPacket>(
+    processors: List<TProcessor>
+) : AggregateProcessor<TPacket> where TProcessor : PacketProcessor<TPacket>, TProcessor : NotifyingPacketEmitter<TPacket> {
 
     private inner class RouteController(
-        val controllable: TControllable,
+        val delegate: TProcessor,
     ) {
-        var curTime: Duration = Duration.ZERO
+        var curTime: Duration = Duration.Companion.ZERO
         var nextTaskAbsolute: Duration? = null
         var pendingEmitPackets: List<TPacket> = emptyList()
 
         init {
-            controllable.addPacketAddedListener { onTaskAdded() }
+            delegate.addPacketAddedListener { onTaskAdded() }
             updateNextTaskTime()
         }
 
         fun onTaskAdded() {
-            synchronized(this@AggregateProcessor2) {
+            synchronized(this@OptimizedAggregateProcessor) {
                 updateNextTaskTime()
             }
         }
 
         fun updateNextTaskTime() {
-            val newNextTask = controllable.nextTaskDuration()?.let { it + curTime }
+            val newNextTask = delegate.nextTaskDuration()?.let { it + curTime }
             if (newNextTask != nextTaskAbsolute) {
                 nextTaskAbsolute?.let { routeDeactivated(this, it) }
                 nextTaskAbsolute = newNextTask
@@ -45,13 +45,13 @@ open class AggregateProcessor2<TControllable, TPacket>(
                 return
             }
             val relativeAdvance = absoluteTime - curTime
-            controllable.advance(relativeAdvance)
+            delegate.advance(relativeAdvance)
             curTime = absoluteTime
         }
 
         fun executePendingAndUpdateNextTaskTime() {
-            controllable.executePending()
-            pendingEmitPackets += controllable.emitPackets()
+            delegate.executePending()
+            pendingEmitPackets += delegate.emitPackets()
             updateNextTaskTime()
         }
 
@@ -64,13 +64,13 @@ open class AggregateProcessor2<TControllable, TPacket>(
         fun receivePackets(packets: List<TPacket>) {
             if (packets.isNotEmpty()) {
                 advanceTillAbsolute(currentAbsoluteTime)
-                controllable.receivePackets(packets)
+                delegate.receivePackets(packets)
                 updateNextTaskTime()
             }
         }
     }
 
-    private var currentAbsoluteTime: Duration = Duration.ZERO
+    private var currentAbsoluteTime: Duration = Duration.Companion.ZERO
     private val sortedRoutes: SortedMap<Duration, MutableList<RouteController>> = TreeMap()
     private val allRoutes =
         processors.mapIndexed { index, controllable ->
@@ -94,16 +94,12 @@ open class AggregateProcessor2<TControllable, TPacket>(
     }
 
     @Synchronized
-    fun advanceDelegateToCurrent(delegateIndex: Int) {
-    }
-
-    @Synchronized
-    fun emitPackets(idx: Int): List<TPacket> {
+    override fun emitPackets(idx: Int): List<TPacket> {
         return allRoutes[idx].drainEmitPackets()
     }
 
     @Synchronized
-    fun receivePackets(idx: Int, packets: List<TPacket>) {
+    override fun receivePackets(idx: Int, packets: List<TPacket>) {
         if (packets.isNotEmpty()) {
             allRoutes[idx].receivePackets(packets)
         }
