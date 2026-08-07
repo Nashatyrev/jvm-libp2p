@@ -34,7 +34,7 @@ open class AggregateProcessor2<TControllable, TPacket>(
         fun updateNextTaskTime() {
             val newNextTask = controllable.nextTaskDuration()?.let { it + curTime }
             if (newNextTask != nextTaskAbsolute) {
-                nextTaskAbsolute = controllable.nextTaskDuration()?.let { it + curTime }
+                nextTaskAbsolute = newNextTask
                 if (nextTaskAbsolute != null) {
                     routeActivated(this)
                 }
