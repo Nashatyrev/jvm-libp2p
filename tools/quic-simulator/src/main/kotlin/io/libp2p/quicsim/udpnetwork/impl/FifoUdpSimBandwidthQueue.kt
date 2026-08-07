@@ -5,6 +5,7 @@ import io.libp2p.quicsim.udpnetwork.UdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkDefaults
 import io.libp2p.quicsim.udpnetwork.udpSimBytes
 import io.netty.channel.socket.DatagramPacket
+import io.netty.util.ReferenceCountUtil
 import kotlin.time.Duration
 
 class FifoUdpSimBandwidthQueue(
@@ -27,7 +28,9 @@ class FifoUdpSimBandwidthQueue(
                 enqueue(packet, dequeueTime)
                 availableAt = dequeueTime + transferDuration
                 nextAvailableAt = availableAt
-            } // else packet is dropped
+            } else {
+                ReferenceCountUtil.safeRelease(packet)
+            }
         }
     }
 }

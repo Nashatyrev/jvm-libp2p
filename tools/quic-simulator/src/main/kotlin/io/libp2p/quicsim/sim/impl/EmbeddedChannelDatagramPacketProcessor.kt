@@ -45,7 +45,9 @@ class EmbeddedChannelDatagramPacketProcessor(
         generateSequence { channel.readOutbound<DatagramPacket>() }
             .map {
                 if (it.sender() == null) {
-                    DatagramPacket(it.content(), it.recipient(), channel.localAddress())
+                    val packet = DatagramPacket(it.content().retain(), it.recipient(), channel.localAddress())
+                    it.release()
+                    packet
                 } else {
                     it
                 }
