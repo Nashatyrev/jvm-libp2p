@@ -23,11 +23,13 @@ class ParallelTimedNetworkController(
     val timedGraph: TimedNetworkGraph<*, *> = TimedNetworkGraph(timedNetwork.allNodes, timedNetwork.bidiLinks)
     override val monotonicTimer: SimpleMonotonicTimer = SimpleMonotonicTimer()
 
+    val executor = PullingParallelTaskExecutor(parallelism)
+
     override fun advanceWhile(predicate: () -> Boolean) {
-        while (predicate()) {
+        executor.execute() {
+            if (predicate()) getNextTask() else null
         }
     }
-
 
     private val vertexesInWork = mutableSetOf<String>()
 
@@ -40,7 +42,7 @@ class ParallelTimedNetworkController(
         return Runnable {
             timedGraph.advanceVertex(vertexToAdvance.id, advance)
 
-            synchronized(this) {
+            synchronized(this@ParallelTimedNetworkController) {
                 vertexesInWork -= vertexToAdvance.id
                 monotonicTimer.curT = max(monotonicTimer.curT, vertexToAdvance.time)
             }

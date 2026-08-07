@@ -190,7 +190,8 @@ class SimulatedRunner(
         val networkController =
             if (latencyWindowParallelism > 0) {
                 if (newNetworkController)
-                    TimedNetworkController(simCoreNet, udpNetwork)
+//                    TimedNetworkController(simCoreNet, udpNetwork)
+                    ParallelTimedNetworkController(simCoreNet, udpNetwork)
                 else
                     ParallelSimPacketBridge(simCoreNet, udpNetwork, latencyWindowParallelism)
             } else {
