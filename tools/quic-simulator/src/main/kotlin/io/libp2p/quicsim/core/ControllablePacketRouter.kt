@@ -36,6 +36,9 @@ open class ControllablePacketRouter<TPacket>(
         do {
 
             for (i: RouteId in 0 until routeCount) {
+                if (inboundPackets[i].isNotEmpty()) {
+                    aggregateControllable.advanceDelegateToCurrent(i)
+                }
                 val outboundPackets = routeProcessors[i].deliver(inboundPackets[i])
                 unprocessedPacketsCount -= inboundPackets[i].size
                 outboundPackets.forEach { outboundPacket ->

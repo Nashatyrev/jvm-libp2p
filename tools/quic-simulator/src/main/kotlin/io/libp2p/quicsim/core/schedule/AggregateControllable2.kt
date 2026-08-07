@@ -62,6 +62,11 @@ open class AggregateControllable2<TControllable>(
     }
 
     @Synchronized
+    fun advanceDelegateToCurrent(delegateIndex: Int) {
+        allRoutes[delegateIndex].advanceTillAbsolute(currentAbsoluteTime)
+    }
+
+    @Synchronized
     override fun advance(advanceDuration: Duration) {
         val targetTime = currentAbsoluteTime + advanceDuration
         val nowRoutes = sortedRoutes.remove(targetTime) ?: emptyList()
