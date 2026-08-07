@@ -7,7 +7,7 @@ import io.libp2p.quicsim.runner.graph.TimedNetworkVertex
 
 class SimplestAdvanceStrategy : TimeAdvanceStrategy {
 
-    override fun selectNextToAdvance(graph: TimedNetworkGraph<*, *>): TimedNetworkVertex {
-        return graph.vertices.maxByOrNull { graph.maxAdvance(it.id) }!!
+    override fun prioritize(graph: TimedNetworkGraph<*, *>): List<TimedNetworkVertex> {
+        return graph.vertices.sortedBy { graph.maxAdvance(it.id) }
     }
 }
