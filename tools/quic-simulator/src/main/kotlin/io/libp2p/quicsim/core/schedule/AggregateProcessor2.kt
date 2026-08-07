@@ -16,6 +16,7 @@ open class AggregateProcessor2<TControllable, TPacket>(
     ) {
         var curTime: Duration = Duration.ZERO
         var nextTaskAbsolute: Duration? = null
+        var pendingEmitPackets: List<TPacket> = emptyList()
 
         init {
             controllable.addPacketAddedListener { onTaskAdded() }
@@ -45,7 +46,14 @@ open class AggregateProcessor2<TControllable, TPacket>(
 
         fun executePendingAndUpdateNextTaskTime() {
             controllable.executePending()
+            pendingEmitPackets = controllable.emitPackets()
             updateNextTaskTime()
+        }
+
+        fun drainEmitPackets(): List<TPacket> {
+            val ret = pendingEmitPackets
+            pendingEmitPackets = emptyList()
+            return ret
         }
     }
 
@@ -69,10 +77,7 @@ open class AggregateProcessor2<TControllable, TPacket>(
 
     @Synchronized
     fun emitPackets(idx: Int): List<TPacket> {
-        val route = allRoutes[idx]
-        val ret  = route.controllable.emitPackets()
-        route.updateNextTaskTime()
-        return ret
+        return allRoutes[idx].drainEmitPackets()
     }
 
     @Synchronized
