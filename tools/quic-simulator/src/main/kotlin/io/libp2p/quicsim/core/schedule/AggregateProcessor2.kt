@@ -32,9 +32,10 @@ open class AggregateProcessor2<TControllable, TPacket>(
         fun updateNextTaskTime() {
             val newNextTask = controllable.nextTaskDuration()?.let { it + curTime }
             if (newNextTask != nextTaskAbsolute) {
+                nextTaskAbsolute?.let { routeDeactivated(this, it) }
                 nextTaskAbsolute = newNextTask
-                if (nextTaskAbsolute != null) {
-                    routeActivated(this)
+                newNextTask?.let {
+                    routeActivated(this, it)
                 }
             }
         }
@@ -50,7 +51,7 @@ open class AggregateProcessor2<TControllable, TPacket>(
 
         fun executePendingAndUpdateNextTaskTime() {
             controllable.executePending()
-            pendingEmitPackets = controllable.emitPackets()
+            pendingEmitPackets += controllable.emitPackets()
             updateNextTaskTime()
         }
 
@@ -79,8 +80,17 @@ open class AggregateProcessor2<TControllable, TPacket>(
     // invoked when controllable having no tasks before got a task
     // !!! Can be called from another thread
     @Synchronized
-    private fun routeActivated(route: RouteController) {
-        sortedRoutes.computeIfAbsent(route.nextTaskAbsolute) { mutableListOf() } += route
+    private fun routeActivated(route: RouteController, taskTime: Duration) {
+        sortedRoutes.computeIfAbsent(taskTime) { mutableListOf() } += route
+    }
+
+    @Synchronized
+    private fun routeDeactivated(route: RouteController, taskTime: Duration) {
+        val routes = sortedRoutes[taskTime] ?: return
+        routes.remove(route)
+        if (routes.isEmpty()) {
+            sortedRoutes.remove(taskTime)
+        }
     }
 
     @Synchronized
