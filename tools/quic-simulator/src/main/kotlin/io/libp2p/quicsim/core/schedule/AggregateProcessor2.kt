@@ -25,9 +25,7 @@ open class AggregateProcessor2<TControllable, TPacket>(
 
         fun onTaskAdded() {
             synchronized(this@AggregateProcessor2) {
-                if (nextTaskAbsolute == null) {
-                    updateNextTaskTime()
-                }
+                updateNextTaskTime()
             }
         }
 
