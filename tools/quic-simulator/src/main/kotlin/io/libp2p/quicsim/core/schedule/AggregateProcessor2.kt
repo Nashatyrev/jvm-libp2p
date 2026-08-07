@@ -1,13 +1,15 @@
 package io.libp2p.quicsim.core.schedule
 
 import io.libp2p.quicsim.core.NotifyingPacketEmitter
+import io.libp2p.quicsim.core.PacketProcessor
 import java.util.SortedMap
 import java.util.TreeMap
+import kotlin.collections.isNotEmpty
 import kotlin.time.Duration
 
-open class AggregateControllable2<TControllable>(
-    controllables: List<TControllable>
-) : Controllable where TControllable : Controllable, TControllable : NotifyingPacketEmitter<*> {
+open class AggregateProcessor2<TControllable, TPacket>(
+    processors: List<TControllable>
+) : Controllable where TControllable : PacketProcessor<TPacket>, TControllable : NotifyingPacketEmitter<TPacket> {
 
     private inner class RouteController(
         val controllable: TControllable,
@@ -21,14 +23,14 @@ open class AggregateControllable2<TControllable>(
         }
 
         fun onTaskAdded() {
-            synchronized(this@AggregateControllable2) {
+            synchronized(this@AggregateProcessor2) {
                 if (nextTaskAbsolute == null) {
                     updateNextTaskTime()
                 }
             }
         }
 
-        private fun updateNextTaskTime() {
+        fun updateNextTaskTime() {
             nextTaskAbsolute = controllable.nextTaskDuration()?.let { it + curTime }
             if (nextTaskAbsolute != null) {
                 routeActivated(this)
@@ -50,7 +52,7 @@ open class AggregateControllable2<TControllable>(
     private var currentAbsoluteTime: Duration = Duration.ZERO
     private val sortedRoutes: SortedMap<Duration, MutableList<RouteController>> = TreeMap()
     private val allRoutes =
-        controllables.mapIndexed { index, controllable ->
+        processors.mapIndexed { index, controllable ->
             RouteController(controllable)
         }
 
@@ -63,7 +65,23 @@ open class AggregateControllable2<TControllable>(
 
     @Synchronized
     fun advanceDelegateToCurrent(delegateIndex: Int) {
-        allRoutes[delegateIndex].advanceTillAbsolute(currentAbsoluteTime)
+    }
+
+    @Synchronized
+    fun emitPackets(idx: Int): List<TPacket> {
+        val route = allRoutes[idx]
+        val ret  = route.controllable.emitPackets()
+        route.updateNextTaskTime()
+        return ret
+    }
+
+    @Synchronized
+    fun receivePackets(idx: Int, packets: List<TPacket>) {
+        if (packets.isNotEmpty()) {
+            val route = allRoutes[idx]
+            route.advanceTillAbsolute(currentAbsoluteTime)
+            route.controllable.receivePackets(packets)
+        }
     }
 
     @Synchronized

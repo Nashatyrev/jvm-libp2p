@@ -1,32 +1,31 @@
 package io.libp2p.quicsim.core
 
-import io.libp2p.quicsim.core.schedule.AggregateControllable
-import io.libp2p.quicsim.core.schedule.AggregateControllable2
+import io.libp2p.quicsim.core.schedule.AggregateProcessor2
 import io.libp2p.quicsim.core.schedule.Controllable
 import kotlin.time.Duration
 
 typealias RouteId = Int
 
 open class ControllablePacketRouter<TPacket>(
-    private val routeProcessors: List<InOutProcessor<TPacket>>,
+    routeProcessors: List<InOutProcessor<TPacket>>,
     private val routeSelector: (from: RouteId, packet: TPacket) -> RouteId,
 ) : Controllable {
 
     private val routeCount: RouteId = routeProcessors.size
 
-    private val aggregateControllable = AggregateControllable2(routeProcessors)
+    private val aggregateProcessor = AggregateProcessor2(routeProcessors)
 
     override fun advance(advanceDuration: Duration) {
-        aggregateControllable.advance(advanceDuration)
+        aggregateProcessor.advance(advanceDuration)
     }
 
     override fun executePending() {
-        aggregateControllable.executePending()
+        aggregateProcessor.executePending()
         pumpPackets()
     }
 
     override fun nextTaskDuration(): Duration? =
-        aggregateControllable.nextTaskDuration()
+        aggregateProcessor.nextTaskDuration()
 
     fun pumpPackets() {
 
@@ -36,10 +35,8 @@ open class ControllablePacketRouter<TPacket>(
         do {
 
             for (i: RouteId in 0 until routeCount) {
-                if (inboundPackets[i].isNotEmpty()) {
-                    aggregateControllable.advanceDelegateToCurrent(i)
-                }
-                val outboundPackets = routeProcessors[i].deliver(inboundPackets[i])
+                aggregateProcessor.receivePackets(i, inboundPackets[i])
+                val outboundPackets = aggregateProcessor.emitPackets(i)
                 unprocessedPacketsCount -= inboundPackets[i].size
                 outboundPackets.forEach { outboundPacket ->
                     val destinationRouteId = routeSelector(i, outboundPacket)
