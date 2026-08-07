@@ -11,16 +11,16 @@ class ControllablePacketRouterTest {
 
     @Test
     fun `simple pump routes packets between two processors until idle`() {
-        val left = RecordingPacketProcessor(
+        val left = recordingRoute(
             outbound = mutableListOf(Packet(route = 0, payload = "from-left"))
         )
-        val right = RecordingPacketProcessor()
-        val router = ControllablePacketRouter.createSimplePump(left, right)
+        val right = recordingRoute()
+        val router = ControllablePacketRouter.createSimplePump(left.processor, right.processor)
 
         router.pumpPackets()
 
         assertEquals(
-            listOf(emptyList<Packet>()),
+            emptyList<List<Packet>>(),
             left.receivedInbound
         )
         assertEquals(
@@ -31,15 +31,15 @@ class ControllablePacketRouterTest {
 
     @Test
     fun `routes packets through multiple processors`() {
-        val first = RecordingPacketProcessor(
+        val first = recordingRoute(
             outbound = mutableListOf(Packet(route = 1, payload = "first-to-second"))
         )
-        val second = RecordingPacketProcessor(
+        val second = recordingRoute(
             transformInbound = { Packet(route = 2, payload = it.payload + "-to-third") }
         )
-        val third = RecordingPacketProcessor()
+        val third = recordingRoute()
         val router = ControllablePacketRouter(
-            routeProcessors = listOf(first, second, third),
+            routeProcessors = listOf(first.processor, second.processor, third.processor),
             routeSelector = { _, packet -> packet.route }
         )
 
@@ -53,44 +53,53 @@ class ControllablePacketRouterTest {
     @Test
     @Timeout(1)
     fun `consumes inbound packets after routing them`() {
-        val left = RecordingPacketProcessor(
+        val left = recordingRoute(
             outbound = mutableListOf(Packet(route = 0, payload = "request"))
         )
-        val right = RecordingPacketProcessor(
+        val right = recordingRoute(
             transformInbound = { Packet(route = 0, payload = "response") }
         )
-        val router = ControllablePacketRouter.createSimplePump(left, right)
+        val router = ControllablePacketRouter.createSimplePump(left.processor, right.processor)
 
         router.pumpPackets()
 
         assertEquals(
-            listOf(emptyList(), listOf(Packet(route = 0, payload = "response"))),
+            listOf(listOf(Packet(route = 0, payload = "response"))),
             left.receivedInbound
         )
         assertEquals(
-            listOf(listOf(Packet(route = 0, payload = "request")), emptyList()),
+            listOf(listOf(Packet(route = 0, payload = "request"))),
             right.receivedInbound
         )
     }
 
     @Test
     fun `delegates controllable methods to route processors`() {
-        val left = RecordingPacketProcessor(nextTask = 10.milliseconds)
-        val right = RecordingPacketProcessor(nextTask = 3.milliseconds)
-        val router = ControllablePacketRouter.createSimplePump(left, right)
+        val first = recordingRoute(nextTask = 10.milliseconds)
+        val second = recordingRoute(nextTask = 3.milliseconds)
+        val third = recordingRoute(nextTask = 3.milliseconds)
+        val router = ControllablePacketRouter(
+            routeProcessors = listOf(first.processor, second.processor, third.processor),
+            routeSelector = { _, packet -> packet.route }
+        )
 
-        router.advanceAndExecuteAll(5.milliseconds)
-
-        assertEquals(listOf(5.milliseconds), left.advanceCalls)
-        assertEquals(listOf(5.milliseconds), right.advanceCalls)
         assertEquals(3.milliseconds, router.nextTaskDuration())
+
+        router.advanceAndExecuteAll(router.nextTaskDuration()!!)
+
+        assertEquals(emptyList<Duration>(), first.advanceCalls)
+        assertEquals(listOf(3.milliseconds), second.advanceCalls)
+        assertEquals(listOf(3.milliseconds), third.advanceCalls)
     }
 
     @Test
     fun `nextTaskDuration returns null when all route processors are idle`() {
-        val router = ControllablePacketRouter.createSimplePump(
-            RecordingPacketProcessor(),
-            RecordingPacketProcessor()
+        val router = ControllablePacketRouter(
+            routeProcessors = listOf(
+                recordingRoute().processor,
+                recordingRoute().processor
+            ),
+            routeSelector = { _, packet -> packet.route }
         )
 
         assertNull(router.nextTaskDuration())
@@ -101,23 +110,42 @@ class ControllablePacketRouterTest {
         val payload: String
     )
 
-    private class RecordingPacketProcessor(
-        private val outbound: MutableList<Packet> = mutableListOf(),
-        private val transformInbound: (Packet) -> Packet? = { null },
-        private val nextTask: Duration? = null
-    ) : PacketProcessor<Packet> {
-        val receivedInbound = mutableListOf<List<Packet>>()
-        val advanceCalls = mutableListOf<Duration>()
+    private fun recordingRoute(
+        outbound: MutableList<Packet> = mutableListOf(),
+        transformInbound: (Packet) -> Packet? = { null },
+        nextTask: Duration? = null
+    ): RecordingRoute {
+        val emitter = RecordingEmitter(outbound, nextTask)
+        val receiver = RecordingReceiver(outbound, transformInbound)
+        return RecordingRoute(
+            processor = InOutProcessor(emitter, receiver),
+            emitter = emitter,
+            receiver = receiver
+        )
+    }
 
-        override fun receivePackets(packets: List<Packet>) {
-            receivedInbound += packets.toList()
-            outbound += packets.mapNotNull(transformInbound)
-        }
+    private data class RecordingRoute(
+        val processor: InOutProcessor<Packet>,
+        val emitter: RecordingEmitter,
+        val receiver: RecordingReceiver,
+    ) {
+        val receivedInbound: List<List<Packet>> get() = receiver.receivedInbound
+        val advanceCalls: List<Duration> get() = emitter.advanceCalls
+    }
+
+    private class RecordingEmitter(
+        private val outbound: MutableList<Packet>,
+        private val nextTask: Duration?
+    ) : NotifyingPacketEmitter<Packet> {
+        val advanceCalls = mutableListOf<Duration>()
 
         override fun emitPackets(): List<Packet> {
             val emitted = outbound.toList()
             outbound.clear()
             return emitted
+        }
+
+        override fun addPacketAddedListener(listener: () -> Unit) {
         }
 
         override fun advance(advanceDuration: Duration) {
@@ -129,5 +157,26 @@ class ControllablePacketRouterTest {
 
         override fun nextTaskDuration(): Duration? =
             nextTask
+    }
+
+    private class RecordingReceiver(
+        private val outbound: MutableList<Packet>,
+        private val transformInbound: (Packet) -> Packet?
+    ) : PacketReceiver<Packet> {
+        val receivedInbound = mutableListOf<List<Packet>>()
+
+        override fun receivePackets(packets: List<Packet>) {
+            receivedInbound += packets.toList()
+            outbound += packets.mapNotNull(transformInbound)
+        }
+
+        override fun advance(advanceDuration: Duration) {
+        }
+
+        override fun executePending() {
+        }
+
+        override fun nextTaskDuration(): Duration? =
+            null
     }
 }
