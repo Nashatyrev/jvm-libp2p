@@ -1,19 +1,20 @@
 package io.libp2p.quicsim.core
 
 import io.libp2p.quicsim.core.schedule.AggregateControllable
+import io.libp2p.quicsim.core.schedule.AggregateControllable2
 import io.libp2p.quicsim.core.schedule.Controllable
 import kotlin.time.Duration
 
 typealias RouteId = Int
 
 open class ControllablePacketRouter<TPacket>(
-    private val routeProcessors: List<PacketProcessor<TPacket>>,
+    private val routeProcessors: List<InOutProcessor<TPacket>>,
     private val routeSelector: (from: RouteId, packet: TPacket) -> RouteId,
 ) : Controllable {
 
     private val routeCount: RouteId = routeProcessors.size
 
-    private val aggregateControllable = AggregateControllable(routeProcessors)
+    private val aggregateControllable = AggregateControllable2(routeProcessors)
 
     override fun advance(advanceDuration: Duration) {
         aggregateControllable.advance(advanceDuration)

@@ -67,8 +67,8 @@ class TimedNetworkImpl(
     ) : TimedNetworkLink<GeneralNode> {
         override val latency: Duration =
             min(udpSimLinkL2R.latencyQueue.minimalLatency, udpSimLinkR2L.latencyQueue.minimalLatency)
-        val leftProcessor: PacketProcessor<DatagramPacket> = InOutProcessor(udpSimLinkR2L.packetEmitter, udpSimLinkL2R.packetReceiver)
-        val rightProcessor: PacketProcessor<DatagramPacket> = InOutProcessor(udpSimLinkL2R.packetEmitter, udpSimLinkR2L.packetReceiver)
+        val leftProcessor: InOutProcessor<DatagramPacket> = InOutProcessor(udpSimLinkR2L.packetEmitter, udpSimLinkL2R.packetReceiver)
+        val rightProcessor: InOutProcessor<DatagramPacket> = InOutProcessor(udpSimLinkL2R.packetEmitter, udpSimLinkR2L.packetReceiver)
 
         fun processorFor(node: GeneralNode) = when(node) {
             left -> leftProcessor

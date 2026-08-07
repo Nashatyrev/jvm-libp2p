@@ -3,11 +3,10 @@ package io.libp2p.quicsim.core.schedule
 import io.libp2p.quicsim.core.NotifyingPacketEmitter
 import java.util.SortedMap
 import java.util.TreeMap
-import kotlin.math.abs
 import kotlin.time.Duration
 
 open class AggregateControllable2<TControllable>(
-    private val controllables: List<TControllable>
+    controllables: List<TControllable>
 ) : Controllable where TControllable : Controllable, TControllable : NotifyingPacketEmitter<*> {
 
     private inner class RouteController(
@@ -22,8 +21,10 @@ open class AggregateControllable2<TControllable>(
         }
 
         fun onTaskAdded() {
-            if (nextTaskAbsolute == null) {
-                updateNextTaskTime()
+            synchronized(this@AggregateControllable2) {
+                if (nextTaskAbsolute == null) {
+                    updateNextTaskTime()
+                }
             }
         }
 
@@ -62,12 +63,13 @@ open class AggregateControllable2<TControllable>(
 
     @Synchronized
     override fun advance(advanceDuration: Duration) {
-        val newTime = currentAbsoluteTime + advanceDuration
-        val nowRoutes = sortedRoutes.remove(newTime) ?: emptyList()
+        val targetTime = currentAbsoluteTime + advanceDuration
+        val nowRoutes = sortedRoutes.remove(targetTime) ?: emptyList()
         nowRoutes.forEach { route ->
-            route.advanceTillAbsolute(newTime)
+            route.advanceTillAbsolute(targetTime)
             route.executePendingAndUpdateNextTaskTime()
         }
+        currentAbsoluteTime = targetTime
     }
 
     @Synchronized
@@ -79,5 +81,5 @@ open class AggregateControllable2<TControllable>(
     @Synchronized
     override fun nextTaskDuration(): Duration? =
         if (sortedRoutes.isEmpty()) null
-        else sortedRoutes.firstKey()
+        else (sortedRoutes.firstKey() - currentAbsoluteTime)
 }
