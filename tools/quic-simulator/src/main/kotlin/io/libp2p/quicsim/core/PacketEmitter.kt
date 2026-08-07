@@ -30,3 +30,8 @@ interface PacketEmitter<TPacket> : Controllable {
         }
     }
 }
+
+interface NotifyingPacketEmitter<TPacket> : PacketEmitter<TPacket> {
+
+    fun addPacketAddedListener(listener: () -> Unit)
+}

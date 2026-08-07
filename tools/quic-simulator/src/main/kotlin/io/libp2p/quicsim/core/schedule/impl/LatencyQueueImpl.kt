@@ -1,9 +1,10 @@
 package io.libp2p.quicsim.core.schedule.impl
 
 import io.libp2p.quicsim.core.LatencyQueue
-import io.libp2p.quicsim.core.PacketEmitter
+import io.libp2p.quicsim.core.NotifyingPacketEmitter
 import io.libp2p.quicsim.core.PacketReceiver
 import java.util.ArrayDeque
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration
 
 /**
@@ -40,7 +41,7 @@ class LatencyQueueImpl<TPacket>(
             block()
         }
 
-    override val emitter: PacketEmitter<TPacket> = primaryEmitter
+    override val emitter: NotifyingPacketEmitter<TPacket> = primaryEmitter
 
     override val receiver: PacketReceiver<TPacket> = primaryReceiver
 
@@ -71,6 +72,7 @@ class LatencyQueueImpl<TPacket>(
                 enqueue(packet, primaryReceiver.receiverTime + latency)
             }
         }
+        primaryEmitter.notifyPacketAdded()
     }
 
     fun <TInput> receiveTimedPackets(
@@ -89,6 +91,7 @@ class LatencyQueueImpl<TPacket>(
                 enqueue(packetExtractor(input), primaryReceiver.receiverTime + latency)
             }
         }
+        primaryEmitter.notifyPacketAdded()
     }
 
     fun nextEmitTime(): Duration? =
@@ -115,8 +118,20 @@ class LatencyQueueImpl<TPacket>(
         queue.addLast(QueuedPacket(packet, emitAt.coerceAtLeast(primaryEmitter.emitterTime)))
     }
 
-    private inner class Emitter : PacketEmitter<TPacket> {
+    private inner class Emitter : NotifyingPacketEmitter<TPacket> {
+        private val packetAddedListeners = CopyOnWriteArrayList<() -> Unit>()
+
         var emitterTime: Duration = Duration.Companion.ZERO
+
+        override fun addPacketAddedListener(listener: () -> Unit) {
+            packetAddedListeners += listener
+        }
+
+        fun notifyPacketAdded() {
+            packetAddedListeners.forEach { listener ->
+                listener()
+            }
+        }
 
         override fun emitPackets(): List<TPacket> =
             locked {
@@ -143,11 +158,15 @@ class LatencyQueueImpl<TPacket>(
         var receiverTime: Duration = Duration.Companion.ZERO
 
         override fun receivePackets(packets: List<TPacket>) {
+            if (packets.isEmpty()) {
+                return
+            }
             locked {
                 packets.forEach { packet ->
                     enqueue(packet, receiverTime + latency)
                 }
             }
+            primaryEmitter.notifyPacketAdded()
         }
 
         override fun advance(advanceDuration: Duration) {

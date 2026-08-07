@@ -1,7 +1,7 @@
 package io.libp2p.quicsim.udpnetwork
 
 import io.libp2p.quicsim.core.LatencyQueue
-import io.libp2p.quicsim.core.PacketEmitter
+import io.libp2p.quicsim.core.NotifyingPacketEmitter
 import io.libp2p.quicsim.core.PacketProcessor
 import io.libp2p.quicsim.core.PacketReceiver.Companion.createPacketProcessorAdapter
 import io.libp2p.quicsim.core.PacketReceiver
@@ -36,5 +36,5 @@ data class UdpSimLink(
         )
 
     val packetReceiver: PacketReceiver<DatagramPacket> = latencyQueue.receiver.processPackets(bandwidthQueue)
-    val packetEmitter: PacketEmitter<DatagramPacket> = latencyQueue.emitter
+    val packetEmitter: NotifyingPacketEmitter<DatagramPacket> = latencyQueue.emitter
 }

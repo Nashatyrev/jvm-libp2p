@@ -34,7 +34,7 @@ interface LatencyQueue<TPacket> {
      * The emitter may be advanced independently. Calling [PacketEmitter.emitPackets]
      * drains all packets scheduled exactly at the emitter's current time.
      */
-    val emitter: PacketEmitter<TPacket>
+    val emitter: NotifyingPacketEmitter<TPacket>
 
     /**
      * Write end of the queue.

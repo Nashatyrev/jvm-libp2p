@@ -30,6 +30,32 @@ class LatencyQueue2Test {
     }
 
     @Test
+    fun `emitter notifies when packets are enqueued`() {
+        val latencyQueue = LatencyQueueImpl<String>(10.milliseconds)
+        var notificationCount = 0
+
+        latencyQueue.emitter.addPacketAddedListener {
+            notificationCount++
+        }
+
+        latencyQueue.receiver.receivePackets(emptyList())
+        assertEquals(0, notificationCount)
+
+        latencyQueue.receiver.receivePackets(listOf("packet-1", "packet-2"))
+        assertEquals(1, notificationCount)
+
+        latencyQueue.receivePacketsAt(listOf("packet-3"), 5.milliseconds)
+        assertEquals(2, notificationCount)
+
+        latencyQueue.receiveTimedPackets(
+            packets = listOf(6.milliseconds to "packet-4"),
+            timeExtractor = { it.first },
+            packetExtractor = { it.second }
+        )
+        assertEquals(3, notificationCount)
+    }
+
+    @Test
     fun `receiver can enqueue packets ahead of emitter`() {
         val latencyQueue = LatencyQueueImpl<String>(100.milliseconds)
 
