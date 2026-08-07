@@ -32,13 +32,19 @@ open class AggregateProcessor2<TControllable, TPacket>(
         }
 
         fun updateNextTaskTime() {
-            nextTaskAbsolute = controllable.nextTaskDuration()?.let { it + curTime }
-            if (nextTaskAbsolute != null) {
-                routeActivated(this)
+            val newNextTask = controllable.nextTaskDuration()?.let { it + curTime }
+            if (newNextTask != nextTaskAbsolute) {
+                nextTaskAbsolute = controllable.nextTaskDuration()?.let { it + curTime }
+                if (nextTaskAbsolute != null) {
+                    routeActivated(this)
+                }
             }
         }
 
         fun advanceTillAbsolute(absoluteTime: Duration) {
+            if (absoluteTime == currentAbsoluteTime) {
+                return
+            }
             val relativeAdvance = absoluteTime - curTime
             controllable.advance(relativeAdvance)
             curTime = absoluteTime
@@ -54,6 +60,14 @@ open class AggregateProcessor2<TControllable, TPacket>(
             val ret = pendingEmitPackets
             pendingEmitPackets = emptyList()
             return ret
+        }
+
+        fun receivePackets(packets: List<TPacket>) {
+            if (packets.isNotEmpty()) {
+                advanceTillAbsolute(currentAbsoluteTime)
+                controllable.receivePackets(packets)
+                updateNextTaskTime()
+            }
         }
     }
 
@@ -83,9 +97,7 @@ open class AggregateProcessor2<TControllable, TPacket>(
     @Synchronized
     fun receivePackets(idx: Int, packets: List<TPacket>) {
         if (packets.isNotEmpty()) {
-            val route = allRoutes[idx]
-            route.advanceTillAbsolute(currentAbsoluteTime)
-            route.controllable.receivePackets(packets)
+            allRoutes[idx].receivePackets(packets)
         }
     }
 
