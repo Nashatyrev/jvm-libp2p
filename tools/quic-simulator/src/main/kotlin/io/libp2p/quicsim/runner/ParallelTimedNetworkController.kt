@@ -77,7 +77,8 @@ class ParallelTimedNetworkController(
     }
 
     private fun getNextVertexToAdvance(): TimedNetworkImpl.GeneralNode? {
-        val priorityList = timeAdvanceStrategy.prioritize(timedGraph)
-        return priorityList.firstOrNull() { it.id !in vertexesInWork } as? TimedNetworkImpl.GeneralNode
+        return timeAdvanceStrategy
+            .selectNextEligibleToAdvance(timedGraph) { it.id !in vertexesInWork }
+            as? TimedNetworkImpl.GeneralNode
     }
 }
