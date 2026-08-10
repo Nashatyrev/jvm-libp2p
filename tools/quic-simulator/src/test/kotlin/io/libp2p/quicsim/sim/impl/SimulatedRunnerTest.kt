@@ -108,7 +108,9 @@ class SimulatedRunnerTest {
                         initialPublishDelay = 5.seconds
                     ).also { nodePrograms += it }
             },
-            udpNetwork = networkBuilder.build()
+            udpNetwork = networkBuilder.build(),
+            latencyWindowParallelism = 4,
+            newNetworkController = true
         )
 
         runner.run()
@@ -209,7 +211,6 @@ class SimulatedRunnerTest {
             },
             udpNetwork = udpNetwork,
             maxSimulatedRunDuration = 10.minutes,
-            latencyWindowParallelism = 1,
             nodeVisitorFactory = packetStats,
             quicAllocatorFactory = { nodeId ->
                 if (profiledAllocator != null && nodeId == profiledNodeId) {
@@ -218,6 +219,7 @@ class SimulatedRunnerTest {
                     globalAllocator ?: quicAllocatorDelegate(allocatorMode, forceHeapByteBufs)
                 }
             },
+            latencyWindowParallelism = 16,
             newNetworkController = true
         )
 
@@ -537,7 +539,8 @@ class SimulatedRunnerTest {
             },
             udpNetwork = builder.build(),
             nodeVisitorFactory = { NodeLogger(it) },
-            latencyWindowParallelism = 1
+            latencyWindowParallelism = 4,
+            newNetworkController = true
         )
 
         runner.run()
