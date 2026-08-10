@@ -15,6 +15,9 @@ open class ControllablePacketRouter<TPacket>(
     private val routeCount: RouteId = routeProcessors.size
 
     private val aggregateProcessor = OptimizedAggregateProcessor(routeProcessors)
+    private val inboundPackets = mutableMapOf<RouteId, MutableList<TPacket>>()
+    private val routesToProcess = ArrayDeque<RouteId>()
+    private val queuedRoutes = BooleanArray(routeCount)
 //    private val aggregateProcessor: AggregateProcessor<TPacket> = SimpleAggregateProcessor(routeProcessors)
 
     override fun advance(advanceDuration: Duration) {
@@ -30,10 +33,6 @@ open class ControllablePacketRouter<TPacket>(
         aggregateProcessor.nextTaskDuration()
 
     fun pumpPackets() {
-        val inboundPackets = mutableMapOf<RouteId, MutableList<TPacket>>()
-        val routesToProcess = ArrayDeque<RouteId>()
-        val queuedRoutes = BooleanArray(routeCount)
-
         fun enqueueRoute(routeId: RouteId) {
             if (!queuedRoutes[routeId]) {
                 queuedRoutes[routeId] = true
