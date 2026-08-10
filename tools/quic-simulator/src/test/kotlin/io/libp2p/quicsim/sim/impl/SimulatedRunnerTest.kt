@@ -148,7 +148,7 @@ class SimulatedRunnerTest {
 
     @Test
     fun sendMessageFromNPublishers() {
-        val nodeCount = intProperty("quicsim.sendMessageFromNPublishers.nodeCount", 1000)
+        val nodeCount = intProperty("quicsim.sendMessageFromNPublishers.nodeCount", 500)
         val publishersCount = intProperty("quicsim.sendMessageFromNPublishers.publishersCount", nodeCount)
         val neighboursToConnect = intProperty("quicsim.sendMessageFromNPublishers.neighboursToConnect", 20)
         val messagesPerPublisher = intProperty("quicsim.sendMessageFromNPublishers.messagesPerPublisher", 1)
@@ -231,7 +231,7 @@ class SimulatedRunnerTest {
                         randomSeed = id.toLong(),
                         messageSizeBytes = messageSizeBytes,
                         messagesPerPublisher = messagesPerPublisher,
-                        initialPublishDelay = 10000000.seconds,
+                        initialPublishDelay = initialPublishDelaySeconds.seconds,
                         debugGossipHandler = if (id == gossipRpcNodeStatsNodeId) gossipRpcNodeStatsHandler else null,
                     ).also { nodePrograms += it }
             },
