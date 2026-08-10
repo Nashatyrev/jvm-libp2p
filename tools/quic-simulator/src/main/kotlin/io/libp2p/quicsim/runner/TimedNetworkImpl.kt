@@ -101,7 +101,9 @@ class TimedNetworkImpl(
         }
 
     val linksByNode =
-        bidiLinks.groupBy {it.left.udpNode} + bidiLinks.groupBy {it.right.udpNode}
+        bidiLinks
+            .flatMap { listOf(it.left.udpNode to it, it.right.udpNode to it) }
+            .groupBy({ it.first }, { it.second })
 
     init {
         endpointNodes.forEach { initEndpointNode(it) }
