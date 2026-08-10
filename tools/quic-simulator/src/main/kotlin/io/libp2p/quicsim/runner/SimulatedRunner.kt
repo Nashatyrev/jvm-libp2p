@@ -191,7 +191,7 @@ class SimulatedRunner(
             if (latencyWindowParallelism > 0) {
                 if (newNetworkController)
 //                    TimedNetworkController(simCoreNet, udpNetwork)
-                    ParallelTimedNetworkController(simCoreNet, udpNetwork)
+                    ParallelTimedNetworkController(simCoreNet, udpNetwork, parallelism = latencyWindowParallelism)
                 else
                     ParallelSimPacketBridge(simCoreNet, udpNetwork, latencyWindowParallelism)
             } else {
