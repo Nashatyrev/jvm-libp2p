@@ -51,7 +51,10 @@ open class OptimizedAggregateProcessor<TProcessor, TPacket>(
 
         fun executePendingAndUpdateNextTaskTime() {
             delegate.executePending()
-            pendingEmitPackets += delegate.emitPackets()
+            val emittedPackets = delegate.emitPackets()
+            if (emittedPackets.isNotEmpty()) {
+                pendingEmitPackets += emittedPackets
+            }
             updateNextTaskTime()
         }
 
