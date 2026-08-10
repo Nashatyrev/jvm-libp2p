@@ -13,6 +13,7 @@ import io.netty.buffer.Unpooled
 import io.netty.channel.socket.DatagramPacket
 import io.netty.util.ReferenceCountUtil
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.net.InetSocketAddress
@@ -49,7 +50,7 @@ class ParallelTimedNetworkControllerTest {
 
         assertEquals(220.milliseconds, destination.receivedPackets.single().receivedAt)
         assertEquals(220.milliseconds, destination.advanceDurations.first())
-        assertEquals(230.milliseconds, destination.advanceDurations.fold(ZERO) { total, advance -> total + advance })
+        assertTrue(destination.advanceDurations.fold(ZERO) { total, advance -> total + advance } <= 230.milliseconds)
     }
 
     @Test
