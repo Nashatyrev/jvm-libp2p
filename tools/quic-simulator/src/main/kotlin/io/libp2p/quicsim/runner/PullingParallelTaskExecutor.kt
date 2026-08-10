@@ -6,6 +6,9 @@ import java.util.concurrent.atomic.AtomicReference
 
 class PullingParallelTaskExecutor(
     private val parallelism: Int,
+    private val exceptionHandler: (Throwable) -> Unit = {
+        it.printStackTrace()
+    }
 ) : AutoCloseable {
 
     init {
@@ -15,21 +18,64 @@ class PullingParallelTaskExecutor(
     private val executor = Executors.newFixedThreadPool(parallelism)
 
     fun execute(taskSupplier: () -> Runnable?) {
+        val lock = Object()
         val failure = AtomicReference<Throwable>()
-        val workers = (0 until parallelism).map {
-            executor.submit {
-                while (failure.get() == null) {
+        var inFlightTasks = 0
+        var completed = false
+
+        fun awaitNextTask(): Runnable? =
+            synchronized(lock) {
+                while (failure.get() == null && !completed) {
                     val task = try {
                         taskSupplier()
                     } catch (t: Throwable) {
                         failure.compareAndSet(null, t)
-                        return@submit
-                    } ?: return@submit
+                        completed = true
+                        lock.notifyAll()
+                        return null
+                    }
+
+                    if (task != null) {
+                        inFlightTasks++
+                        return task
+                    }
+
+                    if (inFlightTasks == 0) {
+                        completed = true
+                        lock.notifyAll()
+                        return null
+                    }
+
+                    try {
+                        lock.wait()
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        failure.compareAndSet(null, e)
+                        completed = true
+                        lock.notifyAll()
+                        return null
+                    }
+                }
+                null
+            }
+
+        fun taskFinished() =
+            synchronized(lock) {
+                inFlightTasks--
+                lock.notifyAll()
+            }
+
+        val workers = (0 until parallelism).map {
+            executor.submit {
+                while (failure.get() == null) {
+                    val task = awaitNextTask() ?: return@submit
 
                     try {
                         task.run()
                     } catch (t: Throwable) {
                         failure.compareAndSet(null, t)
+                    } finally {
+                        taskFinished()
                     }
                 }
             }
