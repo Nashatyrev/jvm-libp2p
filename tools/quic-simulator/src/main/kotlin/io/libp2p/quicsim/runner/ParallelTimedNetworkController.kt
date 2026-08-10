@@ -1,7 +1,6 @@
 package io.libp2p.quicsim.runner
 
 import com.google.common.collect.Comparators.max
-import io.libp2p.quicsim.core.schedule.Controllable.Companion.advanceAndExecuteUntil
 import io.libp2p.quicsim.core.schedule.impl.SimpleMonotonicTimer
 import io.libp2p.quicsim.runner.graph.TimeAdvanceStrategy
 import io.libp2p.quicsim.runner.graph.TimedNetworkGraph
@@ -11,6 +10,7 @@ import io.libp2p.quicsim.udpnetwork.RouteResolver
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.impl.BasicStarRouteResolver
 import io.netty.channel.socket.DatagramPacket
+import kotlin.time.Duration
 
 class ParallelTimedNetworkController(
     val simNet: SimNet<DatagramPacket>,
@@ -29,28 +29,51 @@ class ParallelTimedNetworkController(
 
     override fun advanceWhile(predicate: () -> Boolean) {
         executor.execute() {
-            if (predicate()) getNextTask() else null
+            if (predicate()) getNextTask(predicate) else null
         }
     }
 
     private val vertexesInWork = mutableSetOf<String>()
+    private val deferredControllables = timedNetwork.allNodes.associateWith { node ->
+        DeferredControllable(node.controllable, node.time)
+    }
 
     @Synchronized
-    private fun getNextTask(): Runnable? {
-        val vertexToAdvance = getNextVertexToAdvance() ?: return null
-        vertexesInWork += vertexToAdvance.id
-        val advance = timedGraph.maxAdvance(vertexToAdvance.id)
+    private fun getNextTask(predicate: () -> Boolean): Runnable? {
+        while (predicate()) {
+            val vertexToAdvance = getNextVertexToAdvance() ?: return null
+            val advance = timedGraph.maxAdvance(vertexToAdvance.id)
+            if (advance == Duration.ZERO) {
+                return null
+            }
 
-        return Runnable {
+            val targetTime = vertexToAdvance.time + advance
+            val deferredControllable = deferredControllables.getValue(vertexToAdvance)
+            if (!deferredControllable.hasTaskThrough(targetTime)) {
+                advanceVertexTime(vertexToAdvance, advance)
+                continue
+            }
 
-            vertexToAdvance.controllable.advanceAndExecuteUntil(advance)
+            vertexesInWork += vertexToAdvance.id
+            return Runnable {
+                deferredControllable.executeThrough(targetTime)
 
-            synchronized(this@ParallelTimedNetworkController) {
-                timedGraph.advanceVertexTime(vertexToAdvance.id, advance)
-                vertexesInWork -= vertexToAdvance.id
-                monotonicTimer.curT = max(monotonicTimer.curT, vertexToAdvance.time)
+                synchronized(this@ParallelTimedNetworkController) {
+                    advanceVertexTime(vertexToAdvance, advance)
+                    vertexesInWork -= vertexToAdvance.id
+                }
             }
         }
+
+        return null
+    }
+
+    private fun advanceVertexTime(
+        vertex: TimedNetworkImpl.GeneralNode,
+        advance: Duration,
+    ) {
+        timedGraph.advanceVertexTime(vertex.id, advance)
+        monotonicTimer.curT = max(monotonicTimer.curT, vertex.time)
     }
 
     private fun getNextVertexToAdvance(): TimedNetworkImpl.GeneralNode? {

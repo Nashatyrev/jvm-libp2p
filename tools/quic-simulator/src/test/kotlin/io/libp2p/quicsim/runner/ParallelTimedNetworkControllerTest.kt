@@ -23,6 +23,36 @@ import kotlin.time.Duration.Companion.milliseconds
 class ParallelTimedNetworkControllerTest {
 
     @Test
+    fun `does not execute idle endpoint before inbound packet is due`() {
+        val networkBuilder = TestNetworkBuilder()
+        val router = networkBuilder.router("router")
+        val sourceNode = networkBuilder.node("10.0.0.0")
+        val destinationNode = networkBuilder.node("10.0.0.1")
+        val qdiscFactory = fifoQDiscFactory(Bandwidth(Long.MAX_VALUE))
+        networkBuilder.linkBiDir(sourceNode, router, 10.milliseconds, qdiscFactory)
+        networkBuilder.linkBiDir(destinationNode, router, 10.milliseconds, qdiscFactory)
+        val source = RecordingSimNode(
+            ip = sourceNode.id,
+            scheduledPackets = listOf(
+                ScheduledPacket(200.milliseconds, destinationNode.id, sequence = 0, bytes = 16)
+            )
+        )
+        val destination = RecordingSimNode(destinationNode.id, emptyList())
+        val controller = ParallelTimedNetworkController(
+            simNet = RecordingSimNet(listOf(source, destination)),
+            udpNet = networkBuilder.build(),
+            routeResolver = networkBuilder.routeResolver(),
+            parallelism = 2
+        )
+
+        controller.advanceWhile { destination.receivedPackets.isEmpty() }
+
+        assertEquals(220.milliseconds, destination.receivedPackets.single().receivedAt)
+        assertEquals(220.milliseconds, destination.advanceDurations.first())
+        assertEquals(230.milliseconds, destination.advanceDurations.fold(ZERO) { total, advance -> total + advance })
+    }
+
+    @Test
     @Timeout(10)
     fun `respects latency and bandwidth across two routers and four nodes`() {
         val networkBuilder = TestNetworkBuilder()
@@ -176,6 +206,7 @@ class ParallelTimedNetworkControllerTest {
     ) : SimNode<DatagramPacket> {
         override val nodeTime = SimpleMonotonicTimer()
         val receivedPackets = mutableListOf<ReceivedPacket>()
+        val advanceDurations = mutableListOf<Duration>()
         private val outboundPackets = scheduledPackets.toMutableList()
 
         override fun receivePackets(packets: List<DatagramPacket>) {
@@ -209,6 +240,7 @@ class ParallelTimedNetworkControllerTest {
         }
 
         override fun advance(advanceDuration: Duration) {
+            advanceDurations += advanceDuration
             nodeTime.curT += advanceDuration
         }
 
