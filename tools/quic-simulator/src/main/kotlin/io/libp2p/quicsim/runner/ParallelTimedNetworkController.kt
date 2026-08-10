@@ -34,8 +34,8 @@ class ParallelTimedNetworkController(
     private val vertexesInWork = mutableSetOf<String>()
 
     @Synchronized
-    private fun getNextTask(): Runnable {
-        val vertexToAdvance = getNextVertexToAdvance()
+    private fun getNextTask(): Runnable? {
+        val vertexToAdvance = getNextVertexToAdvance() ?: return null
         vertexesInWork += vertexToAdvance.id
         val advance = timedGraph.maxAdvance(vertexToAdvance.id)
 
@@ -49,8 +49,8 @@ class ParallelTimedNetworkController(
         }
     }
 
-    private fun getNextVertexToAdvance(): TimedNetworkImpl.GeneralNode {
+    private fun getNextVertexToAdvance(): TimedNetworkImpl.GeneralNode? {
         val priorityList = timeAdvanceStrategy.prioritize(timedGraph)
-        return priorityList.first { it.id !in vertexesInWork } as TimedNetworkImpl.GeneralNode
+        return priorityList.firstOrNull() { it.id !in vertexesInWork } as? TimedNetworkImpl.GeneralNode
     }
 }
