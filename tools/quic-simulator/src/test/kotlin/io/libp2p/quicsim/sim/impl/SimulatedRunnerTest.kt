@@ -55,6 +55,7 @@ import io.netty.channel.socket.DatagramPacket
 import io.netty.util.IllegalReferenceCountException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.io.ByteArrayOutputStream
@@ -83,6 +84,31 @@ class SimulatedRunnerTest {
     ) {
         val simulatedDeltaMillis: Long
             get() = receivedAtSimMillis - sentAtSimMillis
+    }
+
+    @Test
+    @Disabled("Manual performance benchmark")
+    fun `advances one hour with 1000 idle nodes`() {
+        val nodeCount = 1_000
+        val networkBuilder = TestStarNetworkBuilder2()
+        networkBuilder.addIpNodes(nodeCount)
+        networkBuilder.linkAllToRouter(
+            20.milliseconds,
+            fifoQDiscFactory(Bandwidth(5_000_000L))
+        )
+        val runner = SimulatedRunner(
+            nodeFactory = object : NodeProgramFactory {
+                override fun createNode(id: SimNodeId): NodeProgram = IdleNodeProgram(id)
+            },
+            udpNetwork = networkBuilder.build(),
+            maxSimulatedRunDuration = 60.minutes,
+            latencyWindowParallelism = 16,
+            newNetworkController = true
+        )
+
+        runner.run()
+
+        assertEquals(60.minutes, runner.simTimer.elapsedTime())
     }
 
     @Test
@@ -122,7 +148,7 @@ class SimulatedRunnerTest {
 
     @Test
     fun sendMessageFromNPublishers() {
-        val nodeCount = intProperty("quicsim.sendMessageFromNPublishers.nodeCount", 100)
+        val nodeCount = intProperty("quicsim.sendMessageFromNPublishers.nodeCount", 1000)
         val publishersCount = intProperty("quicsim.sendMessageFromNPublishers.publishersCount", nodeCount)
         val neighboursToConnect = intProperty("quicsim.sendMessageFromNPublishers.neighboursToConnect", 20)
         val messagesPerPublisher = intProperty("quicsim.sendMessageFromNPublishers.messagesPerPublisher", 1)
@@ -205,7 +231,7 @@ class SimulatedRunnerTest {
                         randomSeed = id.toLong(),
                         messageSizeBytes = messageSizeBytes,
                         messagesPerPublisher = messagesPerPublisher,
-                        initialPublishDelay = initialPublishDelaySeconds.seconds,
+                        initialPublishDelay = 10000000.seconds,
                         debugGossipHandler = if (id == gossipRpcNodeStatsNodeId) gossipRpcNodeStatsHandler else null,
                     ).also { nodePrograms += it }
             },
@@ -609,6 +635,19 @@ class SimulatedRunnerTest {
             sentAtSimMillis = sentAtSimMillis.get(),
             receivedAtSimMillis = receivedAtSimMillis.get()
         )
+    }
+
+    private class IdleNodeProgram(
+        override val simNodeId: SimNodeId,
+    ) : NodeProgram {
+        override val completeFuture: CompletableFuture<Unit> = CompletableFuture()
+
+        override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> = emptyList()
+
+        override fun start(
+            simContext: SimContext,
+            networkContext: NetworkContext,
+        ): CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit)
     }
 
     private class SimpleConnectNodeProgram(
