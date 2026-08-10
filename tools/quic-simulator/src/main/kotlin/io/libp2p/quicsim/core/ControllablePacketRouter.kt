@@ -3,7 +3,6 @@ package io.libp2p.quicsim.core
 import io.libp2p.quicsim.core.schedule.AggregateProcessor
 import io.libp2p.quicsim.core.schedule.impl.OptimizedAggregateProcessor
 import io.libp2p.quicsim.core.schedule.Controllable
-import io.libp2p.quicsim.core.schedule.impl.SimpleAggregateProcessor
 import kotlin.time.Duration
 
 typealias RouteId = Int
@@ -38,16 +37,21 @@ open class ControllablePacketRouter<TPacket>(
         do {
 
             for (i: RouteId in 0 until routeCount) {
-                aggregateProcessor.receivePackets(i, inboundPackets[i])
-                val outboundPackets = aggregateProcessor.emitPackets(i)
-                unprocessedPacketsCount -= inboundPackets[i].size
-                outboundPackets.forEach { outboundPacket ->
-                    val destinationRouteId = routeSelector(i, outboundPacket)
-                    assert(destinationRouteId != i)
-                    inboundPackets[destinationRouteId] += outboundPacket
+                val inPackets = inboundPackets[i]
+                if (inPackets.isNotEmpty()) {
+                    aggregateProcessor.receivePackets(i, inPackets)
+                    unprocessedPacketsCount -= inPackets.size
+                    inPackets.clear()
                 }
-                unprocessedPacketsCount += outboundPackets.size
-                inboundPackets[i].clear()
+                val outPackets = aggregateProcessor.emitPackets(i)
+                if (outPackets.isNotEmpty()) {
+                    outPackets.forEach { outboundPacket ->
+                        val destinationRouteId = routeSelector(i, outboundPacket)
+                        assert(destinationRouteId != i)
+                        inboundPackets[destinationRouteId] += outboundPacket
+                    }
+                    unprocessedPacketsCount += outPackets.size
+                }
             }
         } while (unprocessedPacketsCount > 0)
     }

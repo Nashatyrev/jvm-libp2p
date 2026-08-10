@@ -57,7 +57,9 @@ open class OptimizedAggregateProcessor<TProcessor, TPacket>(
 
         fun drainEmitPackets(): List<TPacket> {
             val ret = pendingEmitPackets
-            pendingEmitPackets = emptyList()
+            if (ret.isNotEmpty()) {
+                pendingEmitPackets = emptyList()
+            }
             return ret
         }
 
