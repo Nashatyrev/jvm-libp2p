@@ -32,11 +32,11 @@ class TimedNetworkImpl(
         override val id: String get() = udpNode.id
         abstract val controllable: Controllable
         override var time: Duration = Duration.ZERO
-            set(value) {
-                val increment = value - field
-                field = value
-                controllable.advanceAndExecuteUntil(increment)
-            }
+
+        override fun advanceTime(delta: Duration) {
+            controllable.advanceAndExecuteUntil(delta)
+            time += delta
+        }
 
         override fun equals(other: Any?)=
             id == (other as GeneralNode).id

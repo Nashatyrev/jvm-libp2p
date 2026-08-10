@@ -155,7 +155,11 @@ class TimedNetworkGraphTest {
     private data class TestVertex(
         override val id: String,
         override var time: Duration = Duration.ZERO
-    ) : TimedNetworkVertex
+    ) : TimedNetworkVertex {
+        override fun advanceTime(delta: Duration) {
+            time += delta
+        }
+    }
 
     private data class TestLink(
         override val left: TestVertex,

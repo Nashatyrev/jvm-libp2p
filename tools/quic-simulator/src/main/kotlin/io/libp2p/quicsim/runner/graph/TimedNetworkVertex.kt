@@ -5,5 +5,7 @@ import kotlin.time.Duration.Companion.ZERO
 
 interface TimedNetworkVertex {
     val id: String
-    var time: Duration
+    val time: Duration
+
+    fun advanceTime(delta: Duration)
 }

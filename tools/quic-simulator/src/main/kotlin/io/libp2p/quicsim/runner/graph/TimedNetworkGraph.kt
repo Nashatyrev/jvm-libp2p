@@ -48,7 +48,7 @@ class TimedNetworkGraph<TVert: TimedNetworkVertex, TLink: TimedNetworkLink<TVert
     fun advanceVertex(vertexId: String, advanceDuration: Duration) {
         require(!advanceDuration.isNegative()) { "advanceDuration must not be negative" }
         val vertex = vertex(vertexId)
-        vertex.time += advanceDuration
+        vertex.advanceTime(advanceDuration)
     }
 
     fun canAdvanceVertex(vertexId: String, advanceDuration: Duration): Boolean {
