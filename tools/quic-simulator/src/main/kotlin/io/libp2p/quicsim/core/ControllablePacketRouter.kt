@@ -1,8 +1,8 @@
 package io.libp2p.quicsim.core
 
-import io.libp2p.quicsim.core.schedule.AggregateProcessor
 import io.libp2p.quicsim.core.schedule.impl.OptimizedAggregateProcessor
 import io.libp2p.quicsim.core.schedule.Controllable
+import java.util.ArrayDeque
 import kotlin.time.Duration
 
 typealias RouteId = Int
@@ -14,7 +14,7 @@ open class ControllablePacketRouter<TPacket>(
 
     private val routeCount: RouteId = routeProcessors.size
 
-    private val aggregateProcessor: AggregateProcessor<TPacket> = OptimizedAggregateProcessor(routeProcessors)
+    private val aggregateProcessor = OptimizedAggregateProcessor(routeProcessors)
 //    private val aggregateProcessor: AggregateProcessor<TPacket> = SimpleAggregateProcessor(routeProcessors)
 
     override fun advance(advanceDuration: Duration) {
@@ -30,30 +30,31 @@ open class ControllablePacketRouter<TPacket>(
         aggregateProcessor.nextTaskDuration()
 
     fun pumpPackets() {
+        val inboundPackets = mutableMapOf<RouteId, MutableList<TPacket>>()
+        val routesToProcess = ArrayDeque<RouteId>()
+        val queuedRoutes = BooleanArray(routeCount)
 
-        val inboundPackets = List(routeCount) { mutableListOf<TPacket>() }
-
-        var unprocessedPacketsCount = 0
-        do {
-
-            for (i: RouteId in 0 until routeCount) {
-                val inPackets = inboundPackets[i]
-                if (inPackets.isNotEmpty()) {
-                    aggregateProcessor.receivePackets(i, inPackets)
-                    unprocessedPacketsCount -= inPackets.size
-                    inPackets.clear()
-                }
-                val outPackets = aggregateProcessor.emitPackets(i)
-                if (outPackets.isNotEmpty()) {
-                    outPackets.forEach { outboundPacket ->
-                        val destinationRouteId = routeSelector(i, outboundPacket)
-                        assert(destinationRouteId != i)
-                        inboundPackets[destinationRouteId] += outboundPacket
-                    }
-                    unprocessedPacketsCount += outPackets.size
-                }
+        fun enqueueRoute(routeId: RouteId) {
+            if (!queuedRoutes[routeId]) {
+                queuedRoutes[routeId] = true
+                routesToProcess.addLast(routeId)
             }
-        } while (unprocessedPacketsCount > 0)
+        }
+
+        aggregateProcessor.drainPendingEmitRoutes().forEach(::enqueueRoute)
+        while (routesToProcess.isNotEmpty()) {
+            val routeId = routesToProcess.removeFirst()
+            queuedRoutes[routeId] = false
+            inboundPackets.remove(routeId)?.let { packets ->
+                aggregateProcessor.receivePackets(routeId, packets)
+            }
+            aggregateProcessor.emitPackets(routeId).forEach { outboundPacket ->
+                val destinationRouteId = routeSelector(routeId, outboundPacket)
+                assert(destinationRouteId != routeId)
+                inboundPackets.getOrPut(destinationRouteId) { mutableListOf() } += outboundPacket
+                enqueueRoute(destinationRouteId)
+            }
+        }
     }
 
     companion object {

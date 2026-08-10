@@ -12,6 +12,7 @@ open class OptimizedAggregateProcessor<TProcessor, TPacket>(
 ) : AggregateProcessor<TPacket> where TProcessor : PacketProcessor<TPacket>, TProcessor : NotifyingPacketEmitter<TPacket> {
 
     private inner class RouteController(
+        val index: Int,
         val delegate: TProcessor,
     ) {
         var curTime: Duration = Duration.Companion.ZERO
@@ -54,6 +55,7 @@ open class OptimizedAggregateProcessor<TProcessor, TPacket>(
             val emittedPackets = delegate.emitPackets()
             if (emittedPackets.isNotEmpty()) {
                 pendingEmitPackets += emittedPackets
+                pendingEmitRoutes += index
             }
             updateNextTaskTime()
         }
@@ -77,9 +79,10 @@ open class OptimizedAggregateProcessor<TProcessor, TPacket>(
 
     private var currentAbsoluteTime: Duration = Duration.Companion.ZERO
     private val sortedRoutes: SortedMap<Duration, MutableList<RouteController>> = TreeMap()
+    private val pendingEmitRoutes = mutableSetOf<Int>()
     private val allRoutes =
-        processors.mapIndexed { index, controllable ->
-            RouteController(controllable)
+        processors.mapIndexed { index, processor ->
+            RouteController(index, processor)
         }
 
     // invoked when controllable having no tasks before got a task
@@ -101,6 +104,13 @@ open class OptimizedAggregateProcessor<TProcessor, TPacket>(
     @Synchronized
     override fun emitPackets(idx: Int): List<TPacket> {
         return allRoutes[idx].drainEmitPackets()
+    }
+
+    @Synchronized
+    fun drainPendingEmitRoutes(): List<Int> {
+        val ret = pendingEmitRoutes.toList()
+        pendingEmitRoutes.clear()
+        return ret
     }
 
     @Synchronized
