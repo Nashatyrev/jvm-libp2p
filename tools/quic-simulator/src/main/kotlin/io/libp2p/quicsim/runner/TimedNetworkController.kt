@@ -26,7 +26,7 @@ class TimedNetworkController(
         while (predicate()) {
             val node  = timeAdvanceStrategy.selectNextToAdvance(timedGraph) as TimedNetworkImpl.GeneralNode
             val advance = timedGraph.maxAdvance(node.id)
-            timedGraph.advanceVertex(node.id, advance)
+            timedGraph.advanceVertexTime(node.id, advance)
             monotonicTimer.curT = max(monotonicTimer.curT, node.time)
         }
     }

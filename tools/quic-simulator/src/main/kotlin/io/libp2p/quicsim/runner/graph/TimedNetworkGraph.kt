@@ -45,7 +45,7 @@ class TimedNetworkGraph<TVert: TimedNetworkVertex, TLink: TimedNetworkLink<TVert
         return links.firstOrNull { it.connects(leftVertex) && it.connects(rightVertex) }
     }
 
-    fun advanceVertex(vertexId: String, advanceDuration: Duration) {
+    fun advanceVertexTime(vertexId: String, advanceDuration: Duration) {
         require(!advanceDuration.isNegative()) { "advanceDuration must not be negative" }
         val vertex = vertex(vertexId)
         vertex.advanceTime(advanceDuration)

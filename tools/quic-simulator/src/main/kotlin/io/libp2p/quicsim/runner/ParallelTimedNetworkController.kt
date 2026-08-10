@@ -1,6 +1,7 @@
 package io.libp2p.quicsim.runner
 
 import com.google.common.collect.Comparators.max
+import io.libp2p.quicsim.core.schedule.Controllable.Companion.advanceAndExecuteUntil
 import io.libp2p.quicsim.core.schedule.impl.SimpleMonotonicTimer
 import io.libp2p.quicsim.runner.graph.TimeAdvanceStrategy
 import io.libp2p.quicsim.runner.graph.TimedNetworkGraph
@@ -20,7 +21,8 @@ class ParallelTimedNetworkController(
 ) : NetworkController {
 
     val timedNetwork = TimedNetworkImpl(simNet, udpNet, routeResolver)
-    val timedGraph: TimedNetworkGraph<*, *> = TimedNetworkGraph(timedNetwork.allNodes, timedNetwork.bidiLinks)
+    val timedGraph: TimedNetworkGraph<TimedNetworkImpl.GeneralNode, TimedNetworkImpl.GeneralBidiLink> =
+        TimedNetworkGraph(timedNetwork.allNodes, timedNetwork.bidiLinks)
     override val monotonicTimer: SimpleMonotonicTimer = SimpleMonotonicTimer()
 
     val executor = PullingParallelTaskExecutor(parallelism)
@@ -40,9 +42,11 @@ class ParallelTimedNetworkController(
         val advance = timedGraph.maxAdvance(vertexToAdvance.id)
 
         return Runnable {
-            timedGraph.advanceVertex(vertexToAdvance.id, advance)
+
+            vertexToAdvance.controllable.advanceAndExecuteUntil(advance)
 
             synchronized(this@ParallelTimedNetworkController) {
+                timedGraph.advanceVertexTime(vertexToAdvance.id, advance)
                 vertexesInWork -= vertexToAdvance.id
                 monotonicTimer.curT = max(monotonicTimer.curT, vertexToAdvance.time)
             }

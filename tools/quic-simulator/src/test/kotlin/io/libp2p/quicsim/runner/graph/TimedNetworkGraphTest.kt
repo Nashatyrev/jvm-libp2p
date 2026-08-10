@@ -68,7 +68,7 @@ class TimedNetworkGraphTest {
         assertTrue(graph.canAdvanceVertex("router-0", 5.milliseconds))
         assertFalse(graph.canAdvanceVertex("router-0", 6.milliseconds))
 
-        graph.advanceVertex("router-0", 5.milliseconds)
+        graph.advanceVertexTime("router-0", 5.milliseconds)
 
         assertEquals(15.milliseconds, graph.vertex("router-0").time)
     }

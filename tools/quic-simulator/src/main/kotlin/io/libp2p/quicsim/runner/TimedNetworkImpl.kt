@@ -34,7 +34,7 @@ class TimedNetworkImpl(
         override var time: Duration = Duration.ZERO
 
         override fun advanceTime(delta: Duration) {
-            controllable.advanceAndExecuteUntil(delta)
+//            controllable.advanceAndExecuteUntil(delta)
             time += delta
         }
 
