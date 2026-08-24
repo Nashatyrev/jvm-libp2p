@@ -1,5 +1,7 @@
 package io.libp2p.quicsim.scenario
 
+import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.ContinentRegion
+import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.WORLD_DESCRIPTOR_1
 import io.libp2p.quicsim.udpnetwork.Bandwidth
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -7,16 +9,15 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import kotlin.math.roundToInt
 import kotlin.random.Random
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 class RegionalNetworkTopologyBuilderTest {
     @Test
     fun `builds the 65 node regional router topology`() {
-        val topology = RegionalNetworkTopologyBuilder(REGIONAL_DESCRIPTOR)
+        val topology = RegionalNetworkTopologyBuilder(WORLD_DESCRIPTOR_1)
             .addRandomScenarioHosts()
             .build()
-        val routerIds = TestRegion.values().associateBy { routerId(it) }
+        val routerIds = WORLD_DESCRIPTOR_1.regions.associateBy(WORLD_DESCRIPTOR_1.routerId)
         val hostIds = topology.hosts.map { it.id }.toSet()
         val routerLinks = topology.links.filter { it.from in routerIds && it.to in routerIds }
         val accessLinks = topology.links - routerLinks.toSet()
@@ -32,7 +33,7 @@ class RegionalNetworkTopologyBuilderTest {
             val region = routerIds.getValue(outgoing.to)
 
             assertEquals(outgoing.to, incoming.from)
-            assertEquals(accessLatency(region), outgoing.latency)
+            assertEquals(WORLD_DESCRIPTOR_1.accessLatency(region), outgoing.latency)
             assertEquals(outgoing.latency, incoming.latency)
             assertEquals(outgoing.bandwidthBytesPerSecond, incoming.bandwidthBytesPerSecond)
         }
@@ -57,7 +58,7 @@ class RegionalNetworkTopologyBuilderTest {
             val from = routerIds.getValue(link.from)
             val to = routerIds.getValue(link.to)
             assertEquals(Bandwidth.INFINITE, link.bandwidthBytesPerSecond)
-            assertEquals(latency(from, to), link.latency)
+            assertEquals(WORLD_DESCRIPTOR_1.routerLatency(from, to), link.latency)
         }
     }
 
@@ -72,11 +73,11 @@ class RegionalNetworkTopologyBuilderTest {
             listOf(180, 200, 80, 160, 220, 30)
         )
 
-        TestRegion.values().forEachIndexed { fromIndex, from ->
-            TestRegion.values().forEachIndexed { toIndex, to ->
+        WORLD_DESCRIPTOR_1.regions.forEachIndexed { fromIndex, from ->
+            WORLD_DESCRIPTOR_1.regions.forEachIndexed { toIndex, to ->
                 assertEquals(
                     expectedMillis[fromIndex][toIndex].milliseconds,
-                    REGIONAL_DESCRIPTOR.routerLatency(from, to)
+                    WORLD_DESCRIPTOR_1.routerLatency(from, to)
                 )
             }
         }
@@ -84,16 +85,16 @@ class RegionalNetworkTopologyBuilderTest {
 
     @Test
     fun `access latency is half of intraregion latency`() {
-        assertEquals(10.milliseconds, REGIONAL_DESCRIPTOR.accessLatency(TestRegion.US_EAST))
-        assertEquals(7.5.milliseconds, REGIONAL_DESCRIPTOR.accessLatency(TestRegion.EUROPE))
-        assertEquals(12.5.milliseconds, REGIONAL_DESCRIPTOR.accessLatency(TestRegion.SOUTH_AMERICA))
+        assertEquals(10.milliseconds, WORLD_DESCRIPTOR_1.accessLatency(ContinentRegion.US_EAST))
+        assertEquals(7.5.milliseconds, WORLD_DESCRIPTOR_1.accessLatency(ContinentRegion.EUROPE))
+        assertEquals(12.5.milliseconds, WORLD_DESCRIPTOR_1.accessLatency(ContinentRegion.SOUTH_AMERICA))
     }
 
     @Test
     fun `topology companion creates hosts in supplied regions`() {
         val topology = QuicNetworkTopology.regional(
-            descriptor = REGIONAL_DESCRIPTOR,
-            hostRegions = listOf(TestRegion.US_EAST, TestRegion.AFRICA),
+            descriptor = WORLD_DESCRIPTOR_1,
+            hostRegions = listOf(ContinentRegion.US_EAST, ContinentRegion.AFRICA),
             bandwidthBytesPerSecond = VALIDATOR_BANDWIDTH_BYTES_PER_SECOND,
             hostId = { "peer-$it" }
         )
@@ -105,37 +106,28 @@ class RegionalNetworkTopologyBuilderTest {
 
     @Test
     fun `rejects duplicate host ids`() {
-        val builder = RegionalNetworkTopologyBuilder(REGIONAL_DESCRIPTOR)
-            .addHost("node-0", TestRegion.US_EAST, VALIDATOR_BANDWIDTH_BYTES_PER_SECOND)
+        val builder = RegionalNetworkTopologyBuilder(WORLD_DESCRIPTOR_1)
+            .addHost("node-0", ContinentRegion.US_EAST, VALIDATOR_BANDWIDTH_BYTES_PER_SECOND)
 
         assertThrows(IllegalArgumentException::class.java) {
-            builder.addHost("node-0", TestRegion.EUROPE, VALIDATOR_BANDWIDTH_BYTES_PER_SECOND)
+            builder.addHost("node-0", ContinentRegion.EUROPE, VALIDATOR_BANDWIDTH_BYTES_PER_SECOND)
         }
     }
 
     @Test
     fun `rejects hosts in unknown regions`() {
         val descriptor = RegionalNetworkDescriptor(
-            regions = listOf(TestRegion.US_EAST),
-            routerId = ::routerId,
-            routerLatency = ::latency,
-            accessLatency = ::accessLatency
+            regions = listOf(ContinentRegion.US_EAST),
+            routerId = WORLD_DESCRIPTOR_1.routerId,
+            routerLatency = WORLD_DESCRIPTOR_1.routerLatency,
+            accessLatency = WORLD_DESCRIPTOR_1.accessLatency
         )
         val builder = RegionalNetworkTopologyBuilder(descriptor)
 
         assertThrows(IllegalArgumentException::class.java) {
-            builder.addHost("node-0", TestRegion.EUROPE, VALIDATOR_BANDWIDTH_BYTES_PER_SECOND)
+            builder.addHost("node-0", ContinentRegion.EUROPE, VALIDATOR_BANDWIDTH_BYTES_PER_SECOND)
         }
     }
-}
-
-internal enum class TestRegion {
-    US_EAST,
-    US_WEST,
-    EUROPE,
-    ASIA,
-    SOUTH_AMERICA,
-    AFRICA
 }
 
 internal const val HOST_COUNT: Int = 65
@@ -145,43 +137,19 @@ internal const val SUPERNODE_BANDWIDTH_BYTES_PER_SECOND: Long = 125_000_000L
 internal const val VALIDATOR_BANDWIDTH_BYTES_PER_SECOND: Long = 6_250_000L
 
 private val REGION_WEIGHTS = listOf(
-    TestRegion.US_EAST to 0.30,
-    TestRegion.EUROPE to 0.25,
-    TestRegion.ASIA to 0.20,
-    TestRegion.US_WEST to 0.15,
-    TestRegion.SOUTH_AMERICA to 0.05,
-    TestRegion.AFRICA to 0.05
+    ContinentRegion.US_EAST to 0.30,
+    ContinentRegion.EUROPE to 0.25,
+    ContinentRegion.ASIA to 0.20,
+    ContinentRegion.US_WEST to 0.15,
+    ContinentRegion.SOUTH_AMERICA to 0.05,
+    ContinentRegion.AFRICA to 0.05
 )
 
-private val LATENCY_MILLIS = arrayOf(
-    longArrayOf(20, 60, 80, 150, 120, 180),
-    longArrayOf(60, 20, 130, 110, 160, 200),
-    longArrayOf(80, 130, 15, 100, 170, 80),
-    longArrayOf(150, 110, 100, 20, 250, 160),
-    longArrayOf(120, 160, 170, 250, 25, 220),
-    longArrayOf(180, 200, 80, 160, 220, 30)
-)
-
-internal fun latency(from: TestRegion, to: TestRegion): Duration =
-    LATENCY_MILLIS[from.ordinal][to.ordinal].milliseconds
-
-internal fun accessLatency(region: TestRegion): Duration = latency(region, region) / 2
-
-internal fun routerId(region: TestRegion): String =
-    "router-" + region.name.lowercase().replace('_', '-')
-
-internal val REGIONAL_DESCRIPTOR = RegionalNetworkDescriptor(
-    regions = TestRegion.values().toList(),
-    routerId = ::routerId,
-    routerLatency = ::latency,
-    accessLatency = ::accessLatency
-)
-
-internal fun RegionalNetworkTopologyBuilder<TestRegion>.addRandomScenarioHosts(
+internal fun RegionalNetworkTopologyBuilder<ContinentRegion>.addRandomScenarioHosts(
     hostCount: Int = HOST_COUNT,
     seed: Int = RANDOM_SEED,
     hostId: (Int) -> String = { "node-$it" }
-): RegionalNetworkTopologyBuilder<TestRegion> = apply {
+): RegionalNetworkTopologyBuilder<ContinentRegion> = apply {
     require(hostCount > 0) { "hostCount must be positive" }
     val random = Random(seed)
     val supernodeCount = (hostCount * SUPERNODE_FRACTION).roundToInt()
@@ -199,7 +167,7 @@ internal fun RegionalNetworkTopologyBuilder<TestRegion>.addRandomScenarioHosts(
     }
 }
 
-private fun randomRegion(random: Random): TestRegion {
+private fun randomRegion(random: Random): ContinentRegion {
     val randomValue = random.nextDouble()
     var cumulativeWeight = 0.0
     REGION_WEIGHTS.forEach { (region, weight) ->

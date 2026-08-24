@@ -5,8 +5,8 @@ import io.libp2p.quicsim.program.NodeProgramFactory
 import io.libp2p.quicsim.scenario.QuicNetworkTopology
 import io.libp2p.quicsim.scenario.QuicScenario
 import io.libp2p.quicsim.scenario.QuicScenarios
-import io.libp2p.quicsim.scenario.REGIONAL_DESCRIPTOR
-import io.libp2p.quicsim.scenario.TestRegion
+import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.ContinentRegion
+import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.WORLD_DESCRIPTOR_1
 import io.libp2p.quicsim.scenario.VALIDATOR_BANDWIDTH_BYTES_PER_SECOND
 import io.libp2p.quicsim.sim.SimNodeId
 import org.assertj.core.api.Assertions.assertThat
@@ -41,8 +41,8 @@ class ShadowConfigBuilderTest {
         val scenario = QuicScenario(
             name = "regional",
             network = QuicNetworkTopology.regional(
-                descriptor = REGIONAL_DESCRIPTOR,
-                hostRegions = listOf(TestRegion.US_EAST, TestRegion.US_WEST),
+                descriptor = WORLD_DESCRIPTOR_1,
+                hostRegions = listOf(ContinentRegion.US_EAST, ContinentRegion.US_WEST),
                 bandwidthBytesPerSecond = VALIDATOR_BANDWIDTH_BYTES_PER_SECOND
             ),
             maxRunDuration = 1.seconds,

@@ -1,34 +1,7 @@
 package io.libp2p.quicsim.scenario
 
-import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkDefaults
 import kotlin.time.Duration
-
-data class RegionalNetworkDescriptor<R>(
-    val regions: List<R>,
-    val routerId: (R) -> String,
-    val routerLatency: (from: R, to: R) -> Duration,
-    val accessLatency: (R) -> Duration,
-    val routerBandwidth: Bandwidth = Bandwidth(Bandwidth.INFINITE)
-) {
-    init {
-        require(regions.isNotEmpty()) { "Regional network must contain at least one region" }
-        require(regions.size == regions.toSet().size) { "Regions must be unique: $regions" }
-
-        val routerIds = regions.map(routerId)
-        require(routerIds.size == routerIds.toSet().size) { "Regional router ids must be unique: $routerIds" }
-        regions.forEach { region ->
-            require(!accessLatency(region).isNegative()) { "Access latency must not be negative for $region" }
-        }
-        regions.forEach { from ->
-            regions.forEach { to ->
-                require(!routerLatency(from, to).isNegative()) {
-                    "Router latency must not be negative from $from to $to"
-                }
-            }
-        }
-    }
-}
 
 /**
  * Builds a regional router topology.
