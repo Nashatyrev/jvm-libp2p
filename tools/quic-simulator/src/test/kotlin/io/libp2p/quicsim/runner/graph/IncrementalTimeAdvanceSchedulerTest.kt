@@ -1,7 +1,7 @@
 package io.libp2p.quicsim.runner.graph
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.ZERO
@@ -67,7 +67,7 @@ class IncrementalTimeAdvanceSchedulerTest {
     }
 
     @Test
-    fun `does not reserve adjacent vertices concurrently`() {
+    fun `can reserve adjacent vertices concurrently`() {
         val router = TestVertex("router", isRouter = true)
         val endpoint1 = TestVertex("endpoint-1", isRouter = false)
         val endpoint2 = TestVertex("endpoint-2", isRouter = false)
@@ -81,14 +81,15 @@ class IncrementalTimeAdvanceSchedulerTest {
         val scheduler = IncrementalTimeAdvanceScheduler(graph) { it.isRouter }
 
         val routerAdvance = scheduler.reserveNext()!!
+        val adjacentAdvance = scheduler.reserveNext()!!
 
         assertEquals(router, routerAdvance.vertex)
-        assertNull(scheduler.reserveNext())
+        assertTrue(adjacentAdvance.vertex == endpoint1 || adjacentAdvance.vertex == endpoint2)
 
         complete(graph, scheduler, routerAdvance)
 
         val endpointAdvance = scheduler.reserveNext()
-        assertEquals(endpoint1, endpointAdvance?.vertex)
+        assertTrue(endpointAdvance?.vertex in setOf(endpoint1, endpoint2) - adjacentAdvance.vertex)
     }
 
     private fun complete(

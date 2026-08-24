@@ -26,7 +26,6 @@ class IncrementalTimeAdvanceScheduler<TVert : TimedNetworkVertex, TLink : TimedN
     private val entryVersions = mutableMapOf<String, Long>()
     private val knownAdvances = mutableMapOf<String, Duration>()
     private val reservedVertexIds = mutableSetOf<String>()
-    private val reservationFootprintsByVertexId = mutableMapOf<String, Set<String>>()
     private val entries = PriorityQueue(
         compareByDescending<QueueEntry<TVert>> { isPrioritized(it.vertex) }
             .thenByDescending { it.duration }
@@ -46,14 +45,12 @@ class IncrementalTimeAdvanceScheduler<TVert : TimedNetworkVertex, TLink : TimedN
                     continue
                 }
 
-                val footprint = reservationFootprint(entry.vertex)
-                if (footprint.any { it in reservedVertexIds }) {
+                if (entry.vertex.id in reservedVertexIds) {
                     blockedEntries += entry
                     continue
                 }
 
-                reservedVertexIds += footprint
-                reservationFootprintsByVertexId[entry.vertex.id] = footprint
+                reservedVertexIds += entry.vertex.id
                 return VertexAdvance(entry.vertex, graph.maxAdvance(entry.vertex.id))
             }
 
@@ -65,29 +62,19 @@ class IncrementalTimeAdvanceScheduler<TVert : TimedNetworkVertex, TLink : TimedN
 
     /** Call after the selected vertex has advanced in [graph]. */
     fun complete(advance: VertexAdvance<TVert>) {
-        val footprint = reservationFootprintsByVertexId.remove(advance.vertex.id)
-        check(footprint != null) {
+        check(reservedVertexIds.remove(advance.vertex.id)) {
             "Vertex ${advance.vertex.id} was not reserved"
         }
-        reservedVertexIds -= footprint
         refreshAffectedVertices(advance.vertex)
     }
 
     /** Releases a selected vertex when its work could not be completed. */
     fun release(advance: VertexAdvance<TVert>) {
-        val footprint = reservationFootprintsByVertexId.remove(advance.vertex.id)
-        check(footprint != null) {
+        check(reservedVertexIds.remove(advance.vertex.id)) {
             "Vertex ${advance.vertex.id} was not reserved"
         }
-        reservedVertexIds -= footprint
         refresh(advance.vertex)
     }
-
-    private fun reservationFootprint(vertex: TVert): Set<String> =
-        buildSet {
-            add(vertex.id)
-            graph.neighbours(vertex.id).forEach { neighbour -> add(neighbour.vertex.id) }
-        }
 
     private fun refreshAffectedVertices(vertex: TVert) {
         refresh(vertex)

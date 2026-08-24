@@ -5,6 +5,7 @@ import io.libp2p.quicsim.core.PacketProcessor
 import io.libp2p.quicsim.core.schedule.AggregateProcessor
 import java.util.SortedMap
 import java.util.TreeMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.time.Duration
 
 open class OptimizedAggregateProcessor<TProcessor, TPacket>(
@@ -25,9 +26,7 @@ open class OptimizedAggregateProcessor<TProcessor, TPacket>(
         }
 
         fun onTaskAdded() {
-            synchronized(this@OptimizedAggregateProcessor) {
-                updateNextTaskTime()
-            }
+            taskAddedRoutes += this
         }
 
         fun updateNextTaskTime() {
@@ -80,6 +79,7 @@ open class OptimizedAggregateProcessor<TProcessor, TPacket>(
     private var currentAbsoluteTime: Duration = Duration.Companion.ZERO
     private val sortedRoutes: SortedMap<Duration, MutableList<RouteController>> = TreeMap()
     private val pendingEmitRoutes = mutableSetOf<Int>()
+    private val taskAddedRoutes = ConcurrentLinkedQueue<RouteController>()
     private val allRoutes =
         processors.mapIndexed { index, processor ->
             RouteController(index, processor)
@@ -108,6 +108,7 @@ open class OptimizedAggregateProcessor<TProcessor, TPacket>(
 
     @Synchronized
     fun drainPendingEmitRoutes(): List<Int> {
+        flushTaskAddedRoutes()
         val ret = pendingEmitRoutes.toList()
         pendingEmitRoutes.clear()
         return ret
@@ -116,12 +117,15 @@ open class OptimizedAggregateProcessor<TProcessor, TPacket>(
     @Synchronized
     override fun receivePackets(idx: Int, packets: List<TPacket>) {
         if (packets.isNotEmpty()) {
+            flushTaskAddedRoutes()
             allRoutes[idx].receivePackets(packets)
+            flushTaskAddedRoutes()
         }
     }
 
     @Synchronized
     override fun advance(advanceDuration: Duration) {
+        flushTaskAddedRoutes()
         val targetTime = currentAbsoluteTime + advanceDuration
         val nowRoutes = sortedRoutes.remove(targetTime) ?: emptyList()
         nowRoutes.forEach { route ->
@@ -129,6 +133,7 @@ open class OptimizedAggregateProcessor<TProcessor, TPacket>(
             route.executePendingAndUpdateNextTaskTime()
         }
         currentAbsoluteTime = targetTime
+        flushTaskAddedRoutes()
     }
 
     @Synchronized
@@ -139,6 +144,16 @@ open class OptimizedAggregateProcessor<TProcessor, TPacket>(
 
     @Synchronized
     override fun nextTaskDuration(): Duration? =
-        if (sortedRoutes.isEmpty()) null
-        else (sortedRoutes.firstKey() - currentAbsoluteTime)
+        run {
+            flushTaskAddedRoutes()
+            if (sortedRoutes.isEmpty()) null
+            else (sortedRoutes.firstKey() - currentAbsoluteTime)
+        }
+
+    private fun flushTaskAddedRoutes() {
+        generateSequence { taskAddedRoutes.poll() }
+            .forEach { route ->
+                route.updateNextTaskTime()
+            }
+    }
 }
