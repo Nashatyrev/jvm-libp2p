@@ -31,15 +31,12 @@ import io.netty.incubator.codec.quic.QuicheConfig
 import java.security.SecureRandom
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.BiFunction
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 
 class SimulatedRunner(
     val nodeFactory: NodeProgramFactory,
@@ -58,7 +55,6 @@ class SimulatedRunner(
     // but with a risk that free() is called on it upon transport shutdown
     // basically should be safe in a single run
     val optimizePerfByCreatingSingleQuicheConfig: Boolean = true,
-    val newNetworkController: Boolean = false
 ) {
     val nodeCount: Int = udpNetwork.nodes.size
 
@@ -188,18 +184,10 @@ class SimulatedRunner(
             "UdpSimNetwork endpoint ids must match simulated node IPs"
         }
         val networkController =
-            if (newNetworkController) {
-                if (latencyWindowParallelism > 0) {
-                    ParallelTimedNetworkController(simCoreNet, udpNetwork, parallelism = latencyWindowParallelism)
-                } else {
-                    TimedNetworkController(simCoreNet, udpNetwork)
-                }
+            if (latencyWindowParallelism > 0) {
+                ParallelTimedNetworkController(simCoreNet, udpNetwork, parallelism = latencyWindowParallelism)
             } else {
-                if (latencyWindowParallelism > 0) {
-                    ParallelSimPacketBridge(simCoreNet, udpNetwork, latencyWindowParallelism)
-                } else {
-                    SimpleSimPacketBridge(simCoreNet, udpNetwork)
-                }
+                TimedNetworkController(simCoreNet, udpNetwork)
             }
         simTimer = networkController.monotonicTimer
         nodeHeapProfiler.sample("after_create_sim_network", simTimer.elapsedTime(), nodesStuff)
@@ -223,10 +211,7 @@ class SimulatedRunner(
         logger.log("Running simulated event loop...")
 
         val startSimT = simTimer.time()
-        var nextAdvance: Duration = Duration.ZERO
         try {
-//            val isCompleteCheck = OncePerPeriod(1.milliseconds)
-            val statusPrint = OncePerPeriod(1.seconds)
             val completedCount = AtomicInteger(0)
             val lastCompleteTime = AtomicReference(Duration.ZERO)
             nodesStuff.forEach { node ->
@@ -236,78 +221,20 @@ class SimulatedRunner(
                 }
             }
 
-            if (newNetworkController) {
-//                val simTimeCheckpoint = System.getProperty("quicsim.profile.simTimeCheckpointSeconds")
-//                    ?.toLongOrNull()
-//                    ?.seconds
-//                    ?: 30.seconds
-//                val checkpointWallNanos = AtomicLong(-1)
-                val stopAtCheckpoint = AtomicBoolean(false)
-                val stopAtCheckpointEnabled = System.getProperty("quicsim.profile.stopAtCheckpoint").toBoolean()
-                networkController.advanceWhile(
-                    predicate = {
-                        !stopAtCheckpoint.get() &&
-                                (stopAtCheckpointEnabled || completedCount.get() < nodePrograms.size) &&
-                                simTimer.elapsedTime() < maxSimulatedRunDuration
-                    },
-//                    afterTimeAdvanced = { simTime ->
-//                        nodeHeapProfiler.maybeSample("parallel_periodic", simTime, nodesStuff)
-//                        if (simTime >= simTimeCheckpoint && checkpointWallNanos.compareAndSet(-1, System.nanoTime())) {
-//                            val startedAt = programsStartedWallNanos.get()
-//                            val wallSinceProgramsStartedMillis =
-//                                if (startedAt >= 0) {
-//                                    (checkpointWallNanos.get() - startedAt) / 1_000_000
-//                                } else {
-//                                    -1
-//                                }
-//                            logger.log(
-//                                "Sim time checkpoint reached: " +
-//                                    "checkpoint=${simTimeCheckpoint.inWholeSeconds}s " +
-//                                    "wallSinceProgramsStarted=${wallSinceProgramsStartedMillis}ms"
-//                            )
-//                            if (stopAtCheckpointEnabled) {
-//                                stopAtCheckpoint.set(true)
-//                            }
-//                        }
-//                    }
+            networkController.advanceWhile(
+                predicate = {
+                    completedCount.get() < nodePrograms.size &&
+                            simTimer.elapsedTime() < maxSimulatedRunDuration
+                },
+            )
+            val simTime = simTimer.time() - startSimT
+            nodeHeapProfiler.maybeSample("periodic", simTime, nodesStuff)
+            if (completedCount.get() < nodePrograms.size && simTime >= maxSimulatedRunDuration) {
+                throw IllegalStateException(
+                    "Simulation exceeded limit: simulated=${simTime.inWholeMilliseconds}ms " +
+                        "limit=${maxSimulatedRunDuration.inWholeMilliseconds}ms " +
+                        "completed=$completedCount/${nodePrograms.size}"
                 )
-//                nodeHeapProfiler.sample("after_parallel_advance", simTimer.elapsedTime(), nodesStuff)
-//                if (stopAtCheckpoint.get()) {
-//                    logger.log(
-//                        "Stopped at sim time checkpoint; " +
-//                            "completed=${completedCount.get()}/${nodePrograms.size}"
-//                    )
-//                    return
-//                }
-
-            } else {
-
-                networkController as SimpleSimPacketBridge
-
-                while (true) {
-                    networkController.advanceAndExecuteAll(nextAdvance)
-                    val simTime = simTimer.time() - startSimT
-                    nodeHeapProfiler.maybeSample("periodic", simTime, nodesStuff)
-
-                    val maybeNextAdvance = networkController.nextTaskDuration()
-
-                    if (maybeNextAdvance == null || completedCount.get() == nodePrograms.size) {
-                        break
-                    }
-                    nextAdvance = maybeNextAdvance
-
-                    statusPrint.run(simTime) {
-                        logger.log("Nodes complete $completedCount of $nodeCount")
-                    }
-
-                    if (simTime > maxSimulatedRunDuration) {
-                        throw IllegalStateException(
-                            "Simulation exceeded limit: simulated=${simTime.inWholeMilliseconds}ms " +
-                                    "limit=${maxSimulatedRunDuration.inWholeMilliseconds}ms " +
-                                    "completed=$completedCount/${nodePrograms.size}"
-                        )
-                    }
-                }
             }
 
             logger.log("Last Node complete at $lastCompleteTime")
@@ -318,7 +245,6 @@ class SimulatedRunner(
             throw e
         } finally {
             nodeHeapProfiler.close()
-//            simPacketPump.close()
         }
 
     }

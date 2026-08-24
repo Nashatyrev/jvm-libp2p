@@ -16,29 +16,24 @@ import io.libp2p.pubsub.gossip.GossipRpcFrameStats
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.core.PacketProcessorVisitor
 import io.libp2p.quicsim.core.schedule.impl.submitAfterDelay
-import io.libp2p.quicsim.program.DataChunkMetrics
 import io.libp2p.quicsim.program.DataChunkNodeProgramFactory
 import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
 import io.libp2p.quicsim.program.SampleGossipNodeProgram
 import io.libp2p.quicsim.runner.IPManager
 import io.libp2p.quicsim.runner.SimulatedRunner
-import io.libp2p.quicsim.runner.SimulatedQuicScenarioRunner
 import io.libp2p.quicsim.scenario.QuicScenarios
 import io.libp2p.quicsim.sim.NetworkContext
 import io.libp2p.quicsim.sim.SimContext
 import io.libp2p.quicsim.sim.SimNodeId
 import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.TestStarNetworkBuilder2
-import io.libp2p.quicsim.udpnetwork.UdpSimNetworkEngine
 import io.libp2p.quicsim.udpnetwork.UdpSimNode
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.TestUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.TestQDiscFactory
 import io.libp2p.quicsim.udpnetwork.fifoUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.latencyThenBandwidthUdpSimQueue
-import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl
-import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl2
 import io.netty.buffer.AdaptiveByteBufAllocator
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.ByteBufAllocator
@@ -102,8 +97,7 @@ class SimulatedRunnerTest {
             },
             udpNetwork = networkBuilder.build(),
             maxSimulatedRunDuration = 60.minutes,
-            latencyWindowParallelism = 16,
-            newNetworkController = true
+            latencyWindowParallelism = 16
         )
 
         runner.run()
@@ -135,8 +129,7 @@ class SimulatedRunnerTest {
                     ).also { nodePrograms += it }
             },
             udpNetwork = networkBuilder.build(),
-            latencyWindowParallelism = 4,
-            newNetworkController = true
+            latencyWindowParallelism = 4
         )
 
         runner.run()
@@ -245,8 +238,7 @@ class SimulatedRunnerTest {
                     globalAllocator ?: quicAllocatorDelegate(allocatorMode, forceHeapByteBufs)
                 }
             },
-            latencyWindowParallelism = 16,
-            newNetworkController = true
+            latencyWindowParallelism = 16
         )
 
         directBufferStats.start()
@@ -500,18 +492,6 @@ class SimulatedRunnerTest {
     }
 
     @Test
-    @Timeout(30)
-    fun `check QUIC slow start`() {
-        val result = SimulatedQuicScenarioRunner().run(QuicScenarios.slowStart())
-
-        val firstChunkReceipts = DataChunkMetrics.packetReceipts(result.events)
-        firstChunkReceipts.forEach {
-            println("${it.receivedAt.inWholeMilliseconds}\t${it.sequence}\t${it.totalPackets}")
-        }
-    }
-
-
-    @Test
     fun `2 nodes connect to each other`() {
         val builder = TestStarNetworkBuilder2()
         builder.addIpNodes(2)
@@ -565,8 +545,7 @@ class SimulatedRunnerTest {
             },
             udpNetwork = builder.build(),
             nodeVisitorFactory = { NodeLogger(it) },
-            latencyWindowParallelism = 4,
-            newNetworkController = true
+            latencyWindowParallelism = 4
         )
 
         runner.run()
@@ -1859,8 +1838,6 @@ class SimulatedRunnerTest {
                     "protobuf outbound encode"
                 contains("LimitedProtobufVarint32FrameDecoder") || contains("ProtobufDecoder") ->
                     "protobuf inbound decode"
-                contains("UdpSimNetworkEngine") || contains("SimPacketBridge") ->
-                    "sim UDP bridge/network"
                 else -> stack
                     .dropWhile { it.className == CountingByteBufAllocator::class.java.name ||
                         it.className == CountingByteBuf::class.java.name ||

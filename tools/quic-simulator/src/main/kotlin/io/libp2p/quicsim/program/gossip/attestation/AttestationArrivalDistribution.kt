@@ -17,13 +17,3 @@ data class AttestationArrivalBucket(
         }
     }
 }
-
-class DiscreteAttestationArrivalDistribution(
-    private val buckets: List<AttestationArrivalBucket>,
-) : AttestationArrivalDistribution {
-    init {
-        require(buckets.isNotEmpty()) { "buckets must not be empty" }
-    }
-
-    override fun arrivals(slot: Long): List<AttestationArrivalBucket> = buckets
-}

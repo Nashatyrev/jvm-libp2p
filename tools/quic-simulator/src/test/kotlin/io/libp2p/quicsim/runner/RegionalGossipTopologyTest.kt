@@ -2,13 +2,13 @@ package io.libp2p.quicsim.runner
 
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.pubsub.gossip.NEVER_FLOOD_PUBLISH
-import io.libp2p.quicsim.program.GossipMetrics
 import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
 import io.libp2p.quicsim.program.SampleGossipNodeProgram
 import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.WORLD_DESCRIPTOR_1
 import io.libp2p.quicsim.scenario.RegionalNetworkTopologyBuilder
 import io.libp2p.quicsim.scenario.RecordingQuicScenarioEventSink
+import io.libp2p.quicsim.scenario.QuicScenarioEvent
 import io.libp2p.quicsim.scenario.QuicScenarioEventSource
 import io.libp2p.quicsim.scenario.addRandomScenarioHosts
 import io.libp2p.quicsim.sim.SimNodeId
@@ -56,7 +56,8 @@ class RegionalGossipTopologyTest {
                         ).also { nodePrograms += it }
                 },
                 udpNetwork = topology.toUdpSimNetwork(),
-                maxSimulatedRunDuration = MAX_RUN_DURATION
+                maxSimulatedRunDuration = MAX_RUN_DURATION,
+                latencyWindowParallelism = LATENCY_WINDOW_PARALLELISM
             )
 
             try {
@@ -81,8 +82,8 @@ class RegionalGossipTopologyTest {
         )
 
         val events = (eventSink as QuicScenarioEventSource).events()
-        val publications = GossipMetrics.messagePublications(events)
-        val receipts = GossipMetrics.messageReceipts(events)
+        val publications = messagePublications(events)
+        val receipts = messageReceipts(events)
             .filter { it.publishingNodeId == PUBLISHER_NODE_ID }
         val expectedRecipients = (0 until NODE_COUNT)
             .filter { it != PUBLISHER_NODE_ID }
@@ -143,12 +144,45 @@ class RegionalGossipTopologyTest {
         return sorted[index]
     }
 
+    private fun messageReceipts(events: List<QuicScenarioEvent>): List<MessageReceipt> =
+        events.filterIsInstance<QuicScenarioEvent.GossipMessageReceived>()
+            .map {
+                MessageReceipt(
+                    receivedAt = it.at,
+                    receivingNodeId = it.nodeId,
+                    publishingNodeId = it.publisherNodeId
+                )
+            }
+            .sortedWith(compareBy({ it.receivedAt }, { it.receivingNodeId }, { it.publishingNodeId }))
+
+    private fun messagePublications(events: List<QuicScenarioEvent>): List<MessagePublication> =
+        events.filterIsInstance<QuicScenarioEvent.GossipMessagePublished>()
+            .map {
+                MessagePublication(
+                    publishedAt = it.at,
+                    publishingNodeId = it.nodeId
+                )
+            }
+            .sortedWith(compareBy({ it.publishedAt }, { it.publishingNodeId }))
+
+    private data class MessageReceipt(
+        val receivedAt: Duration,
+        val receivingNodeId: SimNodeId,
+        val publishingNodeId: SimNodeId
+    )
+
+    private data class MessagePublication(
+        val publishedAt: Duration,
+        val publishingNodeId: SimNodeId
+    )
+
     private companion object {
         const val NODE_COUNT = 65
         const val PEERS_PER_NODE = 50
         const val PUBLISHER_COUNT = 1
         const val PUBLISHER_NODE_ID = 0
         const val MESSAGE_SIZE_BYTES = 512 * 1024
+        const val LATENCY_WINDOW_PARALLELISM = 8
         const val SAMPLE_GOSSIP_LOG_PROPERTY = "quicsim.sampleGossip.log"
         val INITIAL_PUBLISH_DELAY = 10.seconds
         val MAX_RUN_DURATION = 2.minutes
