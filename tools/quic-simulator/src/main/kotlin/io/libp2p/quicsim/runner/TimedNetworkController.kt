@@ -8,13 +8,13 @@ import io.libp2p.quicsim.runner.graph.strategy.SimplestAdvanceStrategy
 import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.udpnetwork.RouteResolver
 import io.libp2p.quicsim.udpnetwork.UdpSimNetwork
-import io.libp2p.quicsim.udpnetwork.impl.BasicStarRouteResolver
+import io.libp2p.quicsim.udpnetwork.impl.ShortestPathRouteResolver
 import io.netty.channel.socket.DatagramPacket
 
 class TimedNetworkController(
     val simNet: SimNet<DatagramPacket>,
     val udpNet: UdpSimNetwork,
-    val routeResolver: RouteResolver = BasicStarRouteResolver(udpNet),
+    val routeResolver: RouteResolver = ShortestPathRouteResolver(udpNet),
     val timeAdvanceStrategy: TimeAdvanceStrategy = SimplestAdvanceStrategy()
 ) : NetworkController {
 

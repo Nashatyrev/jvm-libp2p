@@ -1,8 +1,8 @@
 package io.libp2p.quicsim.udpnetwork
 
 import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
+import io.libp2p.quicsim.udpnetwork.impl.ShortestPathRouteResolver
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimLinks
-import java.util.ArrayDeque
 import kotlin.time.Duration
 
 class TestNetworkBuilder {
@@ -33,36 +33,4 @@ class TestNetworkBuilder {
 
     fun routeResolver(): RouteResolver =
         ShortestPathRouteResolver(build())
-
-    private class ShortestPathRouteResolver(
-        network: UdpSimNetwork
-    ) : RouteResolver {
-        private val adjacency = network.links
-            .groupBy { it.from }
-            .mapValues { entry -> entry.value.map { it.to } }
-
-        override fun findNextHop(fromNode: UdpSimNode, destNode: UdpSimNode): UdpSimNode? {
-            if (fromNode == destNode) {
-                return null
-            }
-            val visited = mutableSetOf(fromNode)
-            val queue = ArrayDeque<List<UdpSimNode>>()
-            queue += listOf(fromNode)
-            while (queue.isNotEmpty()) {
-                val path = queue.removeFirst()
-                adjacency[path.last()].orEmpty().forEach { next ->
-                    if (next in visited) {
-                        return@forEach
-                    }
-                    val nextPath = path + next
-                    if (next == destNode) {
-                        return nextPath[1]
-                    }
-                    visited += next
-                    queue += nextPath
-                }
-            }
-            error("No route from $fromNode to $destNode")
-        }
-    }
 }

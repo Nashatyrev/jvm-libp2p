@@ -16,6 +16,7 @@ import io.libp2p.quicsim.udpnetwork.impl.UnshapedUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl4
 import io.netty.channel.socket.DatagramPacket
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -185,6 +186,29 @@ class SimulatedScenarioNetworkTest {
 
         engine.advanceUntil(10.milliseconds)
         inbound.latencyQueue.emitter.advanceAndExecuteAll(20.milliseconds)
+
+        assertEquals(listOf(packet), inbound.latencyQueue.emitter.emitPackets())
+    }
+
+    @Test
+    fun `impl4 includes regional router latency`() {
+        val network = QuicNetworkTopology.regional(
+            descriptor = WORLD_DESCRIPTOR_1,
+            hostRegions = listOf(ContinentRegion.US_EAST, ContinentRegion.US_WEST),
+            bandwidthBytesPerSecond = Long.MAX_VALUE
+        ).toUdpSimNetwork(BandwidthQueueDiscipline.FIFO)
+        val engine = UdpSimNetworkEngineImpl4(network)
+        val packet = udpSimDatagram(100, "node-0", "node-1")
+        val outbound = network.links.single { it.from.id == "node-0" && it.to.id == "router-us-east" }
+        val inbound = network.links.single { it.from.id == "router-us-west" && it.to.id == "node-1" }
+
+        outbound.latencyQueue.receiver.receivePackets(listOf(packet))
+
+        engine.advanceUntil(20.milliseconds)
+        assertNull(inbound.latencyQueue.emitter.nextTaskDuration())
+
+        engine.advanceUntil(50.milliseconds)
+        inbound.latencyQueue.emitter.advanceAndExecuteAll(80.milliseconds)
 
         assertEquals(listOf(packet), inbound.latencyQueue.emitter.emitPackets())
     }

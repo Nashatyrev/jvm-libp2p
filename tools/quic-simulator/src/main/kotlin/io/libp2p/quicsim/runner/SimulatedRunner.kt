@@ -188,14 +188,18 @@ class SimulatedRunner(
             "UdpSimNetwork endpoint ids must match simulated node IPs"
         }
         val networkController =
-            if (latencyWindowParallelism > 0) {
-                if (newNetworkController)
-//                    TimedNetworkController(simCoreNet, udpNetwork)
+            if (newNetworkController) {
+                if (latencyWindowParallelism > 0) {
                     ParallelTimedNetworkController(simCoreNet, udpNetwork, parallelism = latencyWindowParallelism)
-                else
-                    ParallelSimPacketBridge(simCoreNet, udpNetwork, latencyWindowParallelism)
+                } else {
+                    TimedNetworkController(simCoreNet, udpNetwork)
+                }
             } else {
-                SimpleSimPacketBridge(simCoreNet, udpNetwork)
+                if (latencyWindowParallelism > 0) {
+                    ParallelSimPacketBridge(simCoreNet, udpNetwork, latencyWindowParallelism)
+                } else {
+                    SimpleSimPacketBridge(simCoreNet, udpNetwork)
+                }
             }
         simTimer = networkController.monotonicTimer
         nodeHeapProfiler.sample("after_create_sim_network", simTimer.elapsedTime(), nodesStuff)
@@ -232,7 +236,7 @@ class SimulatedRunner(
                 }
             }
 
-            if (latencyWindowParallelism > 0) {
+            if (newNetworkController) {
 //                val simTimeCheckpoint = System.getProperty("quicsim.profile.simTimeCheckpointSeconds")
 //                    ?.toLongOrNull()
 //                    ?.seconds

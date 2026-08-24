@@ -118,6 +118,7 @@ class SampleGossipNodeProgram(
                                 publishSucceeded = true
                                 lastPublishError = null
                                 log("[$simNodeId] publish message=$messageIndex succeeded")
+                                completeIfReady()
                             } else {
                                 publishSucceeded = false
                                 lastPublishError = err.message
@@ -130,7 +131,8 @@ class SampleGossipNodeProgram(
     }
 
     private fun isComplete(): Boolean =
-        expectedMessageCount > 0 && receivedMessageCount.get() >= expectedMessageCount
+        receivedMessageCount.get() >= expectedMessageCount &&
+            (simNodeId >= publishersCount || publishSucceeded)
 
     private fun completeIfReady() {
         if (isComplete()) {

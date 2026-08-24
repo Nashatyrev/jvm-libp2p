@@ -101,21 +101,21 @@ class TimedNetworkGraphTest {
     }
 
     @Test
-    fun `rejects cycles`() {
-        assertThrows(IllegalArgumentException::class.java) {
-            val node0 = TestVertex("node-0")
-            val router0 = TestVertex("router-0")
-            val node1 = TestVertex("node-1")
+    fun `accepts cycles`() {
+        val node0 = TestVertex("node-0")
+        val router0 = TestVertex("router-0")
+        val node1 = TestVertex("node-1")
 
-            TimedNetworkGraph(
-                vertices = listOf(node0, router0, node1),
-                links = listOf(
-                    TestLink(node0, router0, 10.milliseconds),
-                    TestLink(router0, node1, 10.milliseconds),
-                    TestLink(node1, node0, 10.milliseconds)
-                )
+        val graph = TimedNetworkGraph(
+            vertices = listOf(node0, router0, node1),
+            links = listOf(
+                TestLink(node0, router0, 10.milliseconds),
+                TestLink(router0, node1, 10.milliseconds),
+                TestLink(node1, node0, 10.milliseconds)
             )
-        }
+        )
+
+        assertEquals(setOf("router-0", "node-1"), graph.neighbours("node-0").map { it.vertex.id }.toSet())
     }
 
     @Test
