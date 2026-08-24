@@ -169,7 +169,10 @@ private fun QuicNetworkTopology.toShadowGml(): String {
         appendLine("graph [")
         appendLine("  directed 1")
         nodeIds.forEachIndexed { index, nodeId ->
-            val bandwidthBits = bandwidthByNode.getValue(nodeId) * 8
+            val bandwidthBytes = bandwidthByNode.getValue(nodeId)
+            val bandwidthBits =
+                if (bandwidthBytes > Long.MAX_VALUE / Byte.SIZE_BITS) Long.MAX_VALUE
+                else bandwidthBytes * Byte.SIZE_BITS
             appendLine("  node [")
             appendLine("    id $index")
             appendLine("    label ${nodeId.yamlQuote()}")

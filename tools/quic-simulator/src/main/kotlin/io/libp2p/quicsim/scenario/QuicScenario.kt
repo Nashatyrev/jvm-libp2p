@@ -42,6 +42,17 @@ data class QuicNetworkTopology(
     }
 
     companion object {
+        fun regional(
+            hostRegions: List<NetworkRegion>,
+            hostId: (Int) -> String = { "node-$it" },
+            maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME
+        ): QuicNetworkTopology =
+            RegionalNetworkTopologyBuilder(maxQueueWaitTime).also { builder ->
+                hostRegions.forEachIndexed { index, region ->
+                    builder.addHost(hostId(index), region)
+                }
+            }.build()
+
         fun star(
             hostCount: Int,
             latency: Duration,
