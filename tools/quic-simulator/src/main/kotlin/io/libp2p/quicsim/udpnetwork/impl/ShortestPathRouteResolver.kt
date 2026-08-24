@@ -10,31 +10,43 @@ class ShortestPathRouteResolver(
 ) : RouteResolver {
     private val adjacency: Map<UdpSimNode, List<UdpSimNode>> =
         network.links.groupBy { it.from }.mapValues { entry -> entry.value.map { it.to } }
+    private val nextHopByRoute: Map<Pair<UdpSimNode, UdpSimNode>, UdpSimNode?> =
+        adjacency.keys.associateWith { from -> shortestPathsFrom(from) }
+            .flatMap { (from, nextHops) ->
+                nextHops.map { (destination, nextHop) -> (from to destination) to nextHop }
+            }
+            .toMap()
 
     override fun findNextHop(fromNode: UdpSimNode, destNode: UdpSimNode): UdpSimNode? {
         if (fromNode == destNode) {
             return null
         }
+        return nextHopByRoute[fromNode to destNode] ?: error("No route from $fromNode to $destNode")
+    }
 
+    private fun shortestPathsFrom(fromNode: UdpSimNode): Map<UdpSimNode, UdpSimNode?> {
         val visited = mutableSetOf(fromNode)
-        val queue = ArrayDeque<List<UdpSimNode>>()
-        queue += listOf(fromNode)
+        val queue = ArrayDeque<Pair<UdpSimNode, UdpSimNode>>()
+        val nextHops = linkedMapOf<UdpSimNode, UdpSimNode?>(fromNode to null)
+
+        adjacency[fromNode].orEmpty().forEach { next ->
+            visited += next
+            nextHops[next] = next
+            queue += next to next
+        }
 
         while (queue.isNotEmpty()) {
-            val path = queue.removeFirst()
-            adjacency[path.last()].orEmpty().forEach { next ->
+            val (node, firstHop) = queue.removeFirst()
+            adjacency[node].orEmpty().forEach { next ->
                 if (next in visited) {
                     return@forEach
                 }
-                val nextPath = path + next
-                if (next == destNode) {
-                    return nextPath[1]
-                }
                 visited += next
-                queue += nextPath
+                nextHops[next] = firstHop
+                queue += next to firstHop
             }
         }
 
-        error("No route from $fromNode to $destNode")
+        return nextHops
     }
 }

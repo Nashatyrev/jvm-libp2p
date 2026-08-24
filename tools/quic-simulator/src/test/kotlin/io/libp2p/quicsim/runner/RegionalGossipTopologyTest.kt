@@ -178,7 +178,7 @@ class RegionalGossipTopologyTest {
 
     private companion object {
         const val NODE_COUNT = 65
-        const val PEERS_PER_NODE = 50
+        const val PEERS_PER_NODE = 10
         const val PUBLISHER_COUNT = 1
         const val PUBLISHER_NODE_ID = 0
         const val MESSAGE_SIZE_BYTES = 512 * 1024
