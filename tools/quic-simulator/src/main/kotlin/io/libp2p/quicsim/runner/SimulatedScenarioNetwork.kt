@@ -15,6 +15,7 @@ import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
 import io.libp2p.quicsim.udpnetwork.impl.CodelUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FqCodelUdpSimBandwidthQueue
+import io.libp2p.quicsim.udpnetwork.impl.UnshapedUdpSimBandwidthQueue
 import io.netty.channel.socket.DatagramPacket
 
 internal fun QuicNetworkTopology.toUdpSimNetwork(
@@ -47,7 +48,9 @@ fun QuicNetworkLink.toUdpSimLink(
     bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE
 ): UdpSimLink {
     val bandwidth = Bandwidth(this.bandwidthBytesPerSecond)
-    val bandwidthQueue = when (bandwidthQueueDiscipline) {
+    val bandwidthQueue = if (bandwidth.isInfinite) {
+        UnshapedUdpSimBandwidthQueue()
+    } else when (bandwidthQueueDiscipline) {
         BandwidthQueueDiscipline.FIFO -> FifoUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
         BandwidthQueueDiscipline.FQ_CODEL -> FqCodelUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
         BandwidthQueueDiscipline.CODEL -> CodelUdpSimBandwidthQueue(bandwidth)

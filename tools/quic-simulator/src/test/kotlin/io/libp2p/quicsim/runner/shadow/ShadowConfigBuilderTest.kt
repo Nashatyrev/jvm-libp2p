@@ -35,7 +35,7 @@ class ShadowConfigBuilderTest {
     }
 
     @Test
-    fun `infinite regional bandwidth does not overflow shadow bits`() {
+    fun `regional host bandwidth is rendered without overflowing shadow bits`() {
         val scenario = QuicScenario(
             name = "regional",
             network = QuicNetworkTopology.regional(
@@ -57,7 +57,7 @@ class ShadowConfigBuilderTest {
             listenPortStartRange = 17000
         ).build()
 
-        assertThat(config).contains("host_bandwidth_down \"${Long.MAX_VALUE} bit\"")
+        assertThat(config).contains("host_bandwidth_down \"50000000 bit\"")
         assertThat(config).doesNotContain("host_bandwidth_down \"-8 bit\"")
     }
 }

@@ -2,6 +2,7 @@ package io.libp2p.quicsim.runner
 
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
 import io.libp2p.quicsim.core.schedule.impl.NanoMonotonicTimer
+import io.libp2p.quicsim.scenario.NetworkRegion
 import io.libp2p.quicsim.scenario.QuicNetworkTopology
 import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.sim.SimNode
@@ -9,6 +10,7 @@ import io.libp2p.quicsim.udpnetwork.udpSimDatagram
 import io.libp2p.quicsim.udpnetwork.impl.CodelUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FifoUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.FqCodelUdpSimBandwidthQueue
+import io.libp2p.quicsim.udpnetwork.impl.UnshapedUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.UdpSimNetworkEngineImpl4
 import io.netty.channel.socket.DatagramPacket
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -147,6 +149,20 @@ class SimulatedScenarioNetworkTest {
 
         assertTrue(outbound.bandwidthQueue is FifoUdpSimBandwidthQueue)
         assertTrue(inbound.bandwidthQueue is CodelUdpSimBandwidthQueue)
+    }
+
+    @Test
+    fun `regional router links bypass bandwidth queues`() {
+        val network = QuicNetworkTopology.regional(
+            listOf(NetworkRegion.US_EAST, NetworkRegion.EUROPE)
+        ).toUdpSimNetwork(BandwidthQueueDiscipline.FQ_CODEL)
+
+        val routerLinks = network.links.filter {
+            it.from.id.startsWith("router-") && it.to.id.startsWith("router-")
+        }
+
+        assertEquals(30, routerLinks.size)
+        assertTrue(routerLinks.all { it.bandwidthQueue is UnshapedUdpSimBandwidthQueue })
     }
 
     @Test

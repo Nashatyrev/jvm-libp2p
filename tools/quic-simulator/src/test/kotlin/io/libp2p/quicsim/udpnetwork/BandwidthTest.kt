@@ -1,6 +1,7 @@
 package io.libp2p.quicsim.udpnetwork
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import kotlin.time.Duration.Companion.nanoseconds
 
@@ -17,7 +18,13 @@ class BandwidthTest {
     @Test
     fun `calculates transfer duration with nanosecond precision`() {
         assertEquals(333_333_334.nanoseconds, Bandwidth(3).durationToTransfer(1))
-        assertEquals(1.nanoseconds, Bandwidth(Long.MAX_VALUE).durationToTransfer(1))
+        assertEquals(1.nanoseconds, Bandwidth(Bandwidth.INFINITE_BANDWIDTH).durationToTransfer(1))
         assertEquals(kotlin.time.Duration.ZERO, Bandwidth(1).durationToTransfer(0))
+    }
+
+    @Test
+    fun `recognizes the infinite bandwidth sentinel`() {
+        assertEquals(Long.MAX_VALUE, Bandwidth.INFINITE_BANDWIDTH)
+        assertTrue(Bandwidth(Bandwidth.INFINITE_BANDWIDTH).isInfinite)
     }
 }

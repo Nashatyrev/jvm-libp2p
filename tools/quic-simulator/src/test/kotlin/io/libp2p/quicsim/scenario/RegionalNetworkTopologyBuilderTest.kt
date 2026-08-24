@@ -1,40 +1,60 @@
 package io.libp2p.quicsim.scenario
 
+import io.libp2p.quicsim.udpnetwork.Bandwidth
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import kotlin.time.Duration.Companion.milliseconds
 
 class RegionalNetworkTopologyBuilderTest {
     @Test
-    fun `builds full mesh with regional latencies and infinite bandwidth`() {
-        val regions = NetworkRegion.values().toList()
+    fun `builds the 65 node regional router topology`() {
         val topology = RegionalNetworkTopologyBuilder()
-            .also { builder ->
-                regions.forEach { region ->
-                    builder.addHosts(
-                        region,
-                        listOf("${region.name}-0", "${region.name}-1")
-                    )
-                }
-            }
+            .addRandomHosts()
             .build()
-        val regionByHost = regions.flatMap { region ->
-            listOf("${region.name}-0", "${region.name}-1").map { it to region }
-        }.toMap()
+        val routerIds = NetworkRegion.values().associateBy { routerId(it) }
+        val hostIds = topology.hosts.map { it.id }.toSet()
+        val routerLinks = topology.links.filter { it.from in routerIds && it.to in routerIds }
+        val accessLinks = topology.links - routerLinks.toSet()
 
-        assertEquals(12, topology.hosts.size)
-        assertEquals(emptyList<QuicNetworkRouter>(), topology.routers)
-        assertEquals(12 * 11, topology.links.size)
-        topology.links.forEach { link ->
-            assertEquals(
-                RegionalNetworkTopologyBuilder.latency(
-                    regionByHost.getValue(link.from),
-                    regionByHost.getValue(link.to)
-                ),
-                link.latency
-            )
-            assertEquals(Long.MAX_VALUE, link.bandwidthBytesPerSecond)
+        assertEquals(65, topology.hosts.size)
+        assertEquals(routerIds.keys, topology.routers.map { it.id }.toSet())
+        assertEquals(30, routerLinks.size)
+        assertEquals(130, accessLinks.size)
+
+        topology.hosts.forEach { host ->
+            val outgoing = accessLinks.single { it.from == host.id }
+            val incoming = accessLinks.single { it.to == host.id }
+            val region = routerIds.getValue(outgoing.to)
+
+            assertEquals(outgoing.to, incoming.from)
+            assertEquals(RegionalNetworkTopologyBuilder.accessLatency(region), outgoing.latency)
+            assertEquals(outgoing.latency, incoming.latency)
+            assertEquals(outgoing.bandwidthBytesPerSecond, incoming.bandwidthBytesPerSecond)
+        }
+
+        assertEquals(
+            3,
+            topology.hosts.count { host ->
+                accessLinks.single { it.from == host.id }.bandwidthBytesPerSecond ==
+                    RegionalNetworkTopologyBuilder.SUPERNODE_BANDWIDTH_BYTES_PER_SECOND
+            }
+        )
+        assertEquals(
+            62,
+            topology.hosts.count { host ->
+                accessLinks.single { it.from == host.id }.bandwidthBytesPerSecond ==
+                    RegionalNetworkTopologyBuilder.VALIDATOR_BANDWIDTH_BYTES_PER_SECOND
+            }
+        )
+        assertTrue(accessLinks.all { it.from in hostIds || it.to in hostIds })
+
+        routerLinks.forEach { link ->
+            val from = routerIds.getValue(link.from)
+            val to = routerIds.getValue(link.to)
+            assertEquals(Bandwidth.INFINITE_BANDWIDTH, link.bandwidthBytesPerSecond)
+            assertEquals(RegionalNetworkTopologyBuilder.latency(from, to), link.latency)
         }
     }
 
@@ -60,6 +80,13 @@ class RegionalNetworkTopologyBuilderTest {
     }
 
     @Test
+    fun `access latency is half of intraregion latency`() {
+        assertEquals(10.milliseconds, RegionalNetworkTopologyBuilder.accessLatency(NetworkRegion.US_EAST))
+        assertEquals(7.5.milliseconds, RegionalNetworkTopologyBuilder.accessLatency(NetworkRegion.EUROPE))
+        assertEquals(12.5.milliseconds, RegionalNetworkTopologyBuilder.accessLatency(NetworkRegion.SOUTH_AMERICA))
+    }
+
+    @Test
     fun `topology companion creates hosts in supplied regions`() {
         val topology = QuicNetworkTopology.regional(
             hostRegions = listOf(NetworkRegion.US_EAST, NetworkRegion.AFRICA),
@@ -67,8 +94,8 @@ class RegionalNetworkTopologyBuilderTest {
         )
 
         assertEquals(listOf("peer-0", "peer-1"), topology.hosts.map { it.id })
-        assertEquals(180.milliseconds, topology.links.single { it.from == "peer-0" }.latency)
-        assertEquals(180.milliseconds, topology.links.single { it.from == "peer-1" }.latency)
+        assertEquals(10.milliseconds, topology.links.single { it.from == "peer-0" }.latency)
+        assertEquals(15.milliseconds, topology.links.single { it.from == "peer-1" }.latency)
     }
 
     @Test
@@ -80,4 +107,7 @@ class RegionalNetworkTopologyBuilderTest {
             builder.addHost("node-0", NetworkRegion.EUROPE)
         }
     }
+
+    private fun routerId(region: NetworkRegion): String =
+        "router-" + region.name.lowercase().replace('_', '-')
 }
