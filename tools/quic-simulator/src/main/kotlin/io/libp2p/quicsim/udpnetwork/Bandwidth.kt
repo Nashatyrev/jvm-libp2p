@@ -21,7 +21,7 @@ class Bandwidth(
     }
 
     val isInfinite: Boolean
-        get() = bytesPerSecond == INFINITE_BANDWIDTH
+        get() = bytesPerSecond == INFINITE
 
     override fun toString(): String {
         val units = listOf("B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s")
@@ -41,8 +41,7 @@ class Bandwidth(
 
     companion object {
         /** Sentinel rate for links without bandwidth shaping. */
-        const val INFINITE_BANDWIDTH: Long = Long.MAX_VALUE
-        val INFINITE = Bandwidth(INFINITE_BANDWIDTH)
+        const val INFINITE: Long = Long.MAX_VALUE
 
         private const val NANOS_PER_SECOND = 1_000_000_000L
     }

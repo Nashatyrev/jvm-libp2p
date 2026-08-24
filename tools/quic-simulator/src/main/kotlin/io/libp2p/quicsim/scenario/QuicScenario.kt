@@ -42,14 +42,16 @@ data class QuicNetworkTopology(
     }
 
     companion object {
-        fun regional(
-            hostRegions: List<NetworkRegion>,
+        fun <R> regional(
+            descriptor: RegionalNetworkDescriptor<R>,
+            hostRegions: List<R>,
+            bandwidthBytesPerSecond: Long,
             hostId: (Int) -> String = { "node-$it" },
             maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME
         ): QuicNetworkTopology =
-            RegionalNetworkTopologyBuilder(maxQueueWaitTime).also { builder ->
+            RegionalNetworkTopologyBuilder(descriptor, maxQueueWaitTime).also { builder ->
                 hostRegions.forEachIndexed { index, region ->
-                    builder.addHost(hostId(index), region)
+                    builder.addHost(hostId(index), region, bandwidthBytesPerSecond)
                 }
             }.build()
 

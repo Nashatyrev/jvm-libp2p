@@ -6,10 +6,9 @@ import io.netty.channel.socket.DatagramPacket
 import kotlin.time.Duration
 
 /** A pass-through stage for links whose bandwidth is intentionally not modelled. */
-class UnshapedUdpSimBandwidthQueue(
-) : UdpSimBandwidthQueue {
+class UnshapedUdpSimBandwidthQueue : UdpSimBandwidthQueue {
     private var pendingPackets = mutableListOf<DatagramPacket>()
-    override val bandwidth get() = Bandwidth.INFINITE
+    override val bandwidth get() = Bandwidth(Bandwidth.INFINITE)
 
     override val maxQueueWaitTime: Duration = Duration.INFINITE
 
@@ -20,7 +19,7 @@ class UnshapedUdpSimBandwidthQueue(
     override fun emitPackets(): List<DatagramPacket> {
         val ret = pendingPackets
         pendingPackets = mutableListOf()
-        return pendingPackets
+        return ret
     }
 
     override fun advance(advanceDuration: Duration) = Unit

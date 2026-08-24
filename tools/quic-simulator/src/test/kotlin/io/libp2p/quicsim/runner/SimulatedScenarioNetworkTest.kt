@@ -2,8 +2,10 @@ package io.libp2p.quicsim.runner
 
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
 import io.libp2p.quicsim.core.schedule.impl.NanoMonotonicTimer
-import io.libp2p.quicsim.scenario.NetworkRegion
 import io.libp2p.quicsim.scenario.QuicNetworkTopology
+import io.libp2p.quicsim.scenario.REGIONAL_DESCRIPTOR
+import io.libp2p.quicsim.scenario.TestRegion
+import io.libp2p.quicsim.scenario.VALIDATOR_BANDWIDTH_BYTES_PER_SECOND
 import io.libp2p.quicsim.sim.SimNet
 import io.libp2p.quicsim.sim.SimNode
 import io.libp2p.quicsim.udpnetwork.udpSimDatagram
@@ -154,7 +156,9 @@ class SimulatedScenarioNetworkTest {
     @Test
     fun `regional router links bypass bandwidth queues`() {
         val network = QuicNetworkTopology.regional(
-            listOf(NetworkRegion.US_EAST, NetworkRegion.EUROPE)
+            descriptor = REGIONAL_DESCRIPTOR,
+            hostRegions = listOf(TestRegion.US_EAST, TestRegion.EUROPE),
+            bandwidthBytesPerSecond = VALIDATOR_BANDWIDTH_BYTES_PER_SECOND
         ).toUdpSimNetwork(BandwidthQueueDiscipline.FQ_CODEL)
 
         val routerLinks = network.links.filter {
