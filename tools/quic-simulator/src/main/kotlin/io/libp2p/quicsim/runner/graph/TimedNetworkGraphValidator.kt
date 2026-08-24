@@ -10,7 +10,6 @@ internal class TimedNetworkGraphValidator(
         requireUniqueVertexIds()
         requireKnownLinkEndpoints()
         requireNoDuplicateLinks()
-        requireAcyclic()
     }
 
     private fun requireUniqueVertexIds() {
@@ -40,35 +39,6 @@ internal class TimedNetworkGraphValidator(
             .filterValues { it > 1 }
             .keys
         require(duplicateLinks.isEmpty()) { "Network links must be unique: $duplicateLinks" }
-    }
-
-    private fun requireAcyclic() {
-        val parent = verticesById.keys.associateWith { it }.toMutableMap()
-
-        fun find(vertexId: String): String {
-            val parentId = parent.getValue(vertexId)
-            if (parentId == vertexId) {
-                return vertexId
-            }
-            val root = find(parentId)
-            parent[vertexId] = root
-            return root
-        }
-
-        fun union(left: String, right: String): Boolean {
-            val leftRoot = find(left)
-            val rightRoot = find(right)
-            if (leftRoot == rightRoot) {
-                return false
-            }
-            parent[leftRoot] = rightRoot
-            return true
-        }
-
-        val cycleClosingLink = links.firstOrNull { !union(it.left.id, it.right.id) }
-        require(cycleClosingLink == null) {
-            "Network graph must be acyclic; cycle closes at $cycleClosingLink"
-        }
     }
 
     private fun TimedNetworkLink<*>.key(): Pair<String, String> =

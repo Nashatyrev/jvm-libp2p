@@ -4,9 +4,7 @@ import io.libp2p.quicsim.runner.graph.TimedNetworkLink.Companion.connects
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.ZERO
 
-/**
- * Undirected acyclic network graph for experimenting with per-vertex time advancement.
- */
+/** Undirected network graph for experimenting with per-vertex time advancement. */
 class TimedNetworkGraph<TVert: TimedNetworkVertex, TLink: TimedNetworkLink<TVert>>(
     val vertices: List<TVert>,
     val links: List<TLink>
