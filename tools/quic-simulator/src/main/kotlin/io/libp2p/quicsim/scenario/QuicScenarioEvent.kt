@@ -58,12 +58,14 @@ sealed class QuicScenarioEvent {
     data class GossipMessageReceived(
         override val nodeId: SimNodeId,
         override val at: Duration,
-        val publisherNodeId: SimNodeId
+        val publisherNodeId: SimNodeId,
+        val messageIndex: Int = 0
     ) : QuicScenarioEvent()
 
     data class GossipMessagePublished(
         override val nodeId: SimNodeId,
-        override val at: Duration
+        override val at: Duration,
+        val messageIndex: Int = 0
     ) : QuicScenarioEvent()
 
     data class AttestationAggregatePublished(

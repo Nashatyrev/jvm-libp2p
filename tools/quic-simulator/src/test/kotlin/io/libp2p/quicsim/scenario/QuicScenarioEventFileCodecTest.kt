@@ -10,12 +10,14 @@ class QuicScenarioEventFileCodecTest {
         val events = listOf(
             QuicScenarioEvent.GossipMessagePublished(
                 nodeId = 1,
-                at = 100.milliseconds
+                at = 100.milliseconds,
+                messageIndex = 3
             ),
             QuicScenarioEvent.GossipMessageReceived(
                 nodeId = 2,
                 at = 110.milliseconds,
-                publisherNodeId = 1
+                publisherNodeId = 1,
+                messageIndex = 3
             ),
             QuicScenarioEvent.AttestationAggregatePublished(
                 nodeId = 1,
