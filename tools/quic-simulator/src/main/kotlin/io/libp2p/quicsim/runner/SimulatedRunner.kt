@@ -36,7 +36,9 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.BiFunction
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.toJavaDuration
 
 class SimulatedRunner(
     val nodeFactory: NodeProgramFactory,
@@ -51,6 +53,8 @@ class SimulatedRunner(
     val datagramPacketTraceRecorder: DatagramPacketTraceRecorder = DatagramPacketTraceRecorder.Noop,
     val quicAllocatorFactory: (SimNodeId) -> ByteBufAllocator = defaultQuicAllocatorFactoryFromSystemProperties(),
     val nodeHeapProfiler: SimulatedNodeHeapProfiler = SimulatedNodeHeapProfiler.fromSystemProperties(),
+    /** Keep the simulated overlay alive across sparse publication waves. */
+    val quicIdleTimeout: Duration = 24.hours,
     // creating QuicheConfig is CPU heavy, may be used as a singleton
     // but with a risk that free() is called on it upon transport shutdown
     // basically should be safe in a single run
@@ -60,10 +64,10 @@ class SimulatedRunner(
 
     lateinit var simTimer: MonotonicTimer
     private val quicheConfigSupplier: Supplier<QuicheConfig> = object : Supplier<QuicheConfig> {
-        val configSingleton = QuicTransport.createDefaultQuicheClientConfig()
+        val configSingleton = QuicTransport.createDefaultQuicheClientConfig(quicIdleTimeout.toJavaDuration())
         override fun get(): QuicheConfig =
             if (optimizePerfByCreatingSingleQuicheConfig) configSingleton
-            else QuicTransport.createDefaultQuicheClientConfig()
+            else QuicTransport.createDefaultQuicheClientConfig(quicIdleTimeout.toJavaDuration())
     }
 
     class NodeStuff(
@@ -144,6 +148,7 @@ class SimulatedRunner(
                     traceRecorder = datagramPacketTraceRecorder
                 ),
                 allocator = allocator,
+                maxIdleTimeout = quicIdleTimeout.toJavaDuration(),
                 clientQuicheConfig = quicheConfigSupplier.get()
             )
         }

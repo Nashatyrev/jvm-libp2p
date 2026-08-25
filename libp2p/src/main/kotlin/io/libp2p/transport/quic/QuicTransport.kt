@@ -57,7 +57,8 @@ class QuicTransport @JvmOverloads constructor(
     private val protocols: List<ProtocolBinding<*>>,
     private val datagramChannelFactory: DatagramChannelFactory = DefaultDatagramChannelFactory(),
     private val allocator: ByteBufAllocator = AdaptiveByteBufAllocator(true),
-    private val clientQuicheConfig: QuicheConfig = createDefaultQuicheClientConfig()
+    private val maxIdleTimeout: Duration = DEFAULT_QUIC_IDLE_TIMEOUT,
+    private val clientQuicheConfig: QuicheConfig = createDefaultQuicheClientConfig(maxIdleTimeout)
 ) : NettyTransport {
 
     private val deterministicRandom = SecureRandom(localKey.publicKey().bytes())
@@ -106,8 +107,10 @@ class QuicTransport @JvmOverloads constructor(
             return stream
         }
 
-        fun createDefaultQuicheClientConfig() = QuicClientCodecBuilder()
-            .maxIdleTimeout(60000, TimeUnit.MILLISECONDS)
+        val DEFAULT_QUIC_IDLE_TIMEOUT: Duration = Duration.ofSeconds(60)
+
+        fun createDefaultQuicheClientConfig(maxIdleTimeout: Duration = DEFAULT_QUIC_IDLE_TIMEOUT) = QuicClientCodecBuilder()
+            .maxIdleTimeout(maxIdleTimeout.toMillis(), TimeUnit.MILLISECONDS)
             .initialMaxData(1 shl 20)
             .initialMaxStreamsBidirectional(64)
             .initialMaxStreamDataBidirectionalRemote(1 shl 18)
@@ -359,7 +362,7 @@ class QuicTransport @JvmOverloads constructor(
         val sslContext = quicSslContext(false, trustManager)
         return QuicServerCodecBuilder()
             .sslEngineProvider { q -> sslContext.newEngine(q.alloc()) }
-            .maxIdleTimeout(60000, TimeUnit.MILLISECONDS)
+            .maxIdleTimeout(maxIdleTimeout.toMillis(), TimeUnit.MILLISECONDS)
             .sslTaskExecutor(null) // IMMEDIATE Executor
             .tokenHandler(NoTokenHandler())
             .handler(
