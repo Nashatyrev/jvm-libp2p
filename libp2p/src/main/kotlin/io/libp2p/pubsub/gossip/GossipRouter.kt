@@ -411,36 +411,53 @@ open class GossipRouter(
     }
 
     override fun broadcastOutbound(msg: PubsubMessage): CompletableFuture<Unit> {
-        msg.topics.forEach { lastPublished[it] = currentTimeSupplier() }
+        return broadcastOutboundBatch(listOf(msg))
+    }
 
-        val floodPublish = msg.size <= params.floodPublishMaxMessageSizeThreshold
+    override fun broadcastOutboundBatch(msgs: List<PubsubMessage>): CompletableFuture<Unit> {
+        val publishFutures = MutableList(msgs.size) { mutableListOf<CompletableFuture<Unit>>() }
+        val messagesByPeer = mutableMapOf<PeerHandler, MutableList<Pair<Int, PubsubMessage>>>()
 
-        val peers =
-            if (floodPublish) {
-                selectPeersForOutboundBroadcastingInFloodPublish(msg)
-            } else {
-                selectPeersForOutboundBroadcasting(msg)
+        msgs.forEachIndexed { messageIndex, msg ->
+            msg.topics.forEach { lastPublished[it] = currentTimeSupplier() }
+
+            val floodPublish = msg.size <= params.floodPublishMaxMessageSizeThreshold
+
+            val peers =
+                if (floodPublish) {
+                    selectPeersForOutboundBroadcastingInFloodPublish(msg)
+                } else {
+                    selectPeersForOutboundBroadcasting(msg)
             }
 
-        mCache += msg
-
-        return if (peers.isNotEmpty()) {
-            iDontWant(msg)
-            val publishedMessages = peers
-                .filterNot { peerDoesNotWantMessage(it, msg.messageId) }
-                .map { submitPublishMessage(it, msg) }
-            if (publishedMessages.isEmpty()) {
-                // all peers have sent IDONTWANT for this message id
-                CompletableFuture.completedFuture(Unit)
-            } else {
-                flushAllPending()
-                anyComplete(publishedMessages)
+            mCache += msg
+            if (peers.isNotEmpty()) {
+                iDontWant(msg)
+                peers
+                    .filterNot { peerDoesNotWantMessage(it, msg.messageId) }
+                    .forEach { peer ->
+                        messagesByPeer.getOrPut(peer) { mutableListOf() } += messageIndex to msg
+                    }
             }
-        } else {
-            completedExceptionally(
-                NoPeersForOutboundMessageException("No peers for message topics ${msg.topics} found")
-            )
         }
+
+        messagesByPeer.forEach { (peer, messages) ->
+            messages.shuffled(random).forEach { (messageIndex, msg) ->
+                publishFutures[messageIndex] += submitPublishMessage(peer, msg)
+            }
+        }
+
+        if (messagesByPeer.isNotEmpty()) flushAllPending()
+
+        return publishFutures.mapIndexed { messageIndex, futures ->
+            if (futures.isEmpty()) {
+                completedExceptionally(
+                    NoPeersForOutboundMessageException("No peers for message topics ${msgs[messageIndex].topics} found")
+                )
+            } else {
+                anyComplete(futures)
+            }
+        }.thenApplyAll { Unit }
     }
 
     private fun selectPeersForOutboundBroadcastingInFloodPublish(msg: PubsubMessage): List<PeerHandler> {

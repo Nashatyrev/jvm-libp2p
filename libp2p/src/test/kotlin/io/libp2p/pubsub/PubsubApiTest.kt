@@ -22,6 +22,35 @@ import java.util.concurrent.TimeUnit
 class PubsubApiTest {
 
     @Test
+    fun testBatchPublish() {
+        val fuzz = DeterministicFuzz()
+        val router1 = fuzz.createFloodRouter()
+        val api1 = createPubsubApi(router1.router)
+        val router2 = fuzz.createFloodRouter()
+        val api2 = createPubsubApi(router2.router)
+        router1.connectSemiDuplex(router2)
+
+        val receivedMessages = LinkedBlockingQueue<MessageApi>()
+        val topic = Topic("myTopic")
+        api1.subscribe(Subscriber { }, topic)
+        api2.subscribe(Subscriber { receivedMessages += it }, topic)
+        fuzz.timeController.addTime(Duration.ofSeconds(10))
+
+        val publishFuture = api1.createPublisher(null).publishBatch(
+            listOf("Message-1".toByteArray().toByteBuf(), "Message-2".toByteArray().toByteBuf()),
+            topic
+        )
+        fuzz.timeController.addTime(Duration.ofSeconds(1))
+
+        Assertions.assertTrue(publishFuture.isDone)
+        val receivedBodies = listOfNotNull(
+            receivedMessages.poll(1, TimeUnit.SECONDS),
+            receivedMessages.poll(1, TimeUnit.SECONDS)
+        ).map { it.data.toByteArray().toString(StandardCharsets.UTF_8) }
+        assertEquals(setOf("Message-1", "Message-2"), receivedBodies.toSet())
+    }
+
+    @Test
     fun testNoFromOrSeqNoMessageField() {
         val fuzz = DeterministicFuzz()
         val router1 = fuzz.createFloodRouter()

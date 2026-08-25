@@ -95,7 +95,7 @@ class RegionalGossipTopologyTest {
             "Set -Dquicsim.regionalGossip.warmupReport=true to run this slow report"
         )
 
-        val seeds = List(10) { index -> 60_000 + index }
+        val seeds = List(WARMUP_SEED_COUNT) { index -> 60_000 + index }
         val results = WARMUP_MESSAGE_SIZES_KIB.flatMap { sizeKiB ->
             val chunkSizeBytes = sizeKiB * 1024 / WARMUP_CHUNKS_PER_MESSAGE
             require(chunkSizeBytes * WARMUP_CHUNKS_PER_MESSAGE == sizeKiB * 1024) {
@@ -117,7 +117,7 @@ class RegionalGossipTopologyTest {
                 )
                 println(
                     "REGIONAL_GOSSIP_WARMUP_DIAGNOSTICS " +
-                        "sizeKiB=$sizeKiB chunks=$WARMUP_CHUNKS_PER_MESSAGE chunkTopics=$WARMUP_CHUNKS_USE_SEPARATE_TOPICS chunkSizeBytes=$chunkSizeBytes " +
+                        "sizeKiB=$sizeKiB peersPerNode=$PEERS_PER_NODE chunks=$WARMUP_CHUNKS_PER_MESSAGE chunkTopics=$WARMUP_CHUNKS_USE_SEPARATE_TOPICS batchPublish=$BATCH_PUBLISH chunkSizeBytes=$chunkSizeBytes " +
                         "iDontWantMinSize=$I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD seed=$seed " +
                         "connectEvents=${result.routerDiagnostics.sumOf { it.connectEvents }} " +
                     "disconnectEvents=${result.routerDiagnostics.sumOf { it.disconnectEvents }} " +
@@ -175,6 +175,7 @@ class RegionalGossipTopologyTest {
         messagesPerPublisher: Int = 1,
         messagesPerWave: Int = 1,
         separateTopicPerMessageChunk: Boolean = false,
+        batchPublish: Boolean = BATCH_PUBLISH,
         publishInterval: Duration = Duration.ZERO,
         maxRunDuration: Duration = MAX_RUN_DURATION,
         completeAfter: Duration? = null,
@@ -207,6 +208,7 @@ class RegionalGossipTopologyTest {
                             messagesPerPublisher = messagesPerPublisher,
                             messagesPerWave = messagesPerWave,
                             separateTopicPerMessageChunk = separateTopicPerMessageChunk,
+                            batchPublish = batchPublish,
                             initialPublishDelay = INITIAL_PUBLISH_DELAY,
                             publishInterval = publishInterval,
                             completeAfter = completeAfter,
@@ -460,7 +462,7 @@ class RegionalGossipTopologyTest {
 
     private companion object {
         const val NODE_COUNT = 65
-        const val PEERS_PER_NODE = 10
+        val PEERS_PER_NODE = Integer.getInteger("quicsim.regionalGossip.peersPerNode", 10)
         const val PUBLISHER_COUNT = 1
         const val PUBLISHER_NODE_ID = 0
         const val MESSAGE_SIZE_BYTES = 512 * 1024
@@ -470,10 +472,12 @@ class RegionalGossipTopologyTest {
         val INITIAL_PUBLISH_DELAY = 10.seconds
         val MAX_RUN_DURATION = 2.minutes
         val WARMUP_MESSAGE_COUNT = Integer.getInteger("quicsim.regionalGossip.warmupMessageCount", 10)
+        val WARMUP_SEED_COUNT = Integer.getInteger("quicsim.regionalGossip.warmupSeedCount", 10)
         val WARMUP_CHUNKS_PER_MESSAGE =
             Integer.getInteger("quicsim.regionalGossip.warmupChunksPerMessage", 1)
         val WARMUP_CHUNKS_USE_SEPARATE_TOPICS =
             java.lang.Boolean.getBoolean("quicsim.regionalGossip.warmupChunkTopics")
+        val BATCH_PUBLISH = java.lang.Boolean.getBoolean("quicsim.regionalGossip.batchPublish")
         val I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD =
             Integer.getInteger("quicsim.regionalGossip.iDontWantMinMessageSizeThreshold", Int.MAX_VALUE)
         val WARMUP_MESSAGE_SIZES_KIB =

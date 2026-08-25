@@ -123,6 +123,14 @@ interface PubsubPublisherApi {
         publishExt(data, null, null, *topics)
 
     /**
+     * Publishes [data] messages as one batch to the specified [topics].
+     *
+     * The batch is passed to the router atomically, allowing the router to queue a different randomized
+     * message order for each destination peer.
+     */
+    fun publishBatch(data: List<ByteBuf>, vararg topics: Topic): CompletableFuture<Unit>
+
+    /**
      * Extended [publish] method where `from` and `seqId` may be customized
      * @param from If null the field is calculated based on the private key
      * @param seqId If null the field is calculated from the internal id counter

@@ -36,12 +36,24 @@ open class PubsubApiImpl(val router: PubsubRouter) : PubsubApi {
 
         val from = privKey?.let { PeerId.fromPubKey(it.publicKey()).bytes.toProtobuf() }
 
+        override fun publishBatch(data: List<ByteBuf>, vararg topics: Topic): CompletableFuture<Unit> =
+            router.publishBatch(data.map { createMessage(it, null, null, topics) })
+
         override fun publishExt(
             data: ByteBuf,
             from: ByteArray?,
             seqId: Long?,
             vararg topics: Topic
         ): CompletableFuture<Unit> {
+            return router.publish(createMessage(data, from, seqId, topics))
+        }
+
+        private fun createMessage(
+            data: ByteBuf,
+            from: ByteArray?,
+            seqId: Long?,
+            topics: Array<out Topic>
+        ): PubsubMessage {
             val mFrom = from?.toProtobuf() ?: this.from
             val mSeqId = seqId ?: seqIdGenerator()
 
@@ -55,7 +67,7 @@ open class PubsubApiImpl(val router: PubsubRouter) : PubsubApi {
                 msgToSign.setFrom(it)
             }
 
-            return router.publish(router.messageFactory(sign(msgToSign.build())))
+            return router.messageFactory(sign(msgToSign.build()))
         }
 
         private fun sign(msg: Rpc.Message) = if (privKey != null) pubsubSign(msg, privKey) else msg

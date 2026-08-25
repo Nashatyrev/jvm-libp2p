@@ -43,6 +43,8 @@ class SampleGossipNodeProgram(
     val messagesPerWave: Int = 1,
     /** Reuses one topic per chunk position across all logical message waves. */
     val separateTopicPerMessageChunk: Boolean = false,
+    /** Publishes all chunks in a wave through one router batch per topic. */
+    val batchPublish: Boolean = false,
     val initialPublishDelay: Duration = 1.minutes,
     val publishInterval: Duration = Duration.ZERO,
     val completeAfter: Duration? = null,
@@ -136,38 +138,56 @@ class SampleGossipNodeProgram(
         val publisher = messageApi.createPublisher(networkContext.myHost.privKey)
         publishScheduled = true
         if (simNodeId < publishersCount) {
-            for (messageIndex in 0 until messagesPerPublisher) {
+            for (waveIndex in 0 until messagesPerPublisher / messagesPerWave) {
                 val elapsedSinceStart = simContext.timer.time() - epoch
-                val waveIndex = messageIndex / messagesPerWave
                 val publishAt = initialPublishDelay + publishInterval * waveIndex
                 val publishDelay = (publishAt - elapsedSinceStart).coerceAtLeast(Duration.ZERO)
                 simContext.scheduler.executeAfterDelay(publishDelay) {
-                    val topic = topicFor(messageIndex)
-                    log("[$simNodeId] publishing message=$messageIndex to ${topic.topic}")
+                    val messageIndexes = (waveIndex * messagesPerWave until (waveIndex + 1) * messagesPerWave).toList()
                     publishAttempted = true
-                    eventSink.record(
-                        QuicScenarioEvent.GossipMessagePublished(
-                            nodeId = simNodeId,
-                            at = simContext.timer.time() - epoch,
-                            messageIndex = messageIndex
+                    messageIndexes.forEach { messageIndex ->
+                        eventSink.record(
+                            QuicScenarioEvent.GossipMessagePublished(
+                                nodeId = simNodeId,
+                                at = simContext.timer.time() - epoch,
+                                messageIndex = messageIndex
+                            )
                         )
-                    )
-                    publisher.publish(Unpooled.wrappedBuffer(createPayload(messageIndex)), topic)
-                        .whenComplete { _, err ->
-                            if (err == null) {
-                                successfulPublishCount.incrementAndGet()
-                                publishSucceeded = true
-                                lastPublishError = null
-                                log("[$simNodeId] publish message=$messageIndex succeeded")
-                                completeIfReady()
-                            } else {
-                                publishSucceeded = false
-                                lastPublishError = err.message
-                                log("[$simNodeId] publish message=$messageIndex failed: ${err.message}")
+                    }
+                    if (batchPublish) {
+                        messageIndexes.groupBy(::topicFor).forEach { (topic, topicMessageIndexes) ->
+                            log("[$simNodeId] batch publishing messages=$topicMessageIndexes to ${topic.topic}")
+                            publisher.publishBatch(
+                                topicMessageIndexes.map { Unpooled.wrappedBuffer(createPayload(it)) },
+                                topic
+                            ).whenComplete { _, err ->
+                                onPublishComplete(topicMessageIndexes, err)
                             }
                         }
+                    } else {
+                        messageIndexes.forEach { messageIndex ->
+                            val topic = topicFor(messageIndex)
+                            log("[$simNodeId] publishing message=$messageIndex to ${topic.topic}")
+                            publisher.publish(Unpooled.wrappedBuffer(createPayload(messageIndex)), topic)
+                                .whenComplete { _, err -> onPublishComplete(listOf(messageIndex), err) }
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    private fun onPublishComplete(messageIndexes: List<Int>, error: Throwable?) {
+        if (error == null) {
+            successfulPublishCount.addAndGet(messageIndexes.size)
+            publishSucceeded = true
+            lastPublishError = null
+            log("[$simNodeId] publish messages=$messageIndexes succeeded")
+            completeIfReady()
+        } else {
+            publishSucceeded = false
+            lastPublishError = error.message
+            log("[$simNodeId] publish messages=$messageIndexes failed: ${error.message}")
         }
     }
 

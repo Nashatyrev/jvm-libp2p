@@ -76,14 +76,20 @@ abstract class AbstractRouter(
         fun popQueue(peer: PeerHandler) = map.remove(peer) ?: queueFactory()
     }
 
-    override fun publish(msg: PubsubMessage): CompletableFuture<Unit> {
+    override fun publish(msg: PubsubMessage): CompletableFuture<Unit> = publishBatch(listOf(msg))
+
+    override fun publishBatch(msgs: List<PubsubMessage>): CompletableFuture<Unit> {
+        if (msgs.isEmpty()) return CompletableFuture.completedFuture(Unit)
+
         return submitAsyncOnEventThread {
-            if (msg in seenMessages) {
-                completedExceptionally(MessageAlreadySeenException("Msg: $msg"))
+            val batchMessages = hashSetOf<PubsubMessage>()
+            val duplicate = msgs.firstOrNull { it in seenMessages || !batchMessages.add(it) }
+            if (duplicate != null) {
+                completedExceptionally(MessageAlreadySeenException("Msg: $duplicate"))
             } else {
-                messageValidator.validate(msg) // check ourselves not to be a bad peer
-                seenMessages[msg] = Optional.of(ValidationResult.Valid)
-                broadcastOutbound(msg)
+                msgs.forEach { messageValidator.validate(it) } // check ourselves not to be bad peers
+                msgs.forEach { seenMessages[it] = Optional.of(ValidationResult.Valid) }
+                broadcastOutboundBatch(msgs)
             }
         }
     }
@@ -149,6 +155,13 @@ abstract class AbstractRouter(
      * Broadcasts to peers validated unseen messages received from api
      */
     protected abstract fun broadcastOutbound(msg: PubsubMessage): CompletableFuture<Unit>
+
+    /**
+     * Broadcasts a client-published batch. The default preserves the behavior of publishing each message
+     * independently; routers with a batch-aware wire implementation may override it.
+     */
+    protected open fun broadcastOutboundBatch(msgs: List<PubsubMessage>): CompletableFuture<Unit> =
+        msgs.map { broadcastOutbound(it) }.thenApplyAll { Unit }
 
     /**
      * Broadcasts to peers validated unseen messages received from another peer

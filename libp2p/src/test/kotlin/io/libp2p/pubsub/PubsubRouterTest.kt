@@ -60,6 +60,30 @@ abstract class PubsubRouterTest(val routerFactory: DeterministicFuzzRouterFactor
     }
 
     @Test
+    fun batchPublish() {
+        val fuzz = DeterministicFuzz()
+
+        val router1 = fuzz.createTestRouter(routerFactory)
+        val router2 = fuzz.createTestRouter(routerFactory)
+        router2.router.subscribe("topic1")
+        router1.connectSemiDuplex(router2, LogLevel.ERROR, LogLevel.ERROR)
+
+        val messages = listOf(
+            newMessage("topic1", 0L, "Hello-1".toByteArray()),
+            newMessage("topic1", 1L, "Hello-2".toByteArray())
+        )
+        router1.router.publishBatch(messages)
+
+        val received = listOf(
+            router2.inboundMessages.poll(5, TimeUnit.SECONDS),
+            router2.inboundMessages.poll(5, TimeUnit.SECONDS)
+        )
+        Assertions.assertEquals(messages.toSet(), received.toSet())
+        Assertions.assertTrue(router1.inboundMessages.isEmpty())
+        Assertions.assertTrue(router2.inboundMessages.isEmpty())
+    }
+
+    @Test
     fun testDoubleConnect() {
         val fuzz = DeterministicFuzz()
 

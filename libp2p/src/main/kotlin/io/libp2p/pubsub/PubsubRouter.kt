@@ -75,6 +75,14 @@ interface PubsubMessageRouter {
     fun publish(msg: PubsubMessage): CompletableFuture<Unit>
 
     /**
+     * Validates and broadcasts messages as one batch.
+     *
+     * Router implementations may batch their wire sends and choose a different send order for every peer.
+     * The returned future completes when every message in the batch has been transmitted to at least one peer.
+     */
+    fun publishBatch(msgs: List<PubsubMessage>): CompletableFuture<Unit>
+
+    /**
      * Initializes the inbound messages [handler]
      * The method must be called once
      * All the messages received by the router are forwarded to the [handler] independently
