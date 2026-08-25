@@ -6,7 +6,12 @@ interface RpcPartsQueue {
 
     enum class SubscriptionStatus { Subscribed, Unsubscribed }
 
-    fun addPublish(message: Rpc.Message)
+    /**
+     * Queues a publish together with its pubsub message ID.
+     *
+     * The ID is retained so protocol extensions can remove a publish before it is flushed.
+     */
+    fun addPublish(message: Rpc.Message, messageId: MessageId = defaultPubsubMessageId(message))
 
     fun addSubscribe(topic: Topic) {
         addSubscription(topic, SubscriptionStatus.Subscribed)
@@ -34,7 +39,7 @@ open class DefaultRpcPartsQueue : RpcPartsQueue {
         fun appendToBuilder(builder: Rpc.RPC.Builder)
     }
 
-    protected data class PublishPart(val message: Rpc.Message) : AbstractPart {
+    protected data class PublishPart(val message: Rpc.Message, val messageId: MessageId) : AbstractPart {
         override fun appendToBuilder(builder: Rpc.RPC.Builder) {
             builder.addPublish(message)
         }
@@ -55,8 +60,8 @@ open class DefaultRpcPartsQueue : RpcPartsQueue {
         parts += part
     }
 
-    override fun addPublish(message: Rpc.Message) {
-        addPart(PublishPart(message))
+    override fun addPublish(message: Rpc.Message, messageId: MessageId) {
+        addPart(PublishPart(message, messageId))
     }
 
     override fun addSubscription(topic: Topic, status: RpcPartsQueue.SubscriptionStatus) {

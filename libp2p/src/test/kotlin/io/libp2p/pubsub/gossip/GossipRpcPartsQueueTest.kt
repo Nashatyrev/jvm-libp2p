@@ -217,6 +217,26 @@ class GossipRpcPartsQueueTest {
     }
 
     @Test
+    fun `removePublishes() removes only matching queued publish parts`() {
+        val partsQueue = DefaultGossipRpcPartsQueue(gossipParamsNoLimits)
+        val firstMessage = createRpcMessage("topic", "data-1")
+        val secondMessage = createRpcMessage("topic", "data-2")
+        val firstMessageId = byteArrayOf(1).toWBytes()
+        val secondMessageId = byteArrayOf(2).toWBytes()
+        partsQueue.addSubscribe("subscription")
+        partsQueue.addPublish(firstMessage, firstMessageId)
+        partsQueue.addPublish(secondMessage, secondMessageId)
+
+        val removedCount = partsQueue.removePublishes(setOf(firstMessageId))
+        val rpc = partsQueue.popMerged()
+
+        assertThat(removedCount).isEqualTo(1)
+        assertThat(rpc).isNotNull()
+        assertThat(rpc!!.subscriptionsCount).isEqualTo(1)
+        assertThat(rpc.publishList).containsExactly(secondMessage)
+    }
+
+    @Test
     fun `popOneMerged() pops only the parts used for one limited gossip message`() {
         val router = GossipRouterBuilder(params = gossipParamsWithLimits).build()
         val partsQueue = TestGossipQueue(gossipParamsWithLimits)

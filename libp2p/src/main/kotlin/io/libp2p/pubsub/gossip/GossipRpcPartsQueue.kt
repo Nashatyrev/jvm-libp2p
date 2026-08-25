@@ -144,6 +144,13 @@ object GossipRpcFrameStats {
 
 interface GossipRpcPartsQueue : RpcPartsQueue {
 
+    /**
+     * Removes publishes which have not yet been flushed to the peer.
+     *
+     * Returns the number of removed publish parts.
+     */
+    fun removePublishes(messageIds: Set<MessageId>): Int
+
     fun addIHave(messageId: MessageId, topic: Topic)
     fun addIHaves(messageIds: Collection<MessageId>, topic: Topic) = messageIds.forEach { addIHave(it, topic) }
     fun addIWant(messageId: MessageId)
@@ -170,6 +177,14 @@ interface GossipRpcPartsQueue : RpcPartsQueue {
 open class DefaultGossipRpcPartsQueue(
     private val params: GossipParams
 ) : DefaultRpcPartsQueue(), GossipRpcPartsQueue {
+
+    override fun removePublishes(messageIds: Set<MessageId>): Int {
+        if (messageIds.isEmpty()) return 0
+
+        val partCount = parts.size
+        parts.removeAll { it is PublishPart && it.messageId in messageIds }
+        return partCount - parts.size
+    }
 
     protected data class IHavePart(val messageId: MessageId, val topic: Topic) : AbstractPart {
         override fun appendToBuilder(builder: Rpc.RPC.Builder) {

@@ -370,9 +370,9 @@ open class GossipRouter(
             return
         }
         val timeReceived = currentTimeSupplier()
-        msg.messageIDsList
-            .map { it.toWBytes() }
-            .associateWithTo(iDontWantCacheEntry.messageIdsAndTimeReceived) { timeReceived }
+        val messageIds = msg.messageIDsList.map { it.toWBytes() }
+        messageIds.associateWithTo(iDontWantCacheEntry.messageIdsAndTimeReceived) { timeReceived }
+        pendingRpcParts.getQueueOrNull(peer)?.removePublishes(messageIds.toSet())
     }
 
     private fun processPrunePeers(peersList: List<Rpc.PeerInfo>) {

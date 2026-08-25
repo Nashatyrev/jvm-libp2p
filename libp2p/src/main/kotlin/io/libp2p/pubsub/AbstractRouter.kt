@@ -72,6 +72,7 @@ abstract class AbstractRouter(
         val pendingPeers: Collection<PeerHandler> get() = map.keys.copy()
 
         fun getQueue(peer: PeerHandler) = map.computeIfAbsent(peer) { queueFactory() }
+        fun getQueueOrNull(peer: PeerHandler): TPartsQueue? = map[peer]
         fun popQueue(peer: PeerHandler) = map.remove(peer) ?: queueFactory()
     }
 
@@ -95,7 +96,7 @@ abstract class AbstractRouter(
     }
 
     protected open fun submitPublishMessageNoPromise(toPeer: PeerHandler, msg: PubsubMessage) {
-        pendingRpcParts.getQueue(toPeer).addPublish(msg.protobufMessage)
+        pendingRpcParts.getQueue(toPeer).addPublish(msg.protobufMessage, msg.messageId)
     }
 
     internal open fun validateMessageListLimits(msg: Rpc.RPCOrBuilder): Boolean {
