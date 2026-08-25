@@ -142,6 +142,7 @@ configure(
             "quicsim.regionalGossip.overlaySeed",
             "quicsim.regionalGossip.topologySeed",
             "quicsim.regionalGossip.warmupIntervalSeconds",
+            "quicsim.regionalGossip.warmupChunksPerMessage",
             "quicsim.regionalGossip.warmupMessageCount",
             "quicsim.regionalGossip.warmupMessageSizesKiB",
             "quicsim.regionalGossip.warmupReport",

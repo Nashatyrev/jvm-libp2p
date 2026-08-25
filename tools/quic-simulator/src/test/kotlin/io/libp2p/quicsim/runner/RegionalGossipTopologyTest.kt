@@ -97,13 +97,18 @@ class RegionalGossipTopologyTest {
 
         val seeds = List(10) { index -> 60_000 + index }
         val results = WARMUP_MESSAGE_SIZES_KIB.flatMap { sizeKiB ->
+            val chunkSizeBytes = sizeKiB * 1024 / WARMUP_CHUNKS_PER_MESSAGE
+            require(chunkSizeBytes * WARMUP_CHUNKS_PER_MESSAGE == sizeKiB * 1024) {
+                "sizeKiB=$sizeKiB cannot be divided into $WARMUP_CHUNKS_PER_MESSAGE equal chunks"
+            }
             seeds.flatMap { seed ->
                 val result = runRegionalGossip(
-                    messageSizeBytes = sizeKiB * 1024,
+                    messageSizeBytes = chunkSizeBytes,
                     topologySeed = seed,
                     overlaySeed = seed + 10_000,
                     gossipSeedBase = seed.toLong() + 20_000L,
-                    messagesPerPublisher = WARMUP_MESSAGE_COUNT,
+                    messagesPerPublisher = WARMUP_MESSAGE_COUNT * WARMUP_CHUNKS_PER_MESSAGE,
+                    messagesPerWave = WARMUP_CHUNKS_PER_MESSAGE,
                     publishInterval = WARMUP_PUBLISH_INTERVAL,
                     maxRunDuration = WARMUP_MAX_RUN_DURATION,
                     completeAfter = WARMUP_COMPLETE_AFTER,
@@ -111,7 +116,8 @@ class RegionalGossipTopologyTest {
                 )
                 println(
                     "REGIONAL_GOSSIP_WARMUP_DIAGNOSTICS " +
-                    "sizeKiB=$sizeKiB seed=$seed connectEvents=${result.routerDiagnostics.sumOf { it.connectEvents }} " +
+                        "sizeKiB=$sizeKiB chunks=$WARMUP_CHUNKS_PER_MESSAGE chunkSizeBytes=$chunkSizeBytes " +
+                        "seed=$seed connectEvents=${result.routerDiagnostics.sumOf { it.connectEvents }} " +
                     "disconnectEvents=${result.routerDiagnostics.sumOf { it.disconnectEvents }} " +
                     "meshEvents=${result.routerDiagnostics.sumOf { it.meshEvents }} " +
                     "pruneEvents=${result.routerDiagnostics.sumOf { it.pruneEvents }} " +
@@ -119,10 +125,10 @@ class RegionalGossipTopologyTest {
                 )
                 result.messageResults.map { messageResult ->
                     println(
-                    "REGIONAL_GOSSIP_WARMUP_RUN " +
-                        "sizeKiB=$sizeKiB seed=$seed messageIndex=${messageResult.messageIndex} " +
-                        "receipts=${messageResult.receipts} missing=${messageResult.missing} " +
-                        "p95Ms=${messageResult.p95?.inWholeMilliseconds ?: "NA"}"
+                        "REGIONAL_GOSSIP_WARMUP_RUN " +
+                            "sizeKiB=$sizeKiB chunks=$WARMUP_CHUNKS_PER_MESSAGE chunkSizeBytes=$chunkSizeBytes " +
+                            "seed=$seed waveIndex=${messageResult.messageIndex} receipts=${messageResult.receipts} " +
+                            "missing=${messageResult.missing} p95Ms=${messageResult.p95?.inWholeMilliseconds ?: "NA"}"
                     )
                     WarmupRun(
                         sizeKiB = sizeKiB,
@@ -136,7 +142,7 @@ class RegionalGossipTopologyTest {
             }
         }
 
-        println("REGIONAL_GOSSIP_WARMUP_SUMMARY sizeKiB messageIndex runs fullRuns minReceipts meanReceipts p95Ms p95MinMs p95MaxMs p95MeanMs p95StddevMs")
+        println("REGIONAL_GOSSIP_WARMUP_SUMMARY sizeKiB chunks waveIndex runs fullRuns minReceipts meanReceipts p95Ms p95MinMs p95MaxMs p95MeanMs p95StddevMs")
         results.groupBy { it.sizeKiB to it.messageIndex }
             .toSortedMap(compareBy<Pair<Int, Int>> { it.first }.thenBy { it.second })
             .forEach { entry ->
@@ -145,7 +151,7 @@ class RegionalGossipTopologyTest {
             val p95Values = runs.mapNotNull { it.p95Ms }
             println(
                 "REGIONAL_GOSSIP_WARMUP_SUMMARY " +
-                    "sizeKiB=$sizeKiB messageIndex=$messageIndex runs=${runs.size} " +
+                    "sizeKiB=$sizeKiB chunks=$WARMUP_CHUNKS_PER_MESSAGE waveIndex=$messageIndex runs=${runs.size} " +
                     "fullRuns=${runs.count { it.missing == 0 }} " +
                     "minReceipts=${runs.minOf { it.receipts }} " +
                     "meanReceipts=${runs.map { it.receipts.toDouble() }.average().formatMs()} " +
@@ -164,6 +170,7 @@ class RegionalGossipTopologyTest {
         overlaySeed: Int,
         gossipSeedBase: Long,
         messagesPerPublisher: Int = 1,
+        messagesPerWave: Int = 1,
         publishInterval: Duration = Duration.ZERO,
         maxRunDuration: Duration = MAX_RUN_DURATION,
         completeAfter: Duration? = null,
@@ -194,6 +201,7 @@ class RegionalGossipTopologyTest {
                             randomSeed = gossipSeedBase + id,
                             messageSizeBytes = messageSizeBytes,
                             messagesPerPublisher = messagesPerPublisher,
+                            messagesPerWave = messagesPerWave,
                             initialPublishDelay = INITIAL_PUBLISH_DELAY,
                             publishInterval = publishInterval,
                             completeAfter = completeAfter,
@@ -235,6 +243,9 @@ class RegionalGossipTopologyTest {
             .filter { it != PUBLISHER_NODE_ID }
             .toSet()
 
+        require(messagesPerPublisher % messagesPerWave == 0) {
+            "messagesPerPublisher must be divisible by messagesPerWave"
+        }
         val expectedMessageIndexes = (0 until messagesPerPublisher).toSet()
         assertEquals(
             expectedMessageIndexes,
@@ -245,7 +256,7 @@ class RegionalGossipTopologyTest {
             publications.sortedBy { it.messageIndex }.map { it.publishingNodeId }
         )
 
-        val messageResults = expectedMessageIndexes.map { messageIndex ->
+        expectedMessageIndexes.forEach { messageIndex ->
             val messageReceipts = receipts.filter { it.messageIndex == messageIndex }
             val receivedRecipients = messageReceipts.map { it.receivingNodeId }.toSet()
             if (requireCompleteDissemination) {
@@ -253,15 +264,37 @@ class RegionalGossipTopologyTest {
                 assertEquals(NODE_COUNT - 1, messageReceipts.size)
             }
 
-            val publishedAt = publications.single { it.messageIndex == messageIndex }.publishedAt
-            val disseminationLatencies = messageReceipts.map { it.receivedAt - publishedAt }
-            RegionalGossipMessageResult(
-                messageIndex = messageIndex,
-                receipts = messageReceipts.size,
-                missing = expectedRecipients.size - receivedRecipients.size,
-                p95 = disseminationLatencies.takeIf { it.isNotEmpty() }?.let { percentile(it, 0.95) }
-            )
         }
+
+        val messageResults = expectedMessageIndexes
+            .chunked(messagesPerWave)
+            .mapIndexed { waveIndex, messageIndexes ->
+                val messageIndexSet = messageIndexes.toSet()
+                val wavePublishedAt = publications
+                    .filter { it.messageIndex in messageIndexSet }
+                    .minOf { it.publishedAt }
+                val completedRecipients = receipts
+                    .filter { it.messageIndex in messageIndexSet }
+                    .groupBy { it.receivingNodeId }
+                    .mapNotNull { (recipient, recipientReceipts) ->
+                        val receivedChunkIndexes = recipientReceipts.map { it.messageIndex }.toSet()
+                        if (receivedChunkIndexes == messageIndexSet) {
+                            recipient to recipientReceipts.maxOf { it.receivedAt }
+                        } else {
+                            null
+                        }
+                    }
+                    .toMap()
+            RegionalGossipMessageResult(
+                    messageIndex = waveIndex,
+                    receipts = completedRecipients.size,
+                    missing = expectedRecipients.size - completedRecipients.keys.size,
+                    p95 = completedRecipients.values
+                        .map { it - wavePublishedAt }
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { percentile(it, 0.95) }
+            )
+            }
         return RegionalGossipResult(messageResults, routerDiagnostics)
     }
 
@@ -432,6 +465,8 @@ class RegionalGossipTopologyTest {
         val INITIAL_PUBLISH_DELAY = 10.seconds
         val MAX_RUN_DURATION = 2.minutes
         val WARMUP_MESSAGE_COUNT = Integer.getInteger("quicsim.regionalGossip.warmupMessageCount", 10)
+        val WARMUP_CHUNKS_PER_MESSAGE =
+            Integer.getInteger("quicsim.regionalGossip.warmupChunksPerMessage", 1)
         val WARMUP_MESSAGE_SIZES_KIB =
             System.getProperty("quicsim.regionalGossip.warmupMessageSizesKiB", "128")
                 .split(',')

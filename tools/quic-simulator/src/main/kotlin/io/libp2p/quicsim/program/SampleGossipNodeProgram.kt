@@ -39,12 +39,22 @@ class SampleGossipNodeProgram(
     testTopicName: String = "/quicsim/test-topic",
     val messageSizeBytes: Int = 1024,
     val messagesPerPublisher: Int = 1,
+    /** Number of independently published chunks that make up one logical message wave. */
+    val messagesPerWave: Int = 1,
     val initialPublishDelay: Duration = 1.minutes,
     val publishInterval: Duration = Duration.ZERO,
     val completeAfter: Duration? = null,
     private val eventSink: QuicScenarioEventSink = QuicScenarioEventSink.Noop,
     debugGossipHandler: ChannelHandler? = null,
 ) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed, debugGossipHandler) {
+    init {
+        require(messagesPerPublisher > 0) { "messagesPerPublisher must be positive" }
+        require(messagesPerWave > 0) { "messagesPerWave must be positive" }
+        require(messagesPerPublisher % messagesPerWave == 0) {
+            "messagesPerPublisher must be divisible by messagesPerWave"
+        }
+    }
+
     var log: (String) -> Unit = { println("[SampleGossipNodeProgram] $it") }
     private val verboseLog = System.getProperty("quicsim.sampleGossip.log", "true").toBoolean()
 
@@ -120,7 +130,8 @@ class SampleGossipNodeProgram(
         if (simNodeId < publishersCount) {
             for (messageIndex in 0 until messagesPerPublisher) {
                 val elapsedSinceStart = simContext.timer.time() - epoch
-                val publishAt = initialPublishDelay + publishInterval * messageIndex
+                val waveIndex = messageIndex / messagesPerWave
+                val publishAt = initialPublishDelay + publishInterval * waveIndex
                 val publishDelay = (publishAt - elapsedSinceStart).coerceAtLeast(Duration.ZERO)
                 simContext.scheduler.executeAfterDelay(publishDelay) {
                     log("[$simNodeId] publishing message=$messageIndex to ${testTopic.topic}")
