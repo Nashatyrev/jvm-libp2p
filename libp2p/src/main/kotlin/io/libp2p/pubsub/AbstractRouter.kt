@@ -118,6 +118,11 @@ abstract class AbstractRouter(
 
     protected fun flushPending(peer: PeerHandler) {
         val peerQueue = pendingRpcParts.getQueue(peer)
+        if (peerQueue.isEmpty()) {
+            // Keep the previous completion behaviour for publishes removed before their queue was flushed.
+            pendingMessagePromises.removeAll(peer)?.forEach { it.complete(Unit) }
+            return
+        }
         val allSendPromise = enqueueSend(peer,
             generateSequence { peerQueue.popMerged() })
         pendingMessagePromises.removeAll(peer)?.forEach {

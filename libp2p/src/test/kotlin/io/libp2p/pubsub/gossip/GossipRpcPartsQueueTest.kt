@@ -205,8 +205,10 @@ class GossipRpcPartsQueueTest {
     @Test
     fun `popOneMerged() default queue pops all parts as one message`() {
         val partsQueue = DefaultRpcPartsQueue()
+        assertThat(partsQueue.isEmpty()).isTrue()
         partsQueue.addSubscribe("topic")
         partsQueue.addPublish(createRpcMessage("topic", "data"))
+        assertThat(partsQueue.isEmpty()).isFalse()
 
         val msg = partsQueue.popMerged()
 
@@ -214,6 +216,7 @@ class GossipRpcPartsQueueTest {
         assertThat(msg!!.subscriptionsCount).isEqualTo(1)
         assertThat(msg.publishCount).isEqualTo(1)
         assertThat(partsQueue.popMerged()).isNull()
+        assertThat(partsQueue.isEmpty()).isTrue()
     }
 
     @Test
