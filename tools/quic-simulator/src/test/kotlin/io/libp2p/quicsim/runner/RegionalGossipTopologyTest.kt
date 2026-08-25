@@ -109,6 +109,7 @@ class RegionalGossipTopologyTest {
                     gossipSeedBase = seed.toLong() + 20_000L,
                     messagesPerPublisher = WARMUP_MESSAGE_COUNT * WARMUP_CHUNKS_PER_MESSAGE,
                     messagesPerWave = WARMUP_CHUNKS_PER_MESSAGE,
+                    separateTopicPerMessageChunk = WARMUP_CHUNKS_USE_SEPARATE_TOPICS,
                     publishInterval = WARMUP_PUBLISH_INTERVAL,
                     maxRunDuration = WARMUP_MAX_RUN_DURATION,
                     completeAfter = WARMUP_COMPLETE_AFTER,
@@ -116,8 +117,9 @@ class RegionalGossipTopologyTest {
                 )
                 println(
                     "REGIONAL_GOSSIP_WARMUP_DIAGNOSTICS " +
-                        "sizeKiB=$sizeKiB chunks=$WARMUP_CHUNKS_PER_MESSAGE chunkSizeBytes=$chunkSizeBytes " +
-                        "seed=$seed connectEvents=${result.routerDiagnostics.sumOf { it.connectEvents }} " +
+                        "sizeKiB=$sizeKiB chunks=$WARMUP_CHUNKS_PER_MESSAGE chunkTopics=$WARMUP_CHUNKS_USE_SEPARATE_TOPICS chunkSizeBytes=$chunkSizeBytes " +
+                        "iDontWantMinSize=$I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD seed=$seed " +
+                        "connectEvents=${result.routerDiagnostics.sumOf { it.connectEvents }} " +
                     "disconnectEvents=${result.routerDiagnostics.sumOf { it.disconnectEvents }} " +
                     "meshEvents=${result.routerDiagnostics.sumOf { it.meshEvents }} " +
                     "pruneEvents=${result.routerDiagnostics.sumOf { it.pruneEvents }} " +
@@ -126,8 +128,9 @@ class RegionalGossipTopologyTest {
                 result.messageResults.map { messageResult ->
                     println(
                         "REGIONAL_GOSSIP_WARMUP_RUN " +
-                            "sizeKiB=$sizeKiB chunks=$WARMUP_CHUNKS_PER_MESSAGE chunkSizeBytes=$chunkSizeBytes " +
-                            "seed=$seed waveIndex=${messageResult.messageIndex} receipts=${messageResult.receipts} " +
+                            "sizeKiB=$sizeKiB chunks=$WARMUP_CHUNKS_PER_MESSAGE chunkTopics=$WARMUP_CHUNKS_USE_SEPARATE_TOPICS chunkSizeBytes=$chunkSizeBytes " +
+                            "iDontWantMinSize=$I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD seed=$seed " +
+                            "waveIndex=${messageResult.messageIndex} receipts=${messageResult.receipts} " +
                             "missing=${messageResult.missing} p95Ms=${messageResult.p95?.inWholeMilliseconds ?: "NA"}"
                     )
                     WarmupRun(
@@ -171,6 +174,7 @@ class RegionalGossipTopologyTest {
         gossipSeedBase: Long,
         messagesPerPublisher: Int = 1,
         messagesPerWave: Int = 1,
+        separateTopicPerMessageChunk: Boolean = false,
         publishInterval: Duration = Duration.ZERO,
         maxRunDuration: Duration = MAX_RUN_DURATION,
         completeAfter: Duration? = null,
@@ -202,6 +206,7 @@ class RegionalGossipTopologyTest {
                             messageSizeBytes = messageSizeBytes,
                             messagesPerPublisher = messagesPerPublisher,
                             messagesPerWave = messagesPerWave,
+                            separateTopicPerMessageChunk = separateTopicPerMessageChunk,
                             initialPublishDelay = INITIAL_PUBLISH_DELAY,
                             publishInterval = publishInterval,
                             completeAfter = completeAfter,
@@ -311,7 +316,7 @@ class RegionalGossipTopologyTest {
             gossipSize = 3,
             floodPublishMaxMessageSizeThreshold = NEVER_FLOOD_PUBLISH,
             maxGossipMessageSize = messageSizeBytes * 2,
-            iDontWantMinMessageSizeThreshold = Int.MAX_VALUE
+            iDontWantMinMessageSizeThreshold = I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD
         )
 
     private fun <R> scaledLatencies(
@@ -467,6 +472,10 @@ class RegionalGossipTopologyTest {
         val WARMUP_MESSAGE_COUNT = Integer.getInteger("quicsim.regionalGossip.warmupMessageCount", 10)
         val WARMUP_CHUNKS_PER_MESSAGE =
             Integer.getInteger("quicsim.regionalGossip.warmupChunksPerMessage", 1)
+        val WARMUP_CHUNKS_USE_SEPARATE_TOPICS =
+            java.lang.Boolean.getBoolean("quicsim.regionalGossip.warmupChunkTopics")
+        val I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD =
+            Integer.getInteger("quicsim.regionalGossip.iDontWantMinMessageSizeThreshold", Int.MAX_VALUE)
         val WARMUP_MESSAGE_SIZES_KIB =
             System.getProperty("quicsim.regionalGossip.warmupMessageSizesKiB", "128")
                 .split(',')

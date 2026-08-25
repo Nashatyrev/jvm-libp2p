@@ -41,6 +41,8 @@ class SampleGossipNodeProgram(
     val messagesPerPublisher: Int = 1,
     /** Number of independently published chunks that make up one logical message wave. */
     val messagesPerWave: Int = 1,
+    /** Reuses one topic per chunk position across all logical message waves. */
+    val separateTopicPerMessageChunk: Boolean = false,
     val initialPublishDelay: Duration = 1.minutes,
     val publishInterval: Duration = Duration.ZERO,
     val completeAfter: Duration? = null,
@@ -59,7 +61,13 @@ class SampleGossipNodeProgram(
     private val verboseLog = System.getProperty("quicsim.sampleGossip.log", "true").toBoolean()
 
     private val random = Random(randomSeed)
-    private val testTopic = Topic(testTopicName)
+    private val testTopics =
+        if (separateTopicPerMessageChunk) {
+            List(messagesPerWave) { chunkIndex -> Topic("$testTopicName/$chunkIndex") }
+        } else {
+            listOf(Topic(testTopicName))
+        }
+    private val testTopicNames = testTopics.mapTo(mutableSetOf()) { it.topic }
     private val receivedMessageCount = AtomicInteger()
     private val successfulPublishCount = AtomicInteger()
     private val routerConnectEvents = AtomicInteger()
@@ -114,8 +122,8 @@ class SampleGossipNodeProgram(
                     )
                 }
             }
-        }, testTopic)
-        log("[$simNodeId] subscribed to ${testTopic.topic}")
+        }, *testTopics.toTypedArray())
+        log("[$simNodeId] subscribed to ${testTopics.joinToString { it.topic }}")
         completeIfReady()
         completeAfter?.let { completeAt ->
             val elapsedSinceStart = simContext.timer.time() - epoch
@@ -134,7 +142,8 @@ class SampleGossipNodeProgram(
                 val publishAt = initialPublishDelay + publishInterval * waveIndex
                 val publishDelay = (publishAt - elapsedSinceStart).coerceAtLeast(Duration.ZERO)
                 simContext.scheduler.executeAfterDelay(publishDelay) {
-                    log("[$simNodeId] publishing message=$messageIndex to ${testTopic.topic}")
+                    val topic = topicFor(messageIndex)
+                    log("[$simNodeId] publishing message=$messageIndex to ${topic.topic}")
                     publishAttempted = true
                     eventSink.record(
                         QuicScenarioEvent.GossipMessagePublished(
@@ -143,7 +152,7 @@ class SampleGossipNodeProgram(
                             messageIndex = messageIndex
                         )
                     )
-                    publisher.publish(Unpooled.wrappedBuffer(createPayload(messageIndex)), testTopic)
+                    publisher.publish(Unpooled.wrappedBuffer(createPayload(messageIndex)), topic)
                         .whenComplete { _, err ->
                             if (err == null) {
                                 successfulPublishCount.incrementAndGet()
@@ -172,16 +181,21 @@ class SampleGossipNodeProgram(
         }
     }
 
+    private fun topicFor(messageIndex: Int): Topic =
+        testTopics[if (separateTopicPerMessageChunk) messageIndex % messagesPerWave else 0]
+
     fun debugState(): String {
         val received = receivedMessageCount.get()
-        val meshPeers = gossipRouter.mesh[testTopic.topic]
-            ?.map { it.peerId.toBase58().take(12) }
-            ?.sorted()
-            ?: emptyList()
-        val fanoutPeers = gossipRouter.fanout[testTopic.topic]
-            ?.map { it.peerId.toBase58().take(12) }
-            ?.sorted()
-            ?: emptyList()
+        val meshPeers = testTopics.asSequence()
+            .flatMap { topic -> gossipRouter.mesh[topic.topic].orEmpty().asSequence() }
+            .map { it.peerId.toBase58().take(12) }
+            .sorted()
+            .toList()
+        val fanoutPeers = testTopics.asSequence()
+            .flatMap { topic -> gossipRouter.fanout[topic.topic].orEmpty().asSequence() }
+            .map { it.peerId.toBase58().take(12) }
+            .sorted()
+            .toList()
         return "scheduled=$publishScheduled attempted=$publishAttempted " +
             "publishSucceeded=$publishSucceeded successfulPublishCount=${successfulPublishCount.get()} " +
             "lastPublishError=${lastPublishError ?: "-"} " +
@@ -242,14 +256,14 @@ class SampleGossipNodeProgram(
             }
 
             override fun notifyMeshed(peerId: PeerId, topic: String) {
-                if (topic == testTopic.topic) {
+                if (topic in testTopicNames) {
                     routerMeshEvents.incrementAndGet()
                     log("[$simNodeId] router MESHED peer=${peerId.toBase58().take(12)} topic=$topic")
                 }
             }
 
             override fun notifyPruned(peerId: PeerId, topic: String) {
-                if (topic == testTopic.topic) {
+                if (topic in testTopicNames) {
                     routerPruneEvents.incrementAndGet()
                     log("[$simNodeId] router PRUNED peer=${peerId.toBase58().take(12)} topic=$topic")
                 }
