@@ -119,9 +119,9 @@ class RegionalGossipTopologyTest {
                 )
                 val rpcFrameStats = GossipRpcFrameStats.snapshot()
                 println(
-                    "REGIONAL_GOSSIP_WARMUP_DIAGNOSTICS " +
+                        "REGIONAL_GOSSIP_WARMUP_DIAGNOSTICS " +
                         "sizeKiB=$sizeKiB peersPerNode=$PEERS_PER_NODE chunks=$WARMUP_CHUNKS_PER_MESSAGE chunkTopics=$WARMUP_CHUNK_TOPIC_COUNT batchPublish=$BATCH_PUBLISH chunkSizeBytes=$chunkSizeBytes " +
-                        "iDontWantMinSize=$I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD seed=$seed " +
+                        "iDontWantMinSize=$I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD publisherSupernode=$PUBLISHER_IS_SUPERNODE seed=$seed " +
                         "gossipRpcFrames=${rpcFrameStats.rpcFrames} gossipRpcBytes=${rpcFrameStats.totalSerializedBytes} " +
                         "connectEvents=${result.routerDiagnostics.sumOf { it.connectEvents }} " +
                     "disconnectEvents=${result.routerDiagnostics.sumOf { it.disconnectEvents }} " +
@@ -195,7 +195,11 @@ class RegionalGossipTopologyTest {
             seed = overlaySeed
         )
         val topology = RegionalNetworkTopologyBuilder(scaledLatencies(WORLD_DESCRIPTOR_1, REGIONAL_LATENCY_MULTIPLIER))
-            .addRandomScenarioHosts(seed = topologySeed, hostId = IPManager.Default::getIP)
+            .addRandomScenarioHosts(
+                seed = topologySeed,
+                hostId = IPManager.Default::getIP,
+                forcedSupernodeIndexes = if (PUBLISHER_IS_SUPERNODE) setOf(PUBLISHER_NODE_ID) else emptySet()
+            )
             .build()
         val previousLogging = System.getProperty(SAMPLE_GOSSIP_LOG_PROPERTY)
         System.setProperty(SAMPLE_GOSSIP_LOG_PROPERTY, "false")
@@ -531,6 +535,7 @@ class RegionalGossipTopologyTest {
             if (WARMUP_CHUNKS_USE_SEPARATE_TOPICS) WARMUP_CHUNKS_PER_MESSAGE else 1
         )
         val BATCH_PUBLISH = java.lang.Boolean.getBoolean("quicsim.regionalGossip.batchPublish")
+        val PUBLISHER_IS_SUPERNODE = java.lang.Boolean.getBoolean("quicsim.regionalGossip.publisherSupernode")
         val I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD =
             Integer.getInteger("quicsim.regionalGossip.iDontWantMinMessageSizeThreshold", Int.MAX_VALUE)
         val WARMUP_MESSAGE_SIZES_KIB =

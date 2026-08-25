@@ -46,7 +46,7 @@ class SampleGossipNodeProgram(
     /** Number of topics over which chunks in a wave are distributed evenly. */
     val chunkTopicCount: Int = if (separateTopicPerMessageChunk) messagesPerWave else 1,
     /** Publishes all chunks in a wave through one router batch per topic. */
-    val batchPublish: Boolean = false,
+    val batchPublish: Boolean = true,
     val initialPublishDelay: Duration = 1.minutes,
     val publishInterval: Duration = Duration.ZERO,
     val completeAfter: Duration? = null,

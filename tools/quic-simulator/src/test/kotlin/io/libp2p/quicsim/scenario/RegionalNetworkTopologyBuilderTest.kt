@@ -148,12 +148,23 @@ private val REGION_WEIGHTS = listOf(
 internal fun RegionalNetworkTopologyBuilder<ContinentRegion>.addRandomScenarioHosts(
     hostCount: Int = HOST_COUNT,
     seed: Int = RANDOM_SEED,
-    hostId: (Int) -> String = { "node-$it" }
+    hostId: (Int) -> String = { "node-$it" },
+    forcedSupernodeIndexes: Set<Int> = emptySet()
 ): RegionalNetworkTopologyBuilder<ContinentRegion> = apply {
     require(hostCount > 0) { "hostCount must be positive" }
+    require(forcedSupernodeIndexes.all { it in 0 until hostCount }) {
+        "Forced supernode indexes must be in [0, $hostCount)"
+    }
     val random = Random(seed)
     val supernodeCount = (hostCount * SUPERNODE_FRACTION).roundToInt()
-    val supernodeIndexes = (0 until hostCount).shuffled(random).take(supernodeCount).toSet()
+    require(forcedSupernodeIndexes.size <= supernodeCount) {
+        "Forced supernode count must not exceed $supernodeCount"
+    }
+    val randomlySelectedSupernodes = (0 until hostCount).shuffled(random).take(supernodeCount)
+    val supernodeIndexes = forcedSupernodeIndexes +
+        randomlySelectedSupernodes
+            .filterNot(forcedSupernodeIndexes::contains)
+            .take(supernodeCount - forcedSupernodeIndexes.size)
     repeat(hostCount) { index ->
         addHost(
             id = hostId(index),

@@ -143,6 +143,7 @@ configure(
             "quicsim.regionalGossip.latencyMultiplier",
             "quicsim.regionalGossip.overlaySeed",
             "quicsim.regionalGossip.peersPerNode",
+            "quicsim.regionalGossip.publisherSupernode",
             "quicsim.regionalGossip.topologySeed",
             "quicsim.regionalGossip.warmupIntervalSeconds",
             "quicsim.regionalGossip.warmupChunksPerMessage",
