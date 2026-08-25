@@ -43,6 +43,8 @@ class SampleGossipNodeProgram(
     val messagesPerWave: Int = 1,
     /** Reuses one topic per chunk position across all logical message waves. */
     val separateTopicPerMessageChunk: Boolean = false,
+    /** Number of topics over which chunks in a wave are distributed evenly. */
+    val chunkTopicCount: Int = if (separateTopicPerMessageChunk) messagesPerWave else 1,
     /** Publishes all chunks in a wave through one router batch per topic. */
     val batchPublish: Boolean = false,
     val initialPublishDelay: Duration = 1.minutes,
@@ -57,6 +59,12 @@ class SampleGossipNodeProgram(
         require(messagesPerPublisher % messagesPerWave == 0) {
             "messagesPerPublisher must be divisible by messagesPerWave"
         }
+        require(chunkTopicCount in 1..messagesPerWave) {
+            "chunkTopicCount must be in [1, $messagesPerWave]"
+        }
+        require(messagesPerWave % chunkTopicCount == 0) {
+            "messagesPerWave must be divisible by chunkTopicCount"
+        }
     }
 
     var log: (String) -> Unit = { println("[SampleGossipNodeProgram] $it") }
@@ -64,10 +72,8 @@ class SampleGossipNodeProgram(
 
     private val random = Random(randomSeed)
     private val testTopics =
-        if (separateTopicPerMessageChunk) {
-            List(messagesPerWave) { chunkIndex -> Topic("$testTopicName/$chunkIndex") }
-        } else {
-            listOf(Topic(testTopicName))
+        List(chunkTopicCount) { chunkIndex ->
+            if (chunkTopicCount == 1) Topic(testTopicName) else Topic("$testTopicName/$chunkIndex")
         }
     private val testTopicNames = testTopics.mapTo(mutableSetOf()) { it.topic }
     private val receivedMessageCount = AtomicInteger()
@@ -202,7 +208,7 @@ class SampleGossipNodeProgram(
     }
 
     private fun topicFor(messageIndex: Int): Topic =
-        testTopics[if (separateTopicPerMessageChunk) messageIndex % messagesPerWave else 0]
+        testTopics[(messageIndex % messagesPerWave) % chunkTopicCount]
 
     fun debugState(): String {
         val received = receivedMessageCount.get()
