@@ -186,7 +186,7 @@ abstract class AbstractRouter(
     override fun onPeerActive(peer: PeerHandler) {
         val partsQueue = pendingRpcParts.getQueue(peer)
         subscribedTopics.forEach {
-            partsQueue.addSubscribe(it)
+            partsQueue.addSubscribe(it, subscriptionOptionsFor(it))
         }
         flushPending(peer)
     }
@@ -212,9 +212,15 @@ abstract class AbstractRouter(
 
         try {
             val subscriptions = msg.subscriptionsList.map { PubsubSubscription(it.topicid, it.subscribe) }
-            subscriptionFilter
+            val acceptedSubscriptions = subscriptionFilter
                 .filterIncomingSubscriptions(subscriptions, peersTopics.getByFirst(peer))
-                .forEach { handleMessageSubscriptions(peer, it) }
+                .toSet()
+            msg.subscriptionsList.zip(subscriptions)
+                .filter { (_, subscription) -> subscription in acceptedSubscriptions }
+                .forEach { (rawSubscription, subscription) ->
+                    handleMessageSubscriptions(peer, subscription)
+                    onPeerSubscription(peer, rawSubscription)
+                }
         } catch (e: Exception) {
             logger.debug("Subscription filter error, ignoring message from peer {}", peer, e)
             return
@@ -348,6 +354,12 @@ abstract class AbstractRouter(
         }
     }
 
+    /** Hook for protocol-extension fields on an accepted inbound subscription. */
+    protected open fun onPeerSubscription(peer: PeerHandler, subscription: Rpc.RPC.SubOpts) {}
+
+    /** Extension fields advertised with local subscribe messages. */
+    protected open fun subscriptionOptionsFor(topic: Topic): SubscriptionOptions = SubscriptionOptions()
+
     protected fun getTopicPeers(topic: Topic) = peersTopics.getBySecond(topic)
 
     override fun subscribe(vararg topics: Topic) {
@@ -358,7 +370,7 @@ abstract class AbstractRouter(
     }
 
     protected open fun subscribe(topic: Topic) {
-        activePeers.forEach { pendingRpcParts.getQueue(it).addSubscribe(topic) }
+        activePeers.forEach { pendingRpcParts.getQueue(it).addSubscribe(topic, subscriptionOptionsFor(topic)) }
         subscribedTopics += topic
     }
 

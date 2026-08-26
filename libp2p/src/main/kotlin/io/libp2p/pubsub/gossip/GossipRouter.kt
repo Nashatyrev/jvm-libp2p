@@ -84,6 +84,7 @@ open class GossipRouter(
     val mCache: MCache,
     val score: GossipScore,
     val gossipExtensionsConfig: GossipExtensionsConfig = GossipExtensionsConfig(),
+    partialMessagesHandler: PartialMessagesHandler<*>? = null,
 
     subscriptionTopicSubscriptionFilter: TopicSubscriptionFilter,
     protocol: PubsubProtocol,
@@ -99,7 +100,7 @@ open class GossipRouter(
     messageFactory,
     seenMessages,
     messageValidator
-) {
+), PartialMessagesPeerFeedback {
 
     // The idea behind choosing these specific default values for acceptRequestsWhitelist was
     // - from one side are pretty small and safe: peer unlikely be able to drop its score to `graylist`
@@ -136,6 +137,99 @@ open class GossipRouter(
     override val pendingRpcParts = PendingRpcPartsMap<GossipRpcPartsQueue> { DefaultGossipRpcPartsQueue(params) }
 
     val gossipExtensionsState = GossipExtensionsState(gossipExtensionsConfig)
+    @Suppress("UNCHECKED_CAST")
+    private val partialMessagesHandler = partialMessagesHandler as PartialMessagesHandler<Any?>?
+    private val partialTopicOptions = mutableMapOf<Topic, PartialTopicOptions>()
+    private val partialPeerTopicOptions = mutableMapOf<Topic, MutableMap<PeerId, PartialTopicOptions>>()
+    private val partialGroups = linkedMapOf<PartialGroupKey, PartialGroupState>()
+
+    private data class PartialGroupKey(val topic: Topic, val groupId: WBytes)
+    private data class PartialGroupState(
+        var ttlInHeartbeats: Int = PARTIAL_GROUP_TTL_HEARTBEATS,
+        val peerInitiated: Boolean,
+        val originPeers: MutableSet<PeerId> = mutableSetOf(),
+        val participantPeers: MutableSet<PeerId> = mutableSetOf(),
+        val peerStates: MutableMap<PeerId, Any?> = mutableMapOf()
+    )
+
+    /** Must be called before subscribing to [topic]. */
+    fun enablePartialMessagesForTopic(topic: Topic, options: PartialTopicOptions = PartialTopicOptions()): CompletableFuture<Unit> =
+        submitOnEventThread {
+            require(gossipExtensionsState.partialMessagesEnabled()) {
+                "PARTIAL_MESSAGES must be enabled on GossipRouterBuilder"
+            }
+            require(partialMessagesHandler != null) {
+                "partialMessagesHandler is required to enable partial messages for a topic"
+            }
+            require(topic !in subscribedTopics) {
+                "Partial-message options for $topic must be configured before subscribing"
+            }
+            partialTopicOptions[topic] = options
+            Unit
+        }
+
+    fun <PeerState> publishPartial(
+        topic: Topic,
+        groupId: ByteArray,
+        actions: PublishActionsFn<PeerState>
+    ): CompletableFuture<Unit> = submitAsyncOnEventThread {
+        if (!gossipExtensionsState.partialMessagesEnabled() || partialMessagesHandler == null) {
+            return@submitAsyncOnEventThread completedExceptionally(
+                IllegalStateException("Partial messages are not enabled")
+            )
+        }
+        if (topic !in partialTopicOptions) {
+            return@submitAsyncOnEventThread completedExceptionally(
+                IllegalStateException("Partial messages are not enabled for topic $topic")
+            )
+        }
+
+        val key = PartialGroupKey(topic, groupId.toWBytes())
+        val group = partialGroups.getOrPut(key) { PartialGroupState(peerInitiated = false) }
+        group.ttlInHeartbeats = PARTIAL_GROUP_TTL_HEARTBEATS
+        @Suppress("UNCHECKED_CAST")
+        val states = group.peerStates.toMap() as Map<PeerId, PeerState>
+        val byId = peers.associateBy { it.peerId }
+
+        try {
+            actions.decide(states) { peerId -> peerRequestsPartial(peerId, topic) }
+                .forEach { (peerId, action) ->
+                    action.error?.let { throw it }
+                    val peer = byId[peerId] ?: return@forEach
+                    if (!peerSupportsPartialMessages(peerId, topic)) return@forEach
+
+                    val rpc = Rpc.PartialMessagesExtension.newBuilder()
+                        .setTopicID(topic)
+                        .setGroupID(groupId.toProtobuf())
+                        .apply {
+                            // A supports-only peer may receive metadata, but never eager partial data.
+                            if (peerRequestsPartial(peerId, topic) && action.partialMessage != null) {
+                                setPartialMessage(action.partialMessage.toProtobuf())
+                            }
+                            action.partsMetadata?.let { setPartsMetadata(it.toProtobuf()) }
+                        }
+                        .build()
+                    if (!rpc.hasPartialMessage() && !rpc.hasPartsMetadata()) return@forEach
+
+                    pendingRpcParts.getQueue(peer).addPartialMessage(rpc)
+                    group.participantPeers += peerId
+                    action.nextPeerState?.let { group.peerStates[peerId] = it }
+                }
+            flushAllPending()
+            CompletableFuture.completedFuture(Unit)
+        } catch (t: Throwable) {
+            completedExceptionally(t)
+        }
+    }
+
+    override fun reportFeedback(topic: Topic, peer: PeerId, kind: PartialMessagesFeedbackKind) {
+        runOnEventThread {
+            if (topic !in partialTopicOptions) return@runOnEventThread
+            if (kind == PartialMessagesFeedbackKind.INVALID) {
+                peers.firstOrNull { it.peerId == peer }?.let { notifyRouterMisbehavior(it, 1) }
+            }
+        }
+    }
 
     private fun setBackOff(peer: PeerHandler, topic: Topic) = setBackOff(peer, topic, params.pruneBackoff.toMillis())
     private fun setBackOff(peer: PeerHandler, topic: Topic, delay: Long) {
@@ -153,6 +247,43 @@ open class GossipRouter(
     private fun getDirectPeers(topic: Topic): List<PeerHandler> {
         return getTopicPeers(topic).filter(::isDirect)
     }
+
+    override fun subscriptionOptionsFor(topic: Topic): SubscriptionOptions =
+        partialTopicOptions[topic]?.let {
+            SubscriptionOptions(it.requestsPartial, it.supportsSendingPartial)
+        } ?: SubscriptionOptions()
+
+    override fun onPeerSubscription(peer: PeerHandler, subscription: Rpc.RPC.SubOpts) {
+        if (!gossipExtensionsState.partialMessagesEnabled()) return
+        if (!subscription.subscribe) {
+            partialPeerTopicOptions[subscription.topicid]?.remove(peer.peerId)
+            return
+        }
+        val options = PartialTopicOptions(
+            requestsPartial = subscription.requestsPartial,
+            supportsSendingPartial = subscription.requestsPartial || subscription.supportsSendingPartial
+        )
+        partialPeerTopicOptions.getOrPut(subscription.topicid) { mutableMapOf() }[peer.peerId] = options
+    }
+
+    private fun peerSupportsPartialMessages(peerId: PeerId, topic: Topic): Boolean =
+        gossipExtensionsState.peerSupportsPartialMessages(peerId) &&
+            partialPeerTopicOptions[topic]?.get(peerId)?.supportsSendingPartial == true
+
+    private fun peerRequestsPartial(peerId: PeerId, topic: Topic): Boolean =
+        peerSupportsPartialMessages(peerId, topic) &&
+            partialPeerTopicOptions[topic]?.get(peerId)?.requestsPartial == true
+
+    private fun peerRequestsPartial(peerId: PeerId, topics: List<Topic>): Boolean =
+        topics.isNotEmpty() && topics.all { peerRequestsPartial(peerId, it) }
+
+    private fun canCreatePeerInitiatedGroup(topic: Topic, peerId: PeerId): Boolean {
+        val peerInitiated = partialGroups.filterValues { it.peerInitiated }
+        if (peerInitiated.keys.count { it.topic == topic } >= MAX_PEER_INITIATED_GROUPS_PER_TOPIC) return false
+        return peerInitiated
+            .filterKeys { it.topic == topic }
+            .count { (_, group) -> peerId in group.originPeers } < MAX_PEER_INITIATED_GROUPS_PER_TOPIC_PER_PEER
+    }
     private fun isDirect(peer: PeerHandler) = scoreParams.peerScoreParams.isDirect(peer.peerId)
     private fun isConnected(peerId: PeerId) = peers.any { it.peerId == peerId }
 
@@ -163,6 +294,13 @@ open class GossipRouter(
         acceptRequestsWhitelist -= peer
         pendingRpcParts.popQueue(peer) // discard them
         gossipExtensionsState.onPeerDisconnected(peer.peerId)
+        partialPeerTopicOptions.values.forEach { it.remove(peer.peerId) }
+        partialGroups.entries.removeIf { (_, group) ->
+            group.participantPeers.remove(peer.peerId)
+            group.originPeers.remove(peer.peerId)
+            group.peerStates.remove(peer.peerId)
+            group.peerInitiated && group.participantPeers.isEmpty()
+        }
         super.onPeerDisconnected(peer)
     }
 
@@ -171,6 +309,7 @@ open class GossipRouter(
         eventBroadcaster.notifyConnected(peer.peerId, peer.getRemoteAddress())
         heartbeatTask.hashCode() // force lazy initialization
         sendControlExtensions(peer)
+        flushPending(peer)
     }
 
     override fun notifyUnseenMessage(peer: PeerHandler, msg: PubsubMessage) {
@@ -479,12 +618,34 @@ open class GossipRouter(
         partialMessagesExtension: Rpc.PartialMessagesExtension,
         receivedFrom: PeerHandler
     ) {
-        logger.trace(
-            "Processing partial message extension message {} from {}",
-            partialMessagesExtension.toString(),
-            receivedFrom.peerId
+        if (!partialMessagesExtension.hasTopicID() || !partialMessagesExtension.hasGroupID()) {
+            logger.debug("Ignoring malformed partial message from {}", receivedFrom.peerId)
+            return
+        }
+        val topic = partialMessagesExtension.topicID
+        if (topic !in partialTopicOptions || !peerSupportsPartialMessages(receivedFrom.peerId, topic)) {
+            logger.trace("Ignoring partial message for unsupported topic {} from {}", topic, receivedFrom.peerId)
+            return
+        }
+
+        val key = PartialGroupKey(topic, partialMessagesExtension.groupID.toWBytes())
+        val group = partialGroups[key] ?: run {
+            if (!canCreatePeerInitiatedGroup(topic, receivedFrom.peerId)) {
+                logger.debug("Dropping partial group for {} from {} due to configured limits", topic, receivedFrom.peerId)
+                return
+            }
+            PartialGroupState(peerInitiated = true).also {
+                it.originPeers += receivedFrom.peerId
+                partialGroups[key] = it
+            }
+        }
+        group.ttlInHeartbeats = PARTIAL_GROUP_TTL_HEARTBEATS
+        group.participantPeers += receivedFrom.peerId
+        partialMessagesHandler?.onIncomingRpc(
+            receivedFrom.peerId,
+            group.peerStates.toMap(),
+            partialMessagesExtension
         )
-        // TODO: implement partial message handling (https://github.com/libp2p/jvm-libp2p/issues/435)
     }
 
     override fun broadcastInbound(msgs: List<PubsubMessage>, receivedFrom: PeerHandler) {
@@ -503,6 +664,7 @@ open class GossipRouter(
                 .distinct()
                 .minus(receivedFrom)
                 .filterNot { peerDoesNotWantMessage(it, pubMsg.messageId) }
+                .filterNot { peerRequestsPartial(it.peerId, pubMsg.topics) }
                 .forEach { submitPublishMessageNoPromise(it, pubMsg) }
             mCache += pubMsg
         }
@@ -534,6 +696,7 @@ open class GossipRouter(
                 iDontWant(msg)
                 peers
                     .filterNot { peerDoesNotWantMessage(it, msg.messageId) }
+                    .filterNot { peerRequestsPartial(it.peerId, msg.topics) }
                     .forEach { peer ->
                         messagesByPeer.getOrPut(peer) { mutableListOf() } += messageIndex to msg
                     }
@@ -634,6 +797,9 @@ open class GossipRouter(
         super.unsubscribe(topic)
         mesh[topic]?.copy()?.forEach { prune(it, topic) }
         mesh -= topic
+        partialTopicOptions -= topic
+        partialPeerTopicOptions -= topic
+        partialGroups.entries.removeIf { it.key.topic == topic }
     }
 
     private fun catchingHeartbeat() {
@@ -646,6 +812,10 @@ open class GossipRouter(
 
     private fun heartbeat() {
         heartbeatsCount++
+        partialGroups.entries.removeIf { (_, group) ->
+            group.ttlInHeartbeats--
+            group.ttlInHeartbeats <= 0 || (group.peerInitiated && group.participantPeers.isEmpty())
+        }
         iAsked.clear()
         peerIHave.clear()
 
@@ -751,9 +921,23 @@ open class GossipRouter(
         val peers = (getTopicPeers(topic) - excludePeers)
             .filter { score.score(it.peerId) >= scoreParams.gossipThreshold && !isDirect(it) }
 
-        peers.shuffled(random)
+        val selectedPeers = peers.shuffled(random)
             .take(max((params.gossipFactor * peers.size).toInt(), params.DLazy))
-            .forEach { enqueueIhave(it, shuffledMessageIds, topic) }
+        val (partialPeers, fullPeers) = selectedPeers.partition { peerRequestsPartial(it.peerId, topic) }
+        fullPeers.forEach { enqueueIhave(it, shuffledMessageIds, topic) }
+        if (partialPeers.isNotEmpty()) {
+            partialGroups
+                .filterKeys { it.topic == topic }
+                .filterValues { !it.peerInitiated }
+                .forEach { (key, group) ->
+                    partialMessagesHandler?.onEmitGossip(
+                        topic,
+                        key.groupId.array.copyOf(),
+                        partialPeers.map { it.peerId },
+                        group.peerStates.toMap()
+                    )
+                }
+        }
     }
 
     private fun graft(peer: PeerHandler, topic: Topic) {
@@ -790,6 +974,7 @@ open class GossipRouter(
             .flatten()
             .distinct()
             .minus(setOfNotNull(receivedFrom))
+            .filterNot { peer -> peerRequestsPartial(peer.peerId, msg.topics) }
             .forEach { sendIdontwant(it, msg.messageId) }
     }
 
@@ -859,4 +1044,10 @@ open class GossipRouter(
         var heartbeatMessageIdsCount: Int = 0,
         val messageIdsAndTimeReceived: MutableMap<MessageId, Long> = mutableMapOf()
     )
+
+    private companion object {
+        const val PARTIAL_GROUP_TTL_HEARTBEATS = 5
+        const val MAX_PEER_INITIATED_GROUPS_PER_TOPIC = 255
+        const val MAX_PEER_INITIATED_GROUPS_PER_TOPIC_PER_PEER = 8
+    }
 }

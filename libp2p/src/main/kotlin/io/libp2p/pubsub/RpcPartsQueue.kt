@@ -13,15 +13,15 @@ interface RpcPartsQueue {
      */
     fun addPublish(message: Rpc.Message, messageId: MessageId = defaultPubsubMessageId(message))
 
-    fun addSubscribe(topic: Topic) {
-        addSubscription(topic, SubscriptionStatus.Subscribed)
+    fun addSubscribe(topic: Topic, options: SubscriptionOptions = SubscriptionOptions()) {
+        addSubscription(topic, SubscriptionStatus.Subscribed, options)
     }
 
     fun addUnsubscribe(topic: Topic) {
         addSubscription(topic, SubscriptionStatus.Unsubscribed)
     }
 
-    fun addSubscription(topic: Topic, status: SubscriptionStatus)
+    fun addSubscription(topic: Topic, status: SubscriptionStatus, options: SubscriptionOptions = SubscriptionOptions())
 
     /** Returns whether there are no RPC parts waiting to be sent. */
     fun isEmpty(): Boolean
@@ -30,6 +30,12 @@ interface RpcPartsQueue {
 
     fun takeMerged(): List<Rpc.RPC>
 }
+
+/** Optional protocol extensions attached to a topic subscription. */
+data class SubscriptionOptions(
+    val requestsPartial: Boolean = false,
+    val supportsSendingPartial: Boolean = false
+)
 
 /**
  * Default [RpcPartsQueue] implementation
@@ -48,11 +54,19 @@ open class DefaultRpcPartsQueue : RpcPartsQueue {
         }
     }
 
-    protected data class SubscriptionPart(val topic: Topic, val status: RpcPartsQueue.SubscriptionStatus) : AbstractPart {
+    protected data class SubscriptionPart(
+        val topic: Topic,
+        val status: RpcPartsQueue.SubscriptionStatus,
+        val options: SubscriptionOptions
+    ) : AbstractPart {
         override fun appendToBuilder(builder: Rpc.RPC.Builder) {
             builder.addSubscriptionsBuilder().apply {
                 setTopicid(topic)
                 setSubscribe(status == RpcPartsQueue.SubscriptionStatus.Subscribed)
+                if (status == RpcPartsQueue.SubscriptionStatus.Subscribed) {
+                    setRequestsPartial(options.requestsPartial)
+                    setSupportsSendingPartial(options.supportsSendingPartial)
+                }
             }
         }
     }
@@ -67,8 +81,8 @@ open class DefaultRpcPartsQueue : RpcPartsQueue {
         addPart(PublishPart(message, messageId))
     }
 
-    override fun addSubscription(topic: Topic, status: RpcPartsQueue.SubscriptionStatus) {
-        addPart(SubscriptionPart(topic, status))
+    override fun addSubscription(topic: Topic, status: RpcPartsQueue.SubscriptionStatus, options: SubscriptionOptions) {
+        addPart(SubscriptionPart(topic, status, options))
     }
 
     override fun isEmpty(): Boolean = parts.isEmpty()

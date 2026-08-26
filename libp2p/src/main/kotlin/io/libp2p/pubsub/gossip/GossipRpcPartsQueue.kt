@@ -170,6 +170,8 @@ interface GossipRpcPartsQueue : RpcPartsQueue {
 
     // TODO Need to check if we should handle when control extension and extension messages could be separated by split  (https://github.com/libp2p/jvm-libp2p/issues/440)
     fun addControlExtensions(ctrlMessage: Rpc.ControlExtensions)
+
+    fun addPartialMessage(partialMessage: Rpc.PartialMessagesExtension)
 }
 
 /**
@@ -239,6 +241,12 @@ open class DefaultGossipRpcPartsQueue(
         }
     }
 
+    protected data class PartialMessagePart(val partialMessage: Rpc.PartialMessagesExtension) : AbstractPart {
+        override fun appendToBuilder(builder: Rpc.RPC.Builder) {
+            builder.setPartial(partialMessage)
+        }
+    }
+
     override fun addIHave(messageId: MessageId, topic: Topic) {
         addPart(IHavePart(messageId, topic))
     }
@@ -263,6 +271,10 @@ open class DefaultGossipRpcPartsQueue(
         addPart(ControlExtensionPart(ctrlMessage))
     }
 
+    override fun addPartialMessage(partialMessage: Rpc.PartialMessagesExtension) {
+        addPart(PartialMessagePart(partialMessage))
+    }
+
     override fun popMerged(): Rpc.RPC? {
         if (parts.isEmpty()) return null
 
@@ -283,6 +295,9 @@ open class DefaultGossipRpcPartsQueue(
             iWantCount > 0 && graftCount > 0 && pruneCount > 0
         ) {
             val part = parts[partIdx]
+            if (part is PartialMessagePart && partIdx > 0) {
+                break
+            }
             val partEstimatedSize = estimatePartSize(part).toLong()
             if (partIdx > 0 && estimatedSize + partEstimatedSize > estimatedSizeLimit) {
                 break
@@ -300,6 +315,9 @@ open class DefaultGossipRpcPartsQueue(
 
             part.appendToBuilder(builder)
             estimatedSize += partEstimatedSize
+            if (part is PartialMessagePart) {
+                break
+            }
         }
 
         parts.subList(0, partIdx).clear()
@@ -323,9 +341,14 @@ open class DefaultGossipRpcPartsQueue(
                 val subscription = Rpc.RPC.SubOpts.newBuilder()
                     .setTopicid(part.topic)
                     .setSubscribe(part.status == RpcPartsQueue.SubscriptionStatus.Subscribed)
+                    .setRequestsPartial(part.options.requestsPartial)
+                    .setSupportsSendingPartial(part.options.supportsSendingPartial)
                     .build()
                 embeddedMessageFieldSize(Rpc.RPC.SUBSCRIPTIONS_FIELD_NUMBER, subscription.serializedSize)
             }
+
+            is PartialMessagePart ->
+                embeddedMessageFieldSize(Rpc.RPC.PARTIAL_FIELD_NUMBER, part.partialMessage.serializedSize)
 
             else -> {
                 val singleControlPart = Rpc.RPC.newBuilder()

@@ -32,6 +32,22 @@ class Gossip @JvmOverloads constructor(
         return router.score.getCachedScore(peerId)
     }
 
+    /** Configure a topic before subscribing to receive its data as partial messages. */
+    fun enablePartialMessagesForTopic(
+        topic: String,
+        options: PartialTopicOptions = PartialTopicOptions()
+    ): CompletableFuture<Unit> = router.enablePartialMessagesForTopic(topic, options)
+
+    fun <PeerState> publishPartial(
+        topic: String,
+        groupId: ByteArray,
+        actions: PublishActionsFn<PeerState>
+    ): CompletableFuture<Unit> = router.publishPartial(topic, groupId, actions)
+
+    fun reportPartialMessagesFeedback(topic: String, peerId: PeerId, kind: PartialMessagesFeedbackKind) {
+        router.reportFeedback(topic, peerId, kind)
+    }
+
     override val protocolDescriptor =
         when (router.protocol) {
             PubsubProtocol.Gossip_V_1_3 -> {
