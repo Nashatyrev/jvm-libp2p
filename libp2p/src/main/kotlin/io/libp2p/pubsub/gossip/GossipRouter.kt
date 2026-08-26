@@ -915,7 +915,10 @@ open class GossipRouter(
 
     private fun emitGossip(topic: Topic, excludePeers: Collection<PeerHandler>) {
         val ids = mCache.getMessageIds(topic)
-        if (ids.isEmpty()) return
+        val localPartialGroups = partialGroups
+            .filterKeys { it.topic == topic }
+            .filterValues { !it.peerInitiated }
+        if (ids.isEmpty() && localPartialGroups.isEmpty()) return
 
         val shuffledMessageIds = ids.shuffled(random).take(params.maxIHaveLength)
         val peers = (getTopicPeers(topic) - excludePeers)
@@ -924,12 +927,11 @@ open class GossipRouter(
         val selectedPeers = peers.shuffled(random)
             .take(max((params.gossipFactor * peers.size).toInt(), params.DLazy))
         val (partialPeers, fullPeers) = selectedPeers.partition { peerRequestsPartial(it.peerId, topic) }
-        fullPeers.forEach { enqueueIhave(it, shuffledMessageIds, topic) }
+        if (shuffledMessageIds.isNotEmpty()) {
+            fullPeers.forEach { enqueueIhave(it, shuffledMessageIds, topic) }
+        }
         if (partialPeers.isNotEmpty()) {
-            partialGroups
-                .filterKeys { it.topic == topic }
-                .filterValues { !it.peerInitiated }
-                .forEach { (key, group) ->
+            localPartialGroups.forEach { (key, group) ->
                     partialMessagesHandler?.onEmitGossip(
                         topic,
                         key.groupId.array.copyOf(),
