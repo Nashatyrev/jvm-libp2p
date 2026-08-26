@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets
 import java.util.Optional
 import java.util.Random
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.Consumer
@@ -77,6 +78,8 @@ class SampleGossipNodeProgram(
         }
     private val testTopicNames = testTopics.mapTo(mutableSetOf()) { it.topic }
     private val receivedMessageCount = AtomicInteger()
+    private val receivedMessageIndexes = ConcurrentHashMap.newKeySet<Int>()
+    private val duplicateMessagesByIndex = ConcurrentHashMap<Int, AtomicInteger>()
     private val successfulPublishCount = AtomicInteger()
     private val routerConnectEvents = AtomicInteger()
     private val routerDisconnectEvents = AtomicInteger()
@@ -119,6 +122,7 @@ class SampleGossipNodeProgram(
                 if (publisherNodeId in 0 until publishersCount && publisherNodeId != simNodeId) {
                     val messageIndex = parseMessageIndex(msg.data) ?: 0
                     receivedMessageCount.incrementAndGet()
+                    receivedMessageIndexes += messageIndex
                     completeIfReady()
                     eventSink.record(
                         QuicScenarioEvent.GossipMessageReceived(
@@ -240,6 +244,22 @@ class SampleGossipNodeProgram(
             disconnectEventTimes = routerDisconnectEventTimes.toList()
         )
 
+    /** Inbound gossipsub deliveries for one configured message wave. */
+    fun messageReceptionStats(waveIndex: Int): GossipWaveReceptionStats {
+        require(waveIndex in 0 until messagesPerPublisher / messagesPerWave) {
+            "waveIndex=$waveIndex is outside configured waves"
+        }
+        val firstMessageIndex = waveIndex * messagesPerWave
+        val messageIndexes = firstMessageIndex until firstMessageIndex + messagesPerWave
+        return GossipWaveReceptionStats(
+            differentMessages = receivedMessageIndexes.count { it in messageIndexes },
+            duplicateMessages = duplicateMessagesByIndex
+                .filterKeys { it in messageIndexes }
+                .values
+                .sumOf { it.get() }
+        )
+    }
+
     private fun routerDiagnosticSummary(): String =
         "connectEvents=${routerConnectEvents.get()} " +
             "disconnectEvents=${routerDisconnectEvents.get()} " +
@@ -270,6 +290,12 @@ class SampleGossipNodeProgram(
                 msg: PubsubMessage,
                 validationResult: Optional<ValidationResult>
             ) {
+                val data = Unpooled.wrappedBuffer(msg.protobufMessage.data.toByteArray())
+                val publisherNodeId = parsePublisherNodeId(data)
+                val messageIndex = parseMessageIndex(data)
+                if (publisherNodeId in 0 until publishersCount && publisherNodeId != simNodeId && messageIndex != null) {
+                    duplicateMessagesByIndex.computeIfAbsent(messageIndex) { AtomicInteger() }.incrementAndGet()
+                }
 //                log("[$simNodeId] router seen from=${peerId.toBase58().take(12)} msgId=${msg.messageId} result=$validationResult")
             }
 
@@ -389,5 +415,10 @@ class SampleGossipNodeProgram(
         val meshEvents: Int,
         val pruneEvents: Int,
         val disconnectEventTimes: List<Duration>
+    )
+
+    data class GossipWaveReceptionStats(
+        val differentMessages: Int,
+        val duplicateMessages: Int
     )
 }

@@ -1,8 +1,13 @@
 package io.libp2p.quicsim.program
 
+import io.libp2p.core.PeerId
+import io.libp2p.core.multiformats.Multiaddr
+import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.core.pubsub.PubsubPublisherApi
 import io.libp2p.core.pubsub.Topic
+import io.libp2p.pubsub.PubsubMessage
 import io.libp2p.pubsub.gossip.GossipParams
+import io.libp2p.pubsub.gossip.GossipRouterEventListener
 import io.libp2p.pubsub.gossip.GossipScoreParams
 import io.libp2p.quicsim.core.schedule.MonotonicTimer
 import io.libp2p.quicsim.core.schedule.TimePoint
@@ -15,8 +20,10 @@ import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import java.nio.charset.StandardCharsets
 import java.util.Random
+import java.util.Optional
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.Consumer
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -42,9 +49,12 @@ class ErasureCodedGossipNodeProgram(
     private val recoveryThreshold: Int = 64,
     private val symbolSizeBytes: Int = 8 * 1024,
     private val waveCount: Int = 1,
-    private val topic: Topic = Topic("/quicsim/erasure-coded-symbols"),
+    private val topicName: String = "/quicsim/erasure-coded-symbols",
+    private val topicCount: Int = 1,
     private val initialPublishDelay: Duration = 10.seconds,
     private val publishInterval: Duration = Duration.ZERO,
+    /** Whether a recovered node disseminates the symbols it reconstructed locally. */
+    private val republishRecoveredSymbols: Boolean = true,
     private val eventSink: QuicScenarioEventSink = QuicScenarioEventSink.Noop,
 ) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed) {
     init {
@@ -56,6 +66,9 @@ class ErasureCodedGossipNodeProgram(
             "symbolSizeBytes must fit a symbol header"
         }
         require(waveCount > 0) { "waveCount must be positive" }
+        require(topicCount in 1..symbolCount && symbolCount % topicCount == 0) {
+            "topicCount must divide symbolCount and be in [1, $symbolCount]"
+        }
         require(publishInterval >= Duration.ZERO) { "publishInterval must not be negative" }
     }
 
@@ -64,10 +77,14 @@ class ErasureCodedGossipNodeProgram(
         val receivedSymbols: MutableSet<Int> = mutableSetOf(),
         val recovered: AtomicBoolean = AtomicBoolean(false),
         val recoveryPublicationFinished: AtomicBoolean = AtomicBoolean(false),
+        val duplicateMessages: AtomicInteger = AtomicInteger(),
         @Volatile var recoveryAt: Duration? = null
     )
 
     private val waveStates = List(waveCount) { WaveState() }
+    private val topics = List(topicCount) { topicIndex ->
+        if (topicCount == 1) Topic(topicName) else Topic("$topicName/$topicIndex")
+    }
     private val publisherFinishedWaves = List(waveCount) { AtomicBoolean(false) }
     private lateinit var epoch: TimePoint
     private lateinit var timer: MonotonicTimer
@@ -75,6 +92,10 @@ class ErasureCodedGossipNodeProgram(
 
     fun receivedSymbolCount(waveIndex: Int): Int = waveStates[waveIndex].receivedSymbolCount()
     fun recoveryTime(waveIndex: Int): Duration? = waveStates[waveIndex].recoveryAt
+    fun receptionStats(waveIndex: Int): WaveReceptionStats {
+        val state = waveStates[waveIndex]
+        return WaveReceptionStats(state.receivedSymbolCount(), state.duplicateMessages.get())
+    }
 
     override fun start(simContext: SimContext, networkContext: NetworkContext): CompletableFuture<Unit> {
         timer = simContext.timer
@@ -85,7 +106,8 @@ class ErasureCodedGossipNodeProgram(
     override fun onAllConnected(simContext: SimContext, networkContext: NetworkContext) {
         messageApi.subscribe(Consumer { msg ->
             parseSymbol(msg.data)?.let { (waveIndex, symbolIndex) -> onSymbolReceived(waveIndex, symbolIndex) }
-        }, topic)
+        }, *topics.toTypedArray())
+        installReceptionStatsCollector()
 
         publisher = messageApi.createPublisher(networkContext.myHost.privKey)
         if (simNodeId == publisherNodeId) {
@@ -103,7 +125,14 @@ class ErasureCodedGossipNodeProgram(
                             )
                         )
                     }
-                    publisher.publishBatch(randomizedSymbols.map { symbolPayload(waveIndex, it) }, topic)
+                    val publishFutures = randomizedSymbols
+                        .groupBy(::topicFor)
+                        .entries
+                        .shuffled(random)
+                        .map { (topic, symbols) ->
+                            publisher.publishBatch(symbols.map { symbolPayload(waveIndex, it) }, topic)
+                        }
+                    CompletableFuture.allOf(*publishFutures.toTypedArray())
                         .whenComplete { _, error ->
                             check(error == null) { "Initial symbol publication failed: ${error.message}" }
                             publisherFinishedWaves[waveIndex].set(true)
@@ -135,6 +164,12 @@ class ErasureCodedGossipNodeProgram(
             )
         )
 
+        if (!republishRecoveredSymbols) {
+            state.recoveryPublicationFinished.set(true)
+            completeIfReady()
+            return
+        }
+
         missingSymbols.forEach { missingSymbol ->
             eventSink.record(
                 QuicScenarioEvent.GossipMessagePublished(
@@ -144,13 +179,20 @@ class ErasureCodedGossipNodeProgram(
                 )
             )
         }
-        publisher.publishBatch(missingSymbols.map { symbolPayload(waveIndex, it) }, topic)
+        val publishFutures = missingSymbols
+            .groupBy(::topicFor)
+            .entries
+            .shuffled(random)
+            .map { (topic, symbols) ->
+                publisher.publishBatch(symbols.map { symbolPayload(waveIndex, it) }, topic)
+            }
+        CompletableFuture.allOf(*publishFutures.toTypedArray())
             .whenComplete { _, error ->
                 if (error != null) {
                     // A symbol may arrive between recovery and the router processing this batch.
                     // Retry independently so that one already-seen symbol cannot suppress the rest.
                     CompletableFuture.allOf(*missingSymbols.map { missingSymbol ->
-                        publisher.publish(symbolPayload(waveIndex, missingSymbol), topic)
+                        publisher.publish(symbolPayload(waveIndex, missingSymbol), topicFor(missingSymbol))
                     }.toTypedArray()).whenComplete { _, _ ->
                         state.recoveryPublicationFinished.set(true)
                         completeIfReady()
@@ -160,6 +202,30 @@ class ErasureCodedGossipNodeProgram(
                     completeIfReady()
                 }
             }
+    }
+
+    private fun installReceptionStatsCollector() {
+        gossipRouter.eventBroadcaster.listeners += object : GossipRouterEventListener {
+            override fun notifyUnseenMessage(peerId: PeerId, msg: PubsubMessage) {}
+
+            override fun notifySeenMessage(
+                peerId: PeerId,
+                msg: PubsubMessage,
+                validationResult: Optional<ValidationResult>
+            ) {
+                parseSymbol(Unpooled.wrappedBuffer(msg.protobufMessage.data.toByteArray()))?.let { (waveIndex, _) ->
+                    waveStates[waveIndex].duplicateMessages.incrementAndGet()
+                }
+            }
+
+            override fun notifyDisconnected(peerId: PeerId) {}
+            override fun notifyConnected(peerId: PeerId, peerAddress: Multiaddr) {}
+            override fun notifyUnseenInvalidMessage(peerId: PeerId, msg: PubsubMessage) {}
+            override fun notifyUnseenValidMessage(peerId: PeerId, msg: PubsubMessage) {}
+            override fun notifyMeshed(peerId: PeerId, topic: String) {}
+            override fun notifyPruned(peerId: PeerId, topic: String) {}
+            override fun notifyRouterMisbehavior(peerId: PeerId, count: Int) {}
+        }
     }
 
     private fun completeIfReady() {
@@ -180,6 +246,8 @@ class ErasureCodedGossipNodeProgram(
             if (offset < prefix.size) prefix[offset] else ((symbolIndex * 31 + offset) and 0xff).toByte()
         }
     }
+
+    private fun topicFor(symbolIndex: Int): Topic = topics[symbolIndex % topicCount]
 
     private fun parseSymbol(data: ByteBuf): Pair<Int, Int>? {
         val start = data.readerIndex()
@@ -218,6 +286,11 @@ class ErasureCodedGossipNodeProgram(
         private const val NEW_LINE_BYTE: Byte = '\n'.code.toByte()
         private const val SYMBOL_INDEX_SEPARATOR_BYTE: Byte = ':'.code.toByte()
     }
+
+    data class WaveReceptionStats(
+        val differentMessages: Int,
+        val duplicateMessages: Int
+    )
 
     private fun WaveState.receivedSymbolCount(): Int = synchronized(receivedSymbols) { receivedSymbols.size }
 }
