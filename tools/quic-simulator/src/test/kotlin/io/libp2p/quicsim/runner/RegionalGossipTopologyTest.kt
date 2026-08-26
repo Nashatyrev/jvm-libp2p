@@ -3,6 +3,7 @@ package io.libp2p.quicsim.runner
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.pubsub.gossip.GossipRpcFrameStats
 import io.libp2p.pubsub.gossip.NEVER_FLOOD_PUBLISH
+import io.libp2p.quicsim.program.ErasureCodedGossipNodeProgram
 import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
 import io.libp2p.quicsim.program.SampleGossipNodeProgram
@@ -29,6 +30,82 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 
 class RegionalGossipTopologyTest {
+    @Test
+    @Timeout(180)
+    fun `erasure coded symbols recover after 64 of 128 symbols on one topic`() {
+        val events = runErasureCodedGossip(
+            topologySeed = topologySeed,
+            overlaySeed = overlaySeed,
+            gossipSeedBase = gossipSeedBase
+        ).events
+        val publishedSymbols = events.filterIsInstance<QuicScenarioEvent.GossipMessagePublished>()
+        val initialPublications = publishedSymbols.filter { it.nodeId == PUBLISHER_NODE_ID }
+        val recoveryPublications = publishedSymbols.filter { it.nodeId != PUBLISHER_NODE_ID }
+        val recoveries = events.filterIsInstance<QuicScenarioEvent.GossipSymbolsRecovered>()
+        val expectedRecipients = (0 until NODE_COUNT).filter { it != PUBLISHER_NODE_ID }.toSet()
+
+        assertEquals(ERASURE_SYMBOL_COUNT, initialPublications.size)
+        assertEquals((0 until ERASURE_SYMBOL_COUNT).toSet(), initialPublications.map { it.messageIndex }.toSet())
+        assertTrue(
+            initialPublications.map { it.messageIndex } != (0 until ERASURE_SYMBOL_COUNT).toList(),
+            "The initial publisher must randomize symbol publication order"
+        )
+        assertEquals(expectedRecipients, recoveries.map { it.nodeId }.toSet())
+        assertTrue(recoveries.all { it.receivedSymbolCount >= ERASURE_RECOVERY_THRESHOLD })
+        assertTrue(recoveries.all { it.republishedSymbolCount <= ERASURE_SYMBOL_COUNT - ERASURE_RECOVERY_THRESHOLD })
+        assertEquals(recoveries.sumOf { it.republishedSymbolCount }, recoveryPublications.size)
+
+        val recoveryDelays = recoveries.map { it.at - INITIAL_PUBLISH_DELAY }
+        println(
+            "Erasure-coded gossip recovery: symbols=$ERASURE_SYMBOL_COUNT threshold=$ERASURE_RECOVERY_THRESHOLD " +
+                "symbolSizeKiB=${ERASURE_SYMBOL_SIZE_BYTES / 1024} " +
+                "p95=${percentile(recoveryDelays, 0.95).inWholeMilliseconds}ms"
+        )
+    }
+
+    @Test
+    @Timeout(1_200)
+    fun `report erasure coded recovery over waves and seeds`() {
+        assumeTrue(
+            java.lang.Boolean.getBoolean("quicsim.erasureGossip.report"),
+            "Set -Dquicsim.erasureGossip.report=true to run this slow report"
+        )
+
+        val seeds = List(ERASURE_REPORT_SEED_COUNT) { ERASURE_REPORT_SEED_START + it }
+        val runs = seeds.flatMap { seed ->
+            val result = runErasureCodedGossip(
+                topologySeed = seed,
+                overlaySeed = seed + 10_000,
+                gossipSeedBase = seed.toLong() + 20_000L,
+                waveCount = ERASURE_REPORT_WAVE_COUNT,
+                publishInterval = ERASURE_REPORT_PUBLISH_INTERVAL,
+                maxRunDuration = INITIAL_PUBLISH_DELAY +
+                    ERASURE_REPORT_PUBLISH_INTERVAL * (ERASURE_REPORT_WAVE_COUNT - 1) +
+                    ERASURE_REPORT_COMPLETION_GRACE
+            )
+            result.recoveriesByWave().map { (waveIndex, recoveries) ->
+                assertEquals(NODE_COUNT - 1, recoveries.size, "seed=$seed wave=$waveIndex")
+                val publishedAt = INITIAL_PUBLISH_DELAY + ERASURE_REPORT_PUBLISH_INTERVAL * waveIndex
+                val p95 = percentile(recoveries.map { it.at - publishedAt }, 0.95)
+                println("ERASURE_GOSSIP_RUN seed=$seed wave=$waveIndex p95Ms=${p95.inWholeMilliseconds}")
+                ErasureRecoveryRun(seed, waveIndex, p95.inWholeMilliseconds.toDouble())
+            }
+        }
+
+        println("ERASURE_GOSSIP_SUMMARY wave runs minMs p50Ms meanMs maxMs stddevMs")
+        runs.groupBy { it.waveIndex }.toSortedMap().forEach { (waveIndex, waveRuns) ->
+            val p95Values = waveRuns.map { it.p95Ms }
+            println(
+                "ERASURE_GOSSIP_SUMMARY wave=$waveIndex runs=${waveRuns.size} " +
+                    "minMs=${p95Values.minOrNull()!!.formatMs()} " +
+                    "p50Ms=${percentile(p95Values, 0.50).formatMs()} " +
+                    "meanMs=${p95Values.average().formatMs()} " +
+                    "maxMs=${p95Values.maxOrNull()!!.formatMs()} " +
+                    "stddevMs=${stddev(p95Values).formatMs()}"
+            )
+        }
+    }
+
     @Test
     @Timeout(120)
     fun `one node disseminates a 512KiB gossip message to every other regional node`() {
@@ -170,6 +247,65 @@ class RegionalGossipTopologyTest {
                     "p95StddevMs=${p95Values.takeIf { it.isNotEmpty() }?.let { stddev(it).formatMs() } ?: "NA"}"
             )
         }
+    }
+
+    private fun runErasureCodedGossip(
+        topologySeed: Int,
+        overlaySeed: Int,
+        gossipSeedBase: Long,
+        waveCount: Int = 1,
+        publishInterval: Duration = Duration.ZERO,
+        maxRunDuration: Duration = MAX_RUN_DURATION
+    ): ErasureCodedGossipResult {
+        val eventSink = RecordingQuicScenarioEventSink()
+        val nodePrograms = mutableListOf<ErasureCodedGossipNodeProgram>()
+        val topology = RegionalNetworkTopologyBuilder(WORLD_DESCRIPTOR_1)
+            .addRandomScenarioHosts(
+                seed = topologySeed,
+                hostId = IPManager.Default::getIP,
+                forcedSupernodeIndexes = setOf(PUBLISHER_NODE_ID)
+            )
+            .build()
+        val connections = randomOutboundConnections(NODE_COUNT, PEERS_PER_NODE, overlaySeed)
+        val previousLogging = System.getProperty(SAMPLE_GOSSIP_LOG_PROPERTY)
+        System.setProperty(SAMPLE_GOSSIP_LOG_PROPERTY, "false")
+
+        try {
+            SimulatedRunner(
+                nodeFactory = object : NodeProgramFactory {
+                    override fun createNode(id: SimNodeId): NodeProgram =
+                        ErasureCodedGossipNodeProgram(
+                            simNodeId = id,
+                            connectToNodeIds = connections.getValue(id),
+                            params = gossipParams(
+                                messageSizeBytes = ERASURE_SYMBOL_SIZE_BYTES,
+                                iDontWantMinMessageSizeThreshold = 0
+                            ),
+                            randomSeed = gossipSeedBase + id,
+                            publisherNodeId = PUBLISHER_NODE_ID,
+                            symbolCount = ERASURE_SYMBOL_COUNT,
+                            recoveryThreshold = ERASURE_RECOVERY_THRESHOLD,
+                            symbolSizeBytes = ERASURE_SYMBOL_SIZE_BYTES,
+                            waveCount = waveCount,
+                            initialPublishDelay = INITIAL_PUBLISH_DELAY,
+                            publishInterval = publishInterval,
+                            eventSink = eventSink
+                        ).also { nodePrograms += it }
+                },
+                udpNetwork = topology.toUdpSimNetwork(),
+                maxSimulatedRunDuration = maxRunDuration,
+                latencyWindowParallelism = LATENCY_WINDOW_PARALLELISM
+            ).run()
+        } finally {
+            if (previousLogging == null) {
+                System.clearProperty(SAMPLE_GOSSIP_LOG_PROPERTY)
+            } else {
+                System.setProperty(SAMPLE_GOSSIP_LOG_PROPERTY, previousLogging)
+            }
+        }
+
+        assertTrue(nodePrograms.all { it.completeFuture.isDone })
+        return ErasureCodedGossipResult((eventSink as QuicScenarioEventSource).events())
     }
 
     private fun runRegionalGossip(
@@ -321,7 +457,10 @@ class RegionalGossipTopologyTest {
         return RegionalGossipResult(messageResults, routerDiagnostics, publications, receipts)
     }
 
-    private fun gossipParams(messageSizeBytes: Int): GossipParams =
+    private fun gossipParams(
+        messageSizeBytes: Int,
+        iDontWantMinMessageSizeThreshold: Int = I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD
+    ): GossipParams =
         GossipParams(
             D = MESH_D,
             DLow = MESH_D_LOW,
@@ -334,7 +473,7 @@ class RegionalGossipTopologyTest {
             gossipSize = 3,
             floodPublishMaxMessageSizeThreshold = NEVER_FLOOD_PUBLISH,
             maxGossipMessageSize = messageSizeBytes * 2,
-            iDontWantMinMessageSizeThreshold = I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD
+            iDontWantMinMessageSizeThreshold = iDontWantMinMessageSizeThreshold
         )
 
     private fun <R> scaledLatencies(
@@ -446,6 +585,14 @@ class RegionalGossipTopologyTest {
         val messageIndex: Int
     )
 
+    private data class ErasureCodedGossipResult(
+        val events: List<QuicScenarioEvent>
+    ) {
+        fun recoveriesByWave(): Map<Int, List<QuicScenarioEvent.GossipSymbolsRecovered>> =
+            events.filterIsInstance<QuicScenarioEvent.GossipSymbolsRecovered>()
+                .groupBy { it.waveIndex }
+    }
+
     private data class RegionalGossipResult(
         val messageResults: List<RegionalGossipMessageResult>,
         val routerDiagnostics: List<SampleGossipNodeProgram.RouterDiagnostics>,
@@ -507,6 +654,12 @@ class RegionalGossipTopologyTest {
         val p95Ms: Double
     )
 
+    private data class ErasureRecoveryRun(
+        val seed: Int,
+        val waveIndex: Int,
+        val p95Ms: Double
+    )
+
     private data class WarmupRun(
         val sizeKiB: Int,
         val seed: Int,
@@ -522,6 +675,15 @@ class RegionalGossipTopologyTest {
         const val PUBLISHER_COUNT = 1
         const val PUBLISHER_NODE_ID = 0
         const val MESSAGE_SIZE_BYTES = 512 * 1024
+        const val ERASURE_SYMBOL_COUNT = 128
+        const val ERASURE_RECOVERY_THRESHOLD = 64
+        const val ERASURE_SYMBOL_SIZE_BYTES = 8 * 1024
+        val ERASURE_REPORT_WAVE_COUNT = Integer.getInteger("quicsim.erasureGossip.waveCount", 20)
+        val ERASURE_REPORT_SEED_COUNT = Integer.getInteger("quicsim.erasureGossip.seedCount", 10)
+        val ERASURE_REPORT_SEED_START = Integer.getInteger("quicsim.erasureGossip.seedStart", 70_000)
+        val ERASURE_REPORT_PUBLISH_INTERVAL =
+            Integer.getInteger("quicsim.erasureGossip.waveIntervalSeconds", 30).seconds
+        val ERASURE_REPORT_COMPLETION_GRACE = 2.minutes
         const val LATENCY_WINDOW_PARALLELISM = 8
         const val SAMPLE_GOSSIP_LOG_PROPERTY = "quicsim.sampleGossip.log"
         val MESH_D = Integer.getInteger("quicsim.regionalGossip.meshD", 3)

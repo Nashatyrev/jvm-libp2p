@@ -86,6 +86,15 @@ object QuicScenarioEventFileCodec {
                 event.messageIndex
             ).joinToString("\t")
 
+            is QuicScenarioEvent.GossipSymbolsRecovered -> listOf(
+                "gossip_symbols_recovered",
+                event.nodeId,
+                event.at.inWholeNanoseconds,
+                event.waveIndex,
+                event.receivedSymbolCount,
+                event.republishedSymbolCount
+            ).joinToString("\t")
+
             is QuicScenarioEvent.AttestationAggregatePublished -> listOf(
                 "attestation_aggregate_published",
                 event.nodeId,
@@ -148,6 +157,23 @@ object QuicScenarioEventFileCodec {
                 at = parts[2].toLong().nanoseconds,
                 messageIndex = parts.getOrNull(3)?.toInt() ?: 0
             )
+
+            "gossip_symbols_recovered" -> if (parts.size == 5) {
+                QuicScenarioEvent.GossipSymbolsRecovered(
+                    nodeId = parts[1].toInt(),
+                    at = parts[2].toLong().nanoseconds,
+                    receivedSymbolCount = parts[3].toInt(),
+                    republishedSymbolCount = parts[4].toInt()
+                )
+            } else {
+                QuicScenarioEvent.GossipSymbolsRecovered(
+                    nodeId = parts[1].toInt(),
+                    at = parts[2].toLong().nanoseconds,
+                    waveIndex = parts[3].toInt(),
+                    receivedSymbolCount = parts[4].toInt(),
+                    republishedSymbolCount = parts[5].toInt()
+                )
+            }
 
             "attestation_aggregate_published" -> QuicScenarioEvent.AttestationAggregatePublished(
                 nodeId = parts[1].toInt(),

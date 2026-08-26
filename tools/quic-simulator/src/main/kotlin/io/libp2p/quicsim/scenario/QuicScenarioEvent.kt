@@ -68,6 +68,15 @@ sealed class QuicScenarioEvent {
         val messageIndex: Int = 0
     ) : QuicScenarioEvent()
 
+    /** A node reconstructed the logical payload from a threshold of erasure-coded symbols. */
+    data class GossipSymbolsRecovered(
+        override val nodeId: SimNodeId,
+        override val at: Duration,
+        val waveIndex: Int = 0,
+        val receivedSymbolCount: Int,
+        val republishedSymbolCount: Int
+    ) : QuicScenarioEvent()
+
     data class AttestationAggregatePublished(
         override val nodeId: SimNodeId,
         override val at: Duration,

@@ -19,6 +19,13 @@ class QuicScenarioEventFileCodecTest {
                 publisherNodeId = 1,
                 messageIndex = 3
             ),
+            QuicScenarioEvent.GossipSymbolsRecovered(
+                nodeId = 2,
+                at = 115.milliseconds,
+                waveIndex = 1,
+                receivedSymbolCount = 64,
+                republishedSymbolCount = 64
+            ),
             QuicScenarioEvent.AttestationAggregatePublished(
                 nodeId = 1,
                 at = 120.milliseconds,
