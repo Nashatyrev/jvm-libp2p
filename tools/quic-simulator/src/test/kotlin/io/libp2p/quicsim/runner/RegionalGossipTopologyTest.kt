@@ -120,7 +120,7 @@ class RegionalGossipTopologyTest {
                 val rpcFrameStats = GossipRpcFrameStats.snapshot()
                 println(
                         "REGIONAL_GOSSIP_WARMUP_DIAGNOSTICS " +
-                        "sizeKiB=$sizeKiB peersPerNode=$PEERS_PER_NODE chunks=$WARMUP_CHUNKS_PER_MESSAGE chunkTopics=$WARMUP_CHUNK_TOPIC_COUNT batchPublish=$BATCH_PUBLISH chunkSizeBytes=$chunkSizeBytes " +
+                        "sizeKiB=$sizeKiB peersPerNode=$PEERS_PER_NODE meshD=$MESH_D meshDLow=$MESH_D_LOW chunks=$WARMUP_CHUNKS_PER_MESSAGE chunkTopics=$WARMUP_CHUNK_TOPIC_COUNT batchPublish=$BATCH_PUBLISH chunkSizeBytes=$chunkSizeBytes " +
                         "iDontWantMinSize=$I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD publisherSupernode=$PUBLISHER_IS_SUPERNODE seed=$seed " +
                         "gossipRpcFrames=${rpcFrameStats.rpcFrames} gossipRpcBytes=${rpcFrameStats.totalSerializedBytes} " +
                         "connectEvents=${result.routerDiagnostics.sumOf { it.connectEvents }} " +
@@ -187,6 +187,9 @@ class RegionalGossipTopologyTest {
         completeAfter: Duration? = null,
         requireCompleteDissemination: Boolean = true
     ): RegionalGossipResult {
+        require(!(PUBLISHER_IS_SUPERNODE && PUBLISHER_IS_EXCLUDED_FROM_SUPERNODES)) {
+            "The publisher cannot be both a forced and excluded supernode"
+        }
         val eventSink = RecordingQuicScenarioEventSink()
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val connectToNodeIds = randomOutboundConnections(
@@ -198,7 +201,9 @@ class RegionalGossipTopologyTest {
             .addRandomScenarioHosts(
                 seed = topologySeed,
                 hostId = IPManager.Default::getIP,
-                forcedSupernodeIndexes = if (PUBLISHER_IS_SUPERNODE) setOf(PUBLISHER_NODE_ID) else emptySet()
+                forcedSupernodeIndexes = if (PUBLISHER_IS_SUPERNODE) setOf(PUBLISHER_NODE_ID) else emptySet(),
+                excludedSupernodeIndexes =
+                    if (PUBLISHER_IS_EXCLUDED_FROM_SUPERNODES) setOf(PUBLISHER_NODE_ID) else emptySet()
             )
             .build()
         val previousLogging = System.getProperty(SAMPLE_GOSSIP_LOG_PROPERTY)
@@ -318,8 +323,8 @@ class RegionalGossipTopologyTest {
 
     private fun gossipParams(messageSizeBytes: Int): GossipParams =
         GossipParams(
-            D = 3,
-            DLow = 2,
+            D = MESH_D,
+            DLow = MESH_D_LOW,
             DHigh = 4,
             DOut = 1,
             DLazy = 0,
@@ -519,6 +524,8 @@ class RegionalGossipTopologyTest {
         const val MESSAGE_SIZE_BYTES = 512 * 1024
         const val LATENCY_WINDOW_PARALLELISM = 8
         const val SAMPLE_GOSSIP_LOG_PROPERTY = "quicsim.sampleGossip.log"
+        val MESH_D = Integer.getInteger("quicsim.regionalGossip.meshD", 3)
+        val MESH_D_LOW = Integer.getInteger("quicsim.regionalGossip.meshDLow", 2)
         val REGIONAL_LATENCY_MULTIPLIER = Integer.getInteger("quicsim.regionalGossip.latencyMultiplier", 1)
         val INITIAL_PUBLISH_DELAY = 10.seconds
         val MAX_RUN_DURATION = 2.minutes
@@ -536,6 +543,8 @@ class RegionalGossipTopologyTest {
         )
         val BATCH_PUBLISH = java.lang.Boolean.getBoolean("quicsim.regionalGossip.batchPublish")
         val PUBLISHER_IS_SUPERNODE = java.lang.Boolean.getBoolean("quicsim.regionalGossip.publisherSupernode")
+        val PUBLISHER_IS_EXCLUDED_FROM_SUPERNODES =
+            java.lang.Boolean.getBoolean("quicsim.regionalGossip.excludePublisherSupernode")
         val I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD =
             Integer.getInteger("quicsim.regionalGossip.iDontWantMinMessageSizeThreshold", Int.MAX_VALUE)
         val WARMUP_MESSAGE_SIZES_KIB =
