@@ -55,8 +55,11 @@ class ErasureCodedGossipNodeProgram(
     private val publishInterval: Duration = Duration.ZERO,
     /** Whether a recovered node disseminates the symbols it reconstructed locally. */
     private val republishRecoveredSymbols: Boolean = true,
+    /** Optional absolute simulation time at which the scenario may stop waiting for stragglers. */
+    private val completeAfter: Duration? = null,
+    useZeroGossipScore: Boolean = false,
     private val eventSink: QuicScenarioEventSink = QuicScenarioEventSink.Noop,
-) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed) {
+) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed, useZeroGossipScore) {
     init {
         require(symbolCount > 0) { "symbolCount must be positive" }
         require(recoveryThreshold in 1..symbolCount) {
@@ -78,6 +81,9 @@ class ErasureCodedGossipNodeProgram(
         val recovered: AtomicBoolean = AtomicBoolean(false),
         val recoveryPublicationFinished: AtomicBoolean = AtomicBoolean(false),
         val duplicateMessages: AtomicInteger = AtomicInteger(),
+        val duplicateMessagesBeforeRecovery: AtomicInteger = AtomicInteger(),
+        val uniqueReceptionTimeBySymbol: MutableMap<Int, Duration> = mutableMapOf(),
+        val duplicateReceptionTimes: MutableList<Duration> = mutableListOf(),
         @Volatile var recoveryAt: Duration? = null
     )
 
@@ -92,15 +98,34 @@ class ErasureCodedGossipNodeProgram(
 
     fun receivedSymbolCount(waveIndex: Int): Int = waveStates[waveIndex].receivedSymbolCount()
     fun recoveryTime(waveIndex: Int): Duration? = waveStates[waveIndex].recoveryAt
+    fun receptionProgress(waveIndex: Int): ReceptionProgress {
+        val state = waveStates[waveIndex]
+        return ReceptionProgress(
+            uniqueReceptionTimeBySymbol = synchronized(state.uniqueReceptionTimeBySymbol) {
+                state.uniqueReceptionTimeBySymbol.toMap()
+            },
+            duplicateReceptionTimes = synchronized(state.duplicateReceptionTimes) { state.duplicateReceptionTimes.toList() }
+        )
+    }
     fun receptionStats(waveIndex: Int): WaveReceptionStats {
         val state = waveStates[waveIndex]
-        return WaveReceptionStats(state.receivedSymbolCount(), state.duplicateMessages.get())
+        return WaveReceptionStats(
+            differentMessages = state.receivedSymbolCount(),
+            duplicateMessages = state.duplicateMessages.get(),
+            duplicateMessagesBeforeRecovery = state.duplicateMessagesBeforeRecovery.get()
+        )
     }
 
     override fun start(simContext: SimContext, networkContext: NetworkContext): CompletableFuture<Unit> {
         timer = simContext.timer
         epoch = simContext.timer.time()
-        return super.start(simContext, networkContext)
+        return super.start(simContext, networkContext).also {
+            completeAfter?.let { completeAt ->
+                simContext.scheduler.executeAfterDelay((completeAt - (timer.time() - epoch)).coerceAtLeast(Duration.ZERO)) {
+                    completeFuture.complete(Unit)
+                }
+            }
+        }
     }
 
     override fun onAllConnected(simContext: SimContext, networkContext: NetworkContext) {
@@ -112,7 +137,9 @@ class ErasureCodedGossipNodeProgram(
         publisher = messageApi.createPublisher(networkContext.myHost.privKey)
         if (simNodeId == publisherNodeId) {
             repeat(waveCount) { waveIndex ->
-                simContext.scheduler.executeAfterDelay(initialPublishDelay + publishInterval * waveIndex) {
+                val publishAt = initialPublishDelay + publishInterval * waveIndex
+                val publishDelay = (publishAt - (simContext.timer.time() - epoch)).coerceAtLeast(Duration.ZERO)
+                simContext.scheduler.executeAfterDelay(publishDelay) {
                     // The random order is intentional: a publisher must not serialize symbols 0..127
                     // to every mesh peer before beginning the next symbol.
                     val randomizedSymbols = (0 until symbolCount).shuffled(random)
@@ -145,8 +172,13 @@ class ErasureCodedGossipNodeProgram(
 
     private fun onSymbolReceived(waveIndex: Int, symbolIndex: Int) {
         val state = waveStates[waveIndex]
-        val newlyReceived = synchronized(state.receivedSymbols) { state.receivedSymbols.add(symbolIndex) }
-        if (!newlyReceived || state.receivedSymbolCount() < recoveryThreshold || !state.recovered.compareAndSet(false, true)) {
+        val receivedSymbolCount = synchronized(state.receivedSymbols) {
+            state.receivedSymbols.add(symbolIndex).takeIf { it }?.let { state.receivedSymbols.size }
+        } ?: return
+        synchronized(state.uniqueReceptionTimeBySymbol) {
+            state.uniqueReceptionTimeBySymbol[symbolIndex] = timer.time() - epoch
+        }
+        if (receivedSymbolCount < recoveryThreshold || !state.recovered.compareAndSet(false, true)) {
             return
         }
 
@@ -214,7 +246,11 @@ class ErasureCodedGossipNodeProgram(
                 validationResult: Optional<ValidationResult>
             ) {
                 parseSymbol(Unpooled.wrappedBuffer(msg.protobufMessage.data.toByteArray()))?.let { (waveIndex, _) ->
-                    waveStates[waveIndex].duplicateMessages.incrementAndGet()
+                    waveStates[waveIndex].apply {
+                        duplicateMessages.incrementAndGet()
+                        if (!recovered.get()) duplicateMessagesBeforeRecovery.incrementAndGet()
+                        synchronized(duplicateReceptionTimes) { duplicateReceptionTimes += timer.time() - epoch }
+                    }
                 }
             }
 
@@ -289,7 +325,13 @@ class ErasureCodedGossipNodeProgram(
 
     data class WaveReceptionStats(
         val differentMessages: Int,
-        val duplicateMessages: Int
+        val duplicateMessages: Int,
+        val duplicateMessagesBeforeRecovery: Int
+    )
+
+    data class ReceptionProgress(
+        val uniqueReceptionTimeBySymbol: Map<Int, Duration>,
+        val duplicateReceptionTimes: List<Duration>
     )
 
     private fun WaveState.receivedSymbolCount(): Int = synchronized(receivedSymbols) { receivedSymbols.size }

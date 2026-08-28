@@ -141,9 +141,23 @@ configure(
             "quicsim.erasureGossip.noRepublish",
             "quicsim.erasureGossip.seedCount",
             "quicsim.erasureGossip.seedStart",
+            "quicsim.erasureGossip.symbolSizeBytes",
             "quicsim.erasureGossip.topicCounts",
             "quicsim.erasureGossip.waveCount",
             "quicsim.erasureGossip.waveIntervalSeconds",
+            "quicsim.largeGossip.report",
+            "quicsim.largeGossip.ecOnly",
+            "quicsim.largeGossip.noRepublish",
+            "quicsim.largeGossip.seedCount",
+            "quicsim.largeGossip.seedStart",
+            "quicsim.largeGossip.waveCount",
+            "quicsim.largeGossip.progressFile",
+            "quicsim.reportProgress",
+            "quicsim.partialErasureGossip.report",
+            "quicsim.partialErasureGossip.seedCount",
+            "quicsim.partialErasureGossip.seedStart",
+            "quicsim.partialErasureGossip.waveCount",
+            "quicsim.partialErasureGossip.waveIntervalSeconds",
             "quicsim.regionalGossip.dispersionReport",
             "quicsim.regionalGossip.batchPublish",
             "quicsim.regionalGossip.excludePublisherSupernode",
@@ -154,6 +168,9 @@ configure(
             "quicsim.regionalGossip.noIDontWantReport",
             "quicsim.regionalGossip.meshD",
             "quicsim.regionalGossip.meshDLow",
+            "quicsim.regionalGossip.meshDHigh",
+            "quicsim.regionalGossip.meshDOut",
+            "quicsim.regionalGossip.nodeCount",
             "quicsim.regionalGossip.overlaySeed",
             "quicsim.regionalGossip.peersPerNode",
             "quicsim.regionalGossip.publisherSupernode",
@@ -191,6 +208,10 @@ configure(
             System.getProperty(propertyName)?.let { propertyValue ->
                 systemProperty(propertyName, propertyValue)
             }
+        }
+
+        if (System.getProperty("quicsim.reportProgress", "false").toBoolean()) {
+            testLogging.showStandardStreams = true
         }
 
         if (project.path == ":tools:quic-simulator") {

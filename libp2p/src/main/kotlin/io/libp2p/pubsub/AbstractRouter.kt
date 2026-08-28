@@ -63,6 +63,13 @@ abstract class AbstractRouter(
     protected open val subscribedTopics = linkedSetOf<Topic>()
     protected open val pendingRpcParts = PendingRpcPartsMap<RpcPartsQueue> { DefaultRpcPartsQueue() }
     protected open val pendingMessagePromises = MultiSet<PeerHandler, CompletableFuture<Unit>>()
+    /**
+     * A peer queue is consumed lazily by the stream write queue.  While that stream is
+     * backpressured, additional flushes must not enqueue more lazy consumers for the
+     * same [pendingRpcParts] queue: they would retain one pending write and its
+     * completion machinery per flush instead of extending the existing drain.
+     */
+    private val drainingPeers = mutableSetOf<PeerHandler>()
 
     protected class PendingRpcPartsMap<out TPartsQueue : RpcPartsQueue>(
         private val queueFactory: () -> TPartsQueue
@@ -117,16 +124,25 @@ abstract class AbstractRouter(
     }
 
     protected fun flushPending(peer: PeerHandler) {
+        if (peer in drainingPeers) return
+
         val peerQueue = pendingRpcParts.getQueue(peer)
         if (peerQueue.isEmpty()) {
             // Keep the previous completion behaviour for publishes removed before their queue was flushed.
             pendingMessagePromises.removeAll(peer)?.forEach { it.complete(Unit) }
             return
         }
+        drainingPeers += peer
         val allSendPromise = enqueueSend(peer,
             generateSequence { peerQueue.popMerged() })
         pendingMessagePromises.removeAll(peer)?.forEach {
             allSendPromise.forward(it)
+        }
+        allSendPromise.whenComplete { _, _ ->
+            runOnEventThread {
+                drainingPeers -= peer
+                flushPending(peer)
+            }
         }
     }
 
@@ -328,6 +344,7 @@ abstract class AbstractRouter(
     }
 
     override fun onPeerDisconnected(peer: PeerHandler) {
+        drainingPeers -= peer
         super.onPeerDisconnected(peer)
         peersTopics.removeAllByFirst(peer)
     }

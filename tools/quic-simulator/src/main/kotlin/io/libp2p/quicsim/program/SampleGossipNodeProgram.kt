@@ -51,9 +51,10 @@ class SampleGossipNodeProgram(
     val initialPublishDelay: Duration = 1.minutes,
     val publishInterval: Duration = Duration.ZERO,
     val completeAfter: Duration? = null,
+    useZeroGossipScore: Boolean = false,
     private val eventSink: QuicScenarioEventSink = QuicScenarioEventSink.Noop,
     debugGossipHandler: ChannelHandler? = null,
-) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed, debugGossipHandler) {
+) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed, useZeroGossipScore, debugGossipHandler) {
     init {
         require(messagesPerPublisher > 0) { "messagesPerPublisher must be positive" }
         require(messagesPerWave > 0) { "messagesPerWave must be positive" }
@@ -79,7 +80,10 @@ class SampleGossipNodeProgram(
     private val testTopicNames = testTopics.mapTo(mutableSetOf()) { it.topic }
     private val receivedMessageCount = AtomicInteger()
     private val receivedMessageIndexes = ConcurrentHashMap.newKeySet<Int>()
+    private val receivedAtByMessageIndex = ConcurrentHashMap<Int, Duration>()
     private val duplicateMessagesByIndex = ConcurrentHashMap<Int, AtomicInteger>()
+    private val duplicateMessagesBeforeWaveCompletionByIndex = ConcurrentHashMap<Int, AtomicInteger>()
+    private val duplicateReceiptTimesByIndex = ConcurrentHashMap<Int, ConcurrentLinkedQueue<Duration>>()
     private val successfulPublishCount = AtomicInteger()
     private val routerConnectEvents = AtomicInteger()
     private val routerDisconnectEvents = AtomicInteger()
@@ -121,13 +125,15 @@ class SampleGossipNodeProgram(
             parsePublisherNodeId(msg.data)?.let { publisherNodeId ->
                 if (publisherNodeId in 0 until publishersCount && publisherNodeId != simNodeId) {
                     val messageIndex = parseMessageIndex(msg.data) ?: 0
+                    val receivedAt = simContext.timer.time() - epoch
                     receivedMessageCount.incrementAndGet()
                     receivedMessageIndexes += messageIndex
+                    receivedAtByMessageIndex.putIfAbsent(messageIndex, receivedAt)
                     completeIfReady()
                     eventSink.record(
                         QuicScenarioEvent.GossipMessageReceived(
                             nodeId = simNodeId,
-                            at = simContext.timer.time() - epoch,
+                            at = receivedAt,
                             publisherNodeId = publisherNodeId,
                             messageIndex = messageIndex
                         )
@@ -256,7 +262,27 @@ class SampleGossipNodeProgram(
             duplicateMessages = duplicateMessagesByIndex
                 .filterKeys { it in messageIndexes }
                 .values
+                .sumOf { it.get() },
+            duplicateMessagesBeforeWaveCompletion = duplicateMessagesBeforeWaveCompletionByIndex
+                .filterKeys { it in messageIndexes }
+                .values
                 .sumOf { it.get() }
+        )
+    }
+
+    fun messageReceptionProgress(waveIndex: Int): GossipWaveReceptionProgress {
+        require(waveIndex in 0 until messagesPerPublisher / messagesPerWave) {
+            "waveIndex=$waveIndex is outside configured waves"
+        }
+        val firstMessageIndex = waveIndex * messagesPerWave
+        val messageIndexes = firstMessageIndex until firstMessageIndex + messagesPerWave
+        return GossipWaveReceptionProgress(
+            uniqueReceptionTimeByMessageIndex = messageIndexes.mapNotNull { messageIndex ->
+                receivedAtByMessageIndex[messageIndex]?.let { messageIndex to it }
+            }.toMap(),
+            duplicateReceptionTimes = messageIndexes.flatMap { index ->
+                duplicateReceiptTimesByIndex[index]?.toList().orEmpty()
+            }.sorted()
         )
     }
 
@@ -295,6 +321,14 @@ class SampleGossipNodeProgram(
                 val messageIndex = parseMessageIndex(data)
                 if (publisherNodeId in 0 until publishersCount && publisherNodeId != simNodeId && messageIndex != null) {
                     duplicateMessagesByIndex.computeIfAbsent(messageIndex) { AtomicInteger() }.incrementAndGet()
+                    if (!isWaveComplete(messageIndex / messagesPerWave)) {
+                        duplicateMessagesBeforeWaveCompletionByIndex
+                            .computeIfAbsent(messageIndex) { AtomicInteger() }
+                            .incrementAndGet()
+                    }
+                    duplicateReceiptTimesByIndex
+                        .computeIfAbsent(messageIndex) { ConcurrentLinkedQueue() }
+                        .add(simContext.timer.time() - epoch)
                 }
 //                log("[$simNodeId] router seen from=${peerId.toBase58().take(12)} msgId=${msg.messageId} result=$validationResult")
             }
@@ -419,6 +453,19 @@ class SampleGossipNodeProgram(
 
     data class GossipWaveReceptionStats(
         val differentMessages: Int,
-        val duplicateMessages: Int
+        val duplicateMessages: Int,
+        val duplicateMessagesBeforeWaveCompletion: Int
     )
+
+    data class GossipWaveReceptionProgress(
+        val uniqueReceptionTimeByMessageIndex: Map<Int, Duration>,
+        val duplicateReceptionTimes: List<Duration>
+    )
+
+    private fun isWaveComplete(waveIndex: Int): Boolean {
+        if (waveIndex !in 0 until messagesPerPublisher / messagesPerWave) return false
+        val firstMessageIndex = waveIndex * messagesPerWave
+        return (firstMessageIndex until firstMessageIndex + messagesPerWave)
+            .all { it in receivedMessageIndexes }
+    }
 }

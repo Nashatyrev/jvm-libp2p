@@ -6,6 +6,7 @@ import io.libp2p.pubsub.gossip.NEVER_FLOOD_PUBLISH
 import io.libp2p.quicsim.program.ErasureCodedGossipNodeProgram
 import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
+import io.libp2p.quicsim.program.PartialErasureCodedGossipNodeProgram
 import io.libp2p.quicsim.program.SampleGossipNodeProgram
 import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor
 import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.WORLD_DESCRIPTOR_1
@@ -13,6 +14,7 @@ import io.libp2p.quicsim.scenario.RegionalNetworkTopologyBuilder
 import io.libp2p.quicsim.scenario.RecordingQuicScenarioEventSink
 import io.libp2p.quicsim.scenario.QuicScenarioEvent
 import io.libp2p.quicsim.scenario.QuicScenarioEventSource
+import io.libp2p.quicsim.scenario.QuicScenarioEventSink
 import io.libp2p.quicsim.scenario.addRandomScenarioHosts
 import io.libp2p.quicsim.sim.SimNodeId
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -28,6 +30,13 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardOpenOption
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 class RegionalGossipTopologyTest {
     @Test
@@ -46,6 +55,7 @@ class RegionalGossipTopologyTest {
 
         assertEquals(ERASURE_SYMBOL_COUNT, initialPublications.size)
         assertEquals((0 until ERASURE_SYMBOL_COUNT).toSet(), initialPublications.map { it.messageIndex }.toSet())
+        assertEquals(setOf(INITIAL_PUBLISH_DELAY), initialPublications.map { it.at }.toSet())
         assertTrue(
             initialPublications.map { it.messageIndex } != (0 until ERASURE_SYMBOL_COUNT).toList(),
             "The initial publisher must randomize symbol publication order"
@@ -119,6 +129,143 @@ class RegionalGossipTopologyTest {
     }
 
     @Test
+    @Timeout(7_200)
+    fun `report large network chunk and erasure dissemination`() {
+        assumeTrue(
+            java.lang.Boolean.getBoolean("quicsim.largeGossip.report"),
+            "Set -Dquicsim.largeGossip.report=true to run this large-scale report"
+        )
+        System.getProperty(LARGE_GOSSIP_PROGRESS_FILE_PROPERTY)?.let {
+            Files.deleteIfExists(Path.of(it))
+        }
+
+        val seeds = List(LARGE_REPORT_SEED_COUNT) { LARGE_REPORT_SEED_START + it }
+        val completeAfter = INITIAL_PUBLISH_DELAY +
+            LARGE_REPORT_PUBLISH_INTERVAL * (LARGE_REPORT_WAVE_COUNT - 1) +
+            if (LARGE_REPORT_EC_ONLY && LARGE_REPORT_NO_REPUBLISH) 1.seconds else LARGE_REPORT_SETTLE_WINDOW
+        println(
+            "LARGE_GOSSIP_PROGRESS phase=configuration nodes=$NODE_COUNT peersPerNode=$PEERS_PER_NODE " +
+                "meshD=$MESH_D meshDLow=$MESH_D_LOW meshDHigh=$MESH_D_HIGH meshDOut=$MESH_D_OUT " +
+                "waves=$LARGE_REPORT_WAVE_COUNT seeds=${seeds.size} logicalSizeKiB=$LARGE_REPORT_SIZE_KIB"
+        )
+
+        if (!LARGE_REPORT_EC_ONLY) {
+            val regularRuns = seeds.map { seed ->
+                println("LARGE_GOSSIP_PROGRESS scenario=regular64 phase=start seed=$seed")
+                val result = runRegionalGossip(
+                    messageSizeBytes = LARGE_REPORT_SIZE_KIB * 1024 / REGULAR_CHUNKS_PER_WAVE,
+                    topologySeed = seed,
+                    overlaySeed = seed + 10_000,
+                    gossipSeedBase = seed.toLong() + 20_000L,
+                    messagesPerPublisher = LARGE_REPORT_WAVE_COUNT * REGULAR_CHUNKS_PER_WAVE,
+                    messagesPerWave = REGULAR_CHUNKS_PER_WAVE,
+                    chunkTopicCount = 2,
+                    batchPublish = true,
+                    publishInterval = LARGE_REPORT_PUBLISH_INTERVAL,
+                    maxRunDuration = completeAfter,
+                    completeAfter = completeAfter,
+                    requireCompleteDissemination = false,
+                    forcePublisherSupernode = true,
+                    iDontWantMinMessageSizeThreshold = 0,
+                    useZeroGossipScore = true,
+                    progressLabel = "regular64-seed$seed"
+                )
+                val lastWave = result.messageResults.last()
+                check(lastWave.receipts >= LARGE_P95_RECIPIENT_COUNT) {
+                    "regular64 seed=$seed only completed ${lastWave.receipts}/$NODE_COUNT recipients by $completeAfter"
+                }
+                val p95 = lastWave.p95!!
+                println(
+                    "LARGE_GOSSIP_PROGRESS scenario=regular64 phase=finished seed=$seed " +
+                        "completedRecipients=${lastWave.receipts} p95Ms=${p95.inWholeMilliseconds}"
+                )
+                p95.inWholeMilliseconds.toDouble()
+            }
+            printLargeGossipSummary("regular64", regularRuns)
+        }
+
+        val ecSymbolSizeBytes = LARGE_REPORT_SIZE_KIB * 1024 / ERASURE_RECOVERY_THRESHOLD
+        val ecRuns = seeds.map { seed ->
+            println("LARGE_GOSSIP_PROGRESS scenario=ec128 phase=start seed=$seed")
+            val seedStartedAtNanos = System.nanoTime()
+            val result = runErasureCodedGossip(
+                topologySeed = seed,
+                overlaySeed = seed + 10_000,
+                gossipSeedBase = seed.toLong() + 20_000L,
+                waveCount = LARGE_REPORT_WAVE_COUNT,
+                publishInterval = LARGE_REPORT_PUBLISH_INTERVAL,
+                topicCount = ERASURE_SYMBOL_COUNT,
+                symbolSizeBytes = ecSymbolSizeBytes,
+                maxRunDuration = completeAfter,
+                completeAfter = completeAfter,
+                republishRecoveredSymbols = !LARGE_REPORT_NO_REPUBLISH,
+                useZeroGossipScore = true,
+                progressLabel = "ec128-seed$seed"
+            )
+            val publishedAt = INITIAL_PUBLISH_DELAY +
+                LARGE_REPORT_PUBLISH_INTERVAL * (LARGE_REPORT_WAVE_COUNT - 1)
+            val recoveries = result.recoveriesByWave()[LARGE_REPORT_WAVE_COUNT - 1].orEmpty()
+            check(recoveries.size >= LARGE_P95_RECIPIENT_COUNT) {
+                "ec128 seed=$seed only recovered ${recoveries.size}/$NODE_COUNT recipients by $completeAfter"
+            }
+            val p95 = percentile(recoveries.map { it.at - publishedAt }, 0.95)
+            emitLargeGossipProgress(
+                "LARGE_GOSSIP_PROGRESS scenario=ec128 phase=finished seed=$seed " +
+                    "recoveredRecipients=${recoveries.size} p95Ms=${p95.inWholeMilliseconds} " +
+                    "realDurationMs=${((System.nanoTime() - seedStartedAtNanos).toDouble() / 1_000_000).formatMs()}"
+            )
+            p95.inWholeMilliseconds.toDouble()
+        }
+        printLargeGossipSummary("ec128", ecRuns)
+    }
+
+    @Test
+    @Timeout(1_200)
+    fun `report partial erasure coded recovery over waves and seeds`() {
+        assumeTrue(
+            java.lang.Boolean.getBoolean("quicsim.partialErasureGossip.report"),
+            "Set -Dquicsim.partialErasureGossip.report=true to run this slow report"
+        )
+
+        val seeds = List(PARTIAL_ERASURE_REPORT_SEED_COUNT) { PARTIAL_ERASURE_REPORT_SEED_START + it }
+        val runs = seeds.flatMap { seed ->
+            val result = runPartialErasureCodedGossip(
+                topologySeed = seed,
+                overlaySeed = seed + 10_000,
+                gossipSeedBase = seed.toLong() + 20_000L,
+                waveCount = PARTIAL_ERASURE_REPORT_WAVE_COUNT,
+                publishInterval = PARTIAL_ERASURE_REPORT_PUBLISH_INTERVAL,
+                maxRunDuration = INITIAL_PUBLISH_DELAY +
+                    PARTIAL_ERASURE_REPORT_PUBLISH_INTERVAL * (PARTIAL_ERASURE_REPORT_WAVE_COUNT - 1) +
+                    PARTIAL_ERASURE_REPORT_COMPLETION_GRACE
+            )
+            result.recoveriesByWave().map { (waveIndex, recoveries) ->
+                assertEquals(NODE_COUNT - 1, recoveries.size, "seed=$seed wave=$waveIndex")
+                val publishedAt = INITIAL_PUBLISH_DELAY + PARTIAL_ERASURE_REPORT_PUBLISH_INTERVAL * waveIndex
+                val p95 = percentile(recoveries.map { it.at - publishedAt }, 0.95)
+                println(
+                    "PARTIAL_ERASURE_GOSSIP_RUN seed=$seed wave=$waveIndex " +
+                        "p95Ms=${p95.inWholeMilliseconds}"
+                )
+                PartialErasureRecoveryRun(seed, waveIndex, p95.inWholeMilliseconds.toDouble())
+            }
+        }
+
+        println("PARTIAL_ERASURE_GOSSIP_SUMMARY wave runs minMs p50Ms meanMs maxMs stddevMs")
+        runs.groupBy { it.waveIndex }.toSortedMap().forEach { (waveIndex, waveRuns) ->
+            val p95Values = waveRuns.map { it.p95Ms }
+            println(
+                "PARTIAL_ERASURE_GOSSIP_SUMMARY wave=$waveIndex runs=${waveRuns.size} " +
+                    "minMs=${p95Values.minOrNull()!!.formatMs()} " +
+                    "p50Ms=${percentile(p95Values, 0.50).formatMs()} " +
+                    "meanMs=${p95Values.average().formatMs()} " +
+                    "maxMs=${p95Values.maxOrNull()!!.formatMs()} " +
+                    "stddevMs=${stddev(p95Values).formatMs()}"
+            )
+        }
+    }
+
+    @Test
     @Timeout(300)
     fun `report final erasure wave reception statistics`() {
         assumeTrue(
@@ -145,7 +292,19 @@ class RegionalGossipTopologyTest {
                 "seed=$ERASURE_REPORT_SEED_START wave=${ERASURE_REPORT_WAVE_COUNT - 1} " +
                 "nodes=${lastWaveStats.size} " +
                 "meanDifferentMessages=${lastWaveStats.map { it.differentMessages }.average().formatMs()} " +
-                "meanDuplicateMessages=${lastWaveStats.map { it.duplicateMessages }.average().formatMs()}"
+                "meanDuplicateMessages=${lastWaveStats.map { it.duplicateMessages }.average().formatMs()} " +
+                "meanDuplicateMessagesBeforeRecovery=" +
+                    lastWaveStats.map { it.duplicateMessagesBeforeRecovery }.average().formatMs()
+        )
+        printDisseminationTrack(
+            "ERASURE_GOSSIP_RECOVERY_TRACK",
+            result.recoveriesByWave().getValue(ERASURE_REPORT_WAVE_COUNT - 1)
+                .map { it.at - (INITIAL_PUBLISH_DELAY + ERASURE_REPORT_PUBLISH_INTERVAL * (ERASURE_REPORT_WAVE_COUNT - 1)) }
+        )
+        printErasureUniqueChunkProgressTrack(
+            "ERASURE_GOSSIP_UNIQUE_PROGRESS",
+            result.nodePrograms.drop(1).map { it.receptionProgress(ERASURE_REPORT_WAVE_COUNT - 1) },
+            INITIAL_PUBLISH_DELAY + ERASURE_REPORT_PUBLISH_INTERVAL * (ERASURE_REPORT_WAVE_COUNT - 1)
         )
     }
 
@@ -181,7 +340,18 @@ class RegionalGossipTopologyTest {
                 "nodes=${lastWaveStats.size} " +
                 "p95Ms=${result.messageResults.last().p95!!.inWholeMilliseconds} " +
                 "meanDifferentMessages=${lastWaveStats.map { it.differentMessages }.average().formatMs()} " +
-                "meanDuplicateMessages=${lastWaveStats.map { it.duplicateMessages }.average().formatMs()}"
+                "meanDuplicateMessages=${lastWaveStats.map { it.duplicateMessages }.average().formatMs()} " +
+                "meanDuplicateMessagesBeforeRecovery=" +
+                    lastWaveStats.map { it.duplicateMessagesBeforeWaveCompletion }.average().formatMs()
+        )
+        printDisseminationTrack(
+            "REGULAR_CHUNK_RECOVERY_TRACK",
+            result.completionTimes(REGULAR_WAVE_COUNT - 1, REGULAR_CHUNKS_PER_WAVE)
+        )
+        printRegularUniqueChunkProgressTrack(
+            "REGULAR_CHUNK_UNIQUE_PROGRESS",
+            result.nodePrograms.drop(1).map { it.messageReceptionProgress(REGULAR_WAVE_COUNT - 1) },
+            INITIAL_PUBLISH_DELAY + REGULAR_PUBLISH_INTERVAL * (REGULAR_WAVE_COUNT - 1)
         )
     }
 
@@ -217,7 +387,9 @@ class RegionalGossipTopologyTest {
                 "receipts=${lastWave.receipts} missing=${lastWave.missing} " +
                 "p95Ms=${lastWave.p95!!.inWholeMilliseconds} " +
                 "meanDifferentMessages=${lastWaveStats.map { it.differentMessages }.average().formatMs()} " +
-                "meanDuplicateMessages=${lastWaveStats.map { it.duplicateMessages }.average().formatMs()}"
+                "meanDuplicateMessages=${lastWaveStats.map { it.duplicateMessages }.average().formatMs()} " +
+                "meanDuplicateMessagesBeforeRecovery=" +
+                    lastWaveStats.map { it.duplicateMessagesBeforeWaveCompletion }.average().formatMs()
         )
     }
 
@@ -372,12 +544,36 @@ class RegionalGossipTopologyTest {
         publishInterval: Duration = Duration.ZERO,
         republishRecoveredSymbols: Boolean = true,
         topicCount: Int = 1,
-        maxRunDuration: Duration = MAX_RUN_DURATION
+        symbolSizeBytes: Int = ERASURE_SYMBOL_SIZE_BYTES,
+        maxRunDuration: Duration = MAX_RUN_DURATION,
+        completeAfter: Duration? = null,
+        useZeroGossipScore: Boolean = false,
+        progressLabel: String? = null
     ): ErasureCodedGossipResult {
-        val eventSink = RecordingQuicScenarioEventSink()
+        val runStartedAtNanos = System.nanoTime()
+        val waveThroughputRecorder = progressLabel
+            ?.takeIf { java.lang.Boolean.getBoolean("quicsim.reportProgress") }
+            ?.let {
+                WaveThroughputRecorder(
+                    nodeCount = NODE_COUNT,
+                    waveCount = waveCount,
+                    initialPublishDelay = INITIAL_PUBLISH_DELAY,
+                    publishInterval = publishInterval
+                )
+            }
+        val eventSink = recordingEventSink(
+            progressLabel = progressLabel,
+            waveCount = waveCount,
+            itemsPerNodePerWave = 1,
+            reportsRecovery = true,
+            publisherItemsPerWave = ERASURE_SYMBOL_COUNT,
+            runStartedAtNanos = runStartedAtNanos,
+            waveThroughputRecorder = waveThroughputRecorder
+        )
         val nodePrograms = mutableListOf<ErasureCodedGossipNodeProgram>()
         val topology = RegionalNetworkTopologyBuilder(WORLD_DESCRIPTOR_1)
             .addRandomScenarioHosts(
+                hostCount = NODE_COUNT,
                 seed = topologySeed,
                 hostId = IPManager.Default::getIP,
                 forcedSupernodeIndexes = setOf(PUBLISHER_NODE_ID)
@@ -395,19 +591,98 @@ class RegionalGossipTopologyTest {
                             simNodeId = id,
                             connectToNodeIds = connections.getValue(id),
                             params = gossipParams(
-                                messageSizeBytes = ERASURE_SYMBOL_SIZE_BYTES,
+                                messageSizeBytes = symbolSizeBytes,
                                 iDontWantMinMessageSizeThreshold = 0
                             ),
                             randomSeed = gossipSeedBase + id,
                             publisherNodeId = PUBLISHER_NODE_ID,
                             symbolCount = ERASURE_SYMBOL_COUNT,
                             recoveryThreshold = ERASURE_RECOVERY_THRESHOLD,
-                            symbolSizeBytes = ERASURE_SYMBOL_SIZE_BYTES,
+                            symbolSizeBytes = symbolSizeBytes,
                             waveCount = waveCount,
                             topicCount = topicCount,
                             initialPublishDelay = INITIAL_PUBLISH_DELAY,
                             publishInterval = publishInterval,
                             republishRecoveredSymbols = republishRecoveredSymbols,
+                            completeAfter = completeAfter,
+                            useZeroGossipScore = useZeroGossipScore,
+                            eventSink = eventSink
+                        ).also { nodePrograms += it }
+                },
+                udpNetwork = topology.toUdpSimNetwork(),
+                maxSimulatedRunDuration = maxRunDuration,
+                latencyWindowParallelism = LATENCY_WINDOW_PARALLELISM,
+                datagramPacketTraceRecorder = waveThroughputRecorder ?: DatagramPacketTraceRecorder.Noop
+            ).run()
+        } finally {
+            if (previousLogging == null) {
+                System.clearProperty(SAMPLE_GOSSIP_LOG_PROPERTY)
+            } else {
+                System.setProperty(SAMPLE_GOSSIP_LOG_PROPERTY, previousLogging)
+            }
+        }
+
+        waveThroughputRecorder
+            ?.summarizeWave(waveCount - 1, completeAfter ?: maxRunDuration)
+            ?.let { throughput ->
+                emitLargeGossipProgress(
+                    "LARGE_GOSSIP_PROGRESS scenario=$progressLabel phase=post-recovery-throughput " +
+                        "wave=${waveCount - 1} avgPreRecoveryInboundMbitPerSecPerNode=${formatRate(throughput.averagePreRecoveryInboundMbitPerSec)} " +
+                        "avgPreRecoveryOutboundMbitPerSecPerNode=${formatRate(throughput.averagePreRecoveryOutboundMbitPerSec)} " +
+                        "avgPostRecoveryInboundMbitPerSecPerNode=${formatRate(throughput.averagePostRecoveryInboundMbitPerSec)} " +
+                        "avgPostRecoveryOutboundMbitPerSecPerNode=${formatRate(throughput.averagePostRecoveryOutboundMbitPerSec)} " +
+                        "avgPreRecoveryInboundMiBPerNode=${formatVolume(throughput.averagePreRecoveryInboundBytes)} " +
+                        "avgPreRecoveryOutboundMiBPerNode=${formatVolume(throughput.averagePreRecoveryOutboundBytes)} " +
+                        "avgPostRecoveryInboundMiBPerNode=${formatVolume(throughput.averagePostRecoveryInboundBytes)} " +
+                        "avgPostRecoveryOutboundMiBPerNode=${formatVolume(throughput.averagePostRecoveryOutboundBytes)}"
+                )
+            }
+
+        assertTrue(nodePrograms.all { it.completeFuture.isDone })
+        return ErasureCodedGossipResult(
+            events = (eventSink as QuicScenarioEventSource).events(),
+            nodePrograms = nodePrograms
+        )
+    }
+
+    private fun runPartialErasureCodedGossip(
+        topologySeed: Int,
+        overlaySeed: Int,
+        gossipSeedBase: Long,
+        waveCount: Int = 1,
+        publishInterval: Duration = Duration.ZERO,
+        maxRunDuration: Duration = MAX_RUN_DURATION
+    ): PartialErasureCodedGossipResult {
+        val eventSink = RecordingQuicScenarioEventSink()
+        val nodePrograms = mutableListOf<PartialErasureCodedGossipNodeProgram>()
+        val topology = RegionalNetworkTopologyBuilder(WORLD_DESCRIPTOR_1)
+            .addRandomScenarioHosts(
+                hostCount = NODE_COUNT,
+                seed = topologySeed,
+                hostId = IPManager.Default::getIP,
+                forcedSupernodeIndexes = setOf(PUBLISHER_NODE_ID)
+            )
+            .build()
+        val connections = randomOutboundConnections(NODE_COUNT, PEERS_PER_NODE, overlaySeed)
+        val previousLogging = System.getProperty(SAMPLE_GOSSIP_LOG_PROPERTY)
+        System.setProperty(SAMPLE_GOSSIP_LOG_PROPERTY, "false")
+
+        try {
+            SimulatedRunner(
+                nodeFactory = object : NodeProgramFactory {
+                    override fun createNode(id: SimNodeId): NodeProgram =
+                        PartialErasureCodedGossipNodeProgram(
+                            simNodeId = id,
+                            connectToNodeIds = connections.getValue(id),
+                            params = gossipParams(messageSizeBytes = ERASURE_SYMBOL_SIZE_BYTES),
+                            randomSeed = gossipSeedBase + id,
+                            publisherNodeId = PUBLISHER_NODE_ID,
+                            symbolCount = ERASURE_SYMBOL_COUNT,
+                            recoveryThreshold = ERASURE_RECOVERY_THRESHOLD,
+                            symbolSizeBytes = ERASURE_SYMBOL_SIZE_BYTES,
+                            waveCount = waveCount,
+                            initialPublishDelay = INITIAL_PUBLISH_DELAY,
+                            publishInterval = publishInterval,
                             eventSink = eventSink
                         ).also { nodePrograms += it }
                 },
@@ -424,7 +699,7 @@ class RegionalGossipTopologyTest {
         }
 
         assertTrue(nodePrograms.all { it.completeFuture.isDone })
-        return ErasureCodedGossipResult(
+        return PartialErasureCodedGossipResult(
             events = (eventSink as QuicScenarioEventSource).events(),
             nodePrograms = nodePrograms
         )
@@ -445,12 +720,14 @@ class RegionalGossipTopologyTest {
         completeAfter: Duration? = null,
         requireCompleteDissemination: Boolean = true,
         forcePublisherSupernode: Boolean = PUBLISHER_IS_SUPERNODE,
-        iDontWantMinMessageSizeThreshold: Int = I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD
+        iDontWantMinMessageSizeThreshold: Int = I_DONT_WANT_MIN_MESSAGE_SIZE_THRESHOLD,
+        useZeroGossipScore: Boolean = false,
+        progressLabel: String? = null
     ): RegionalGossipResult {
         require(!(forcePublisherSupernode && PUBLISHER_IS_EXCLUDED_FROM_SUPERNODES)) {
             "The publisher cannot be both a forced and excluded supernode"
         }
-        val eventSink = RecordingQuicScenarioEventSink()
+        val eventSink = recordingEventSink(progressLabel, messagesPerPublisher / messagesPerWave, messagesPerWave)
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val connectToNodeIds = randomOutboundConnections(
             nodeCount = NODE_COUNT,
@@ -459,6 +736,7 @@ class RegionalGossipTopologyTest {
         )
         val topology = RegionalNetworkTopologyBuilder(scaledLatencies(WORLD_DESCRIPTOR_1, REGIONAL_LATENCY_MULTIPLIER))
             .addRandomScenarioHosts(
+                hostCount = NODE_COUNT,
                 seed = topologySeed,
                 hostId = IPManager.Default::getIP,
                 forcedSupernodeIndexes = if (forcePublisherSupernode) setOf(PUBLISHER_NODE_ID) else emptySet(),
@@ -488,6 +766,7 @@ class RegionalGossipTopologyTest {
                             initialPublishDelay = INITIAL_PUBLISH_DELAY,
                             publishInterval = publishInterval,
                             completeAfter = completeAfter,
+                            useZeroGossipScore = useZeroGossipScore,
                             eventSink = eventSink
                         ).also { nodePrograms += it }
                 },
@@ -588,17 +867,300 @@ class RegionalGossipTopologyTest {
         GossipParams(
             D = MESH_D,
             DLow = MESH_D_LOW,
-            DHigh = 4,
-            DOut = 1,
+            DHigh = MESH_D_HIGH,
+            DOut = MESH_D_OUT,
             DLazy = 0,
             gossipFactor = 0.0,
             heartbeatInterval = 700.milliseconds.toJavaDuration(),
             gossipHistoryLength = 5,
-            gossipSize = 3,
+            // Do not expose message IDs for lazy gossip: IHAVE and therefore IWANT are disabled.
+            gossipSize = 0,
             floodPublishMaxMessageSizeThreshold = NEVER_FLOOD_PUBLISH,
             maxGossipMessageSize = messageSizeBytes * 2,
             iDontWantMinMessageSizeThreshold = iDontWantMinMessageSizeThreshold
         )
+
+    private fun recordingEventSink(
+        progressLabel: String?,
+        waveCount: Int,
+        itemsPerNodePerWave: Int,
+        reportsRecovery: Boolean = false,
+        publisherItemsPerWave: Int = itemsPerNodePerWave,
+        runStartedAtNanos: Long? = null,
+        waveThroughputRecorder: WaveThroughputRecorder? = null
+    ): QuicScenarioEventSink =
+        if (progressLabel != null && java.lang.Boolean.getBoolean("quicsim.reportProgress")) {
+            ProgressRecordingEventSink(
+                label = progressLabel,
+                waveCount = waveCount,
+                itemsPerNodePerWave = itemsPerNodePerWave,
+                expectedRecipients = NODE_COUNT - PUBLISHER_COUNT,
+                reportsRecovery = reportsRecovery,
+                publisherItemsPerWave = publisherItemsPerWave,
+                runStartedAtNanos = runStartedAtNanos,
+                waveThroughputRecorder = waveThroughputRecorder
+            )
+        } else {
+            RecordingQuicScenarioEventSink()
+        }
+
+    private class ProgressRecordingEventSink(
+        private val label: String,
+        private val waveCount: Int,
+        private val itemsPerNodePerWave: Int,
+        private val expectedRecipients: Int,
+        private val reportsRecovery: Boolean,
+        private val publisherItemsPerWave: Int,
+        private val runStartedAtNanos: Long?,
+        private val waveThroughputRecorder: WaveThroughputRecorder?
+    ) : QuicScenarioEventSink, QuicScenarioEventSource {
+        private val delegate = RecordingQuicScenarioEventSink()
+        private val observedByWave = ConcurrentHashMap<Int, AtomicInteger>()
+        private val publisherAtByWave = ConcurrentHashMap<Int, Duration>()
+        private val publisherWallNanosByWave = ConcurrentHashMap<Int, Long>()
+        private val completionWallNanosByWave = ConcurrentHashMap<Int, Long>()
+        private val recoveryTimesByWave = ConcurrentHashMap<Int, ConcurrentLinkedQueue<Duration>>()
+        private val p95ReportedWaves = ConcurrentHashMap.newKeySet<Int>()
+        private val expectedPerWave = expectedRecipients * itemsPerNodePerWave
+        private val progressStep = (expectedPerWave / 4).coerceAtLeast(1)
+
+        override fun record(event: QuicScenarioEvent) {
+            delegate.record(event)
+            if (event is QuicScenarioEvent.GossipMessagePublished && event.nodeId == PUBLISHER_NODE_ID) {
+                val waveIndex = event.messageIndex / publisherItemsPerWave
+                if (waveIndex in 0 until waveCount) {
+                    publisherAtByWave.putIfAbsent(waveIndex, event.at)
+                    val publisherWallNanos = System.nanoTime()
+                    if (publisherWallNanosByWave.putIfAbsent(waveIndex, publisherWallNanos) == null) {
+                        val completedWaveThroughput =
+                            if (waveIndex == 0) null else waveThroughputRecorder?.summarizeWave(waveIndex - 1, event.at)
+                        when (waveIndex) {
+                            0 -> runStartedAtNanos?.let { startedAtNanos ->
+                                emitLargeGossipProgress(
+                                    "LARGE_GOSSIP_PROGRESS scenario=$label phase=seed-ready " +
+                                        "realDurationMs=${"%.1f".format(java.util.Locale.US, (publisherWallNanos - startedAtNanos).toDouble() / 1_000_000)}"
+                                )
+                            }
+                            else -> completionWallNanosByWave[waveIndex - 1]?.let { completedAtNanos ->
+                                emitLargeGossipProgress(
+                                    "LARGE_GOSSIP_PROGRESS scenario=$label phase=inter-wave-advance " +
+                                        "wave=${waveIndex - 1} realDurationMs=" +
+                                        "${"%.1f".format(java.util.Locale.US, (publisherWallNanos - completedAtNanos).toDouble() / 1_000_000)} " +
+                                        "avgPreRecoveryInboundMbitPerSecPerNode=" +
+                                        "${completedWaveThroughput?.averagePreRecoveryInboundMbitPerSec?.let(::formatRate) ?: "NA"} " +
+                                        "avgPreRecoveryOutboundMbitPerSecPerNode=" +
+                                        "${completedWaveThroughput?.averagePreRecoveryOutboundMbitPerSec?.let(::formatRate) ?: "NA"} " +
+                                        "avgPostRecoveryInboundMbitPerSecPerNode=" +
+                                        "${completedWaveThroughput?.averagePostRecoveryInboundMbitPerSec?.let(::formatRate) ?: "NA"} " +
+                                        "avgPostRecoveryOutboundMbitPerSecPerNode=" +
+                                        "${completedWaveThroughput?.averagePostRecoveryOutboundMbitPerSec?.let(::formatRate) ?: "NA"} " +
+                                        "avgPreRecoveryInboundMiBPerNode=" +
+                                        "${completedWaveThroughput?.averagePreRecoveryInboundBytes?.let(::formatVolume) ?: "NA"} " +
+                                        "avgPreRecoveryOutboundMiBPerNode=" +
+                                        "${completedWaveThroughput?.averagePreRecoveryOutboundBytes?.let(::formatVolume) ?: "NA"} " +
+                                        "avgPostRecoveryInboundMiBPerNode=" +
+                                        "${completedWaveThroughput?.averagePostRecoveryInboundBytes?.let(::formatVolume) ?: "NA"} " +
+                                        "avgPostRecoveryOutboundMiBPerNode=" +
+                                        "${completedWaveThroughput?.averagePostRecoveryOutboundBytes?.let(::formatVolume) ?: "NA"}"
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            val waveIndex = when (event) {
+                is QuicScenarioEvent.GossipSymbolsRecovered -> event.waveIndex.takeIf { reportsRecovery }
+                is QuicScenarioEvent.GossipMessageReceived ->
+                    (event.messageIndex / itemsPerNodePerWave).takeIf { !reportsRecovery }
+                else -> null
+            } ?: return
+            if (waveIndex !in 0 until waveCount) return
+
+            val observed = observedByWave.computeIfAbsent(waveIndex) { AtomicInteger() }.incrementAndGet()
+            if (reportsRecovery) {
+                recoveryTimesByWave.computeIfAbsent(waveIndex) { ConcurrentLinkedQueue() }.add(event.at)
+                waveThroughputRecorder?.recordRecovery(waveIndex, event.nodeId, event.at)
+                if (observed == expectedRecipients && p95ReportedWaves.add(waveIndex)) {
+                    val publishedAt = publisherAtByWave[waveIndex]
+                    if (publishedAt != null) {
+                        val recoveryDelays = recoveryTimesByWave.getValue(waveIndex)
+                            .map { it - publishedAt }
+                            .sorted()
+                        val p95 = recoveryDelays[((recoveryDelays.size - 1) * 0.95).toInt()]
+                        val realDurationMs = publisherWallNanosByWave[waveIndex]?.let {
+                            (System.nanoTime() - it).toDouble() / 1_000_000
+                        }
+                        completionWallNanosByWave[waveIndex] = System.nanoTime()
+                        emitLargeGossipProgress(
+                            "LARGE_GOSSIP_PROGRESS scenario=$label phase=wave-p95 wave=$waveIndex " +
+                                "recovered=$observed p95Ms=${p95.inWholeMilliseconds} " +
+                                "realDurationMs=${realDurationMs?.let { "%.1f".format(java.util.Locale.US, it) } ?: "NA"}"
+                        )
+                    }
+                }
+            }
+            if (observed % progressStep == 0 || observed == expectedPerWave) {
+                println(
+                    "LARGE_GOSSIP_PROGRESS scenario=$label phase=wave-progress wave=$waveIndex " +
+                        "observed=$observed expected=$expectedPerWave atMs=${event.at.inWholeMilliseconds}"
+                )
+            }
+        }
+
+        override fun events(): List<QuicScenarioEvent> = delegate.events()
+    }
+
+    /**
+     * Aggregates UDP payload bytes for the current dissemination wave without retaining individual packets.
+     * The reported rate is the mean across all simulated application nodes, over initial publish to final recovery.
+     */
+    private class WaveThroughputRecorder(
+        private val nodeCount: Int,
+        private val waveCount: Int,
+        private val initialPublishDelay: Duration,
+        private val publishInterval: Duration
+    ) : DatagramPacketTraceRecorder {
+        private val countersByWave = ConcurrentHashMap<Int, WaveTrafficCounter>()
+
+        fun recordRecovery(waveIndex: Int, nodeId: Int, recoveredAt: Duration) {
+            counter(waveIndex).recordRecovery(nodeId, recoveredAt)
+        }
+
+        fun summarizeWave(waveIndex: Int, endAt: Duration): IndividualNodeWaveThroughput? {
+            if (waveIndex !in 0 until waveCount) return null
+            return countersByWave[waveIndex]?.summarize(
+                publishedAt = initialPublishDelay + publishInterval * waveIndex,
+                endAt = endAt,
+                publisherNodeId = PUBLISHER_NODE_ID
+            )
+        }
+
+        override fun record(event: DatagramPacketTraceEvent) {
+            waveIndexAt(event.at)?.let { waveIndex -> counter(waveIndex).record(event) }
+        }
+
+        private fun counter(waveIndex: Int): WaveTrafficCounter =
+            countersByWave.computeIfAbsent(waveIndex) { WaveTrafficCounter(nodeCount) }
+
+        private fun waveIndexAt(at: Duration): Int? {
+            val elapsed = at - initialPublishDelay
+            if (elapsed < Duration.ZERO) return null
+            if (publishInterval == Duration.ZERO) return 0
+            val waveIndex = (elapsed.inWholeNanoseconds / publishInterval.inWholeNanoseconds).toInt()
+            return waveIndex.takeIf { it in 0 until waveCount }
+        }
+
+        private class WaveTrafficCounter(nodeCount: Int) {
+            private val perNode = Array(nodeCount) { NodeTrafficCounter() }
+
+            fun record(event: DatagramPacketTraceEvent) {
+                perNode.getOrNull(event.nodeId)?.record(event)
+            }
+
+            fun recordRecovery(nodeId: Int, recoveredAt: Duration) {
+                perNode.getOrNull(nodeId)?.recordRecovery(recoveredAt)
+            }
+
+            fun summarize(
+                publishedAt: Duration,
+                endAt: Duration,
+                publisherNodeId: Int
+            ): IndividualNodeWaveThroughput {
+                val recoveredNodes = perNode.withIndex()
+                    .filter { it.index != publisherNodeId && it.value.recoveredAt != null }
+                require(recoveredNodes.isNotEmpty()) { "No nodes recovered in this wave" }
+                return IndividualNodeWaveThroughput(
+                    averagePreRecoveryInboundMbitPerSec = recoveredNodes.map {
+                        it.value.inboundRate(publishedAt, it.value.recoveredAt!!)
+                    }.average(),
+                    averagePreRecoveryOutboundMbitPerSec = recoveredNodes.map {
+                        it.value.outboundRate(publishedAt, it.value.recoveredAt!!)
+                    }.average(),
+                    averagePostRecoveryInboundMbitPerSec = recoveredNodes.map {
+                        it.value.inboundRate(it.value.recoveredAt!!, endAt)
+                    }.average(),
+                    averagePostRecoveryOutboundMbitPerSec = recoveredNodes.map {
+                        it.value.outboundRate(it.value.recoveredAt!!, endAt)
+                    }.average(),
+                    averagePreRecoveryInboundBytes = recoveredNodes.map {
+                        it.value.inboundBeforeRecoveryBytes().toDouble()
+                    }.average(),
+                    averagePreRecoveryOutboundBytes = recoveredNodes.map {
+                        it.value.outboundBeforeRecoveryBytes().toDouble()
+                    }.average(),
+                    averagePostRecoveryInboundBytes = recoveredNodes.map {
+                        it.value.inboundAfterRecoveryBytes().toDouble()
+                    }.average(),
+                    averagePostRecoveryOutboundBytes = recoveredNodes.map {
+                        it.value.outboundAfterRecoveryBytes().toDouble()
+                    }.average()
+                )
+            }
+        }
+
+        private class NodeTrafficCounter {
+            private val inboundBeforeRecovery = AtomicLong()
+            private val outboundBeforeRecovery = AtomicLong()
+            private val inboundAfterRecovery = AtomicLong()
+            private val outboundAfterRecovery = AtomicLong()
+            @Volatile var recoveredAt: Duration? = null
+                private set
+
+            fun record(event: DatagramPacketTraceEvent) {
+                val beforeRecovery = recoveredAt?.let { event.at <= it } ?: true
+                val counter = when (event.direction) {
+                    DatagramPacketTraceEvent.Direction.INBOUND ->
+                        if (beforeRecovery) inboundBeforeRecovery else inboundAfterRecovery
+                    DatagramPacketTraceEvent.Direction.OUTBOUND ->
+                        if (beforeRecovery) outboundBeforeRecovery else outboundAfterRecovery
+                }
+                counter.addAndGet(event.bytes.toLong())
+            }
+
+            fun recordRecovery(recoveredAt: Duration) {
+                if (this.recoveredAt == null) this.recoveredAt = recoveredAt
+            }
+
+            fun inboundRate(start: Duration, end: Duration): Double =
+                rate(if (start == recoveredAt) inboundAfterRecovery.get() else inboundBeforeRecovery.get(), start, end)
+
+            fun outboundRate(start: Duration, end: Duration): Double =
+                rate(if (start == recoveredAt) outboundAfterRecovery.get() else outboundBeforeRecovery.get(), start, end)
+
+            fun inboundBeforeRecoveryBytes(): Long = inboundBeforeRecovery.get()
+            fun outboundBeforeRecoveryBytes(): Long = outboundBeforeRecovery.get()
+            fun inboundAfterRecoveryBytes(): Long = inboundAfterRecovery.get()
+            fun outboundAfterRecoveryBytes(): Long = outboundAfterRecovery.get()
+
+            private fun rate(bytes: Long, start: Duration, end: Duration): Double {
+                val durationSeconds = (end - start).inWholeNanoseconds / 1_000_000_000.0
+                require(durationSeconds > 0) { "Traffic window has a non-positive simulated duration" }
+                return bytes.toDouble() * Byte.SIZE_BITS / durationSeconds / 1_000_000
+            }
+        }
+    }
+
+    private data class IndividualNodeWaveThroughput(
+        val averagePreRecoveryInboundMbitPerSec: Double,
+        val averagePreRecoveryOutboundMbitPerSec: Double,
+        val averagePostRecoveryInboundMbitPerSec: Double,
+        val averagePostRecoveryOutboundMbitPerSec: Double,
+        val averagePreRecoveryInboundBytes: Double,
+        val averagePreRecoveryOutboundBytes: Double,
+        val averagePostRecoveryInboundBytes: Double,
+        val averagePostRecoveryOutboundBytes: Double
+    )
+
+    private fun printLargeGossipSummary(scenario: String, p95Values: List<Double>) {
+        println(
+            "LARGE_GOSSIP_SUMMARY scenario=$scenario runs=${p95Values.size} " +
+                "minMs=${p95Values.minOrNull()!!.formatMs()} " +
+                "p50Ms=${percentile(p95Values, 0.50).formatMs()} " +
+                "meanMs=${p95Values.average().formatMs()} " +
+                "maxMs=${p95Values.maxOrNull()!!.formatMs()} " +
+                "stddevMs=${stddev(p95Values).formatMs()}"
+        )
+    }
 
     private fun <R> scaledLatencies(
         descriptor: RegionalNetworkDescriptor<R>,
@@ -670,6 +1232,68 @@ class RegionalGossipTopologyTest {
         return labels.zip(buckets.toList()).joinToString(",") { (label, count) -> "$label:$count" }
     }
 
+    /** Prints the simulated time at which the 2nd, 3rd, … recipient finishes a wave. */
+    private fun printDisseminationTrack(label: String, completionTimes: List<Duration>) {
+        completionTimes.sorted().drop(1).forEachIndexed { index, completionAt ->
+            println("$label recovered=${index + 2} atMs=${completionAt.inWholeMilliseconds}")
+        }
+    }
+
+    private fun printErasureUniqueChunkProgressTrack(
+        label: String,
+        progress: List<ErasureCodedGossipNodeProgram.ReceptionProgress>,
+        publishedAt: Duration
+    ) = printUniqueChunkProgressTrack(
+        label,
+        progress.map { it.uniqueReceptionTimeBySymbol },
+        progress.map { it.duplicateReceptionTimes },
+        publishedAt
+    )
+
+    private fun printRegularUniqueChunkProgressTrack(
+        label: String,
+        progress: List<SampleGossipNodeProgram.GossipWaveReceptionProgress>,
+        publishedAt: Duration
+    ) = printUniqueChunkProgressTrack(
+        label,
+        progress.map { it.uniqueReceptionTimeByMessageIndex },
+        progress.map { it.duplicateReceptionTimes },
+        publishedAt
+    )
+
+    /**
+     * For each distinct-chunk threshold, reports the point when that many chunks have reached at
+     * least one recipient anywhere in the network, and all duplicate deliveries observed up to then.
+     */
+    private fun printUniqueChunkProgressTrack(
+        label: String,
+        uniqueReceptionTimesByNode: List<Map<Int, Duration>>,
+        duplicateReceptionTimesByNode: List<List<Duration>>,
+        publishedAt: Duration
+    ) {
+        (1..10).forEach { uniqueChunks ->
+            val firstReceptionAtByChunk = uniqueReceptionTimesByNode
+                .flatMap { it.keys }
+                .toSet()
+                .mapNotNull { chunkIndex ->
+                    uniqueReceptionTimesByNode.mapNotNull { it[chunkIndex] }
+                        .minOrNull()
+                }
+                .sorted()
+            require(firstReceptionAtByChunk.size >= uniqueChunks) {
+                "Only ${firstReceptionAtByChunk.size} chunks reached a recipient; cannot report $uniqueChunks"
+            }
+            val globalDisseminationAt = firstReceptionAtByChunk[uniqueChunks - 1]
+            val duplicateDeliveries = duplicateReceptionTimesByNode.sumOf { duplicateTimes ->
+                duplicateTimes.count { it <= globalDisseminationAt }
+            }
+            println(
+                "$label globallyDisseminatedChunks=$uniqueChunks atMs=${(globalDisseminationAt - publishedAt).inWholeMilliseconds} " +
+                    "totalDuplicateDeliveries=$duplicateDeliveries"
+            )
+        }
+    }
+
     private fun Double.formatMs(): String =
         "%.1f".format(java.util.Locale.US, this)
 
@@ -718,6 +1342,15 @@ class RegionalGossipTopologyTest {
                 .groupBy { it.waveIndex }
     }
 
+    private data class PartialErasureCodedGossipResult(
+        val events: List<QuicScenarioEvent>,
+        val nodePrograms: List<PartialErasureCodedGossipNodeProgram>
+    ) {
+        fun recoveriesByWave(): Map<Int, List<QuicScenarioEvent.GossipSymbolsRecovered>> =
+            events.filterIsInstance<QuicScenarioEvent.GossipSymbolsRecovered>()
+                .groupBy { it.waveIndex }
+    }
+
     private data class RegionalGossipResult(
         val messageResults: List<RegionalGossipMessageResult>,
         val routerDiagnostics: List<SampleGossipNodeProgram.RouterDiagnostics>,
@@ -727,6 +1360,26 @@ class RegionalGossipTopologyTest {
     ) {
         val receipts: Int get() = messageResults.single().receipts
         val p95: Duration get() = messageResults.single().p95!!
+
+        fun completionTimes(waveIndex: Int, chunksPerWave: Int): List<Duration> {
+            val messageIndexes =
+                (waveIndex * chunksPerWave until (waveIndex + 1) * chunksPerWave).toSet()
+            val publishedAt = publications
+                .filter { it.messageIndex in messageIndexes }
+                .minOf { it.publishedAt }
+            return receiptEvents
+                .filter { it.messageIndex in messageIndexes }
+                .groupBy { it.receivingNodeId }
+                .values
+                .mapNotNull { nodeReceipts ->
+                    nodeReceipts
+                        .map { it.messageIndex }
+                        .toSet()
+                        .containsAll(messageIndexes)
+                        .takeIf { it }
+                        ?.let { nodeReceipts.maxOf { it.receivedAt } - publishedAt }
+                }
+        }
 
         fun printSlowRecipients(waveIndex: Int) {
             if (waveIndex !in messageResults.indices) return
@@ -787,6 +1440,12 @@ class RegionalGossipTopologyTest {
         val p95Ms: Double
     )
 
+    private data class PartialErasureRecoveryRun(
+        val seed: Int,
+        val waveIndex: Int,
+        val p95Ms: Double
+    )
+
     private data class WarmupRun(
         val sizeKiB: Int,
         val seed: Int,
@@ -797,14 +1456,14 @@ class RegionalGossipTopologyTest {
     )
 
     private companion object {
-        const val NODE_COUNT = 65
+        val NODE_COUNT = Integer.getInteger("quicsim.regionalGossip.nodeCount", 65)
         val PEERS_PER_NODE = Integer.getInteger("quicsim.regionalGossip.peersPerNode", 10)
         const val PUBLISHER_COUNT = 1
         const val PUBLISHER_NODE_ID = 0
         const val MESSAGE_SIZE_BYTES = 512 * 1024
         const val ERASURE_SYMBOL_COUNT = 128
         const val ERASURE_RECOVERY_THRESHOLD = 64
-        const val ERASURE_SYMBOL_SIZE_BYTES = 8 * 1024
+        val ERASURE_SYMBOL_SIZE_BYTES = Integer.getInteger("quicsim.erasureGossip.symbolSizeBytes", 8 * 1024)
         const val REGULAR_CHUNK_SIZE_BYTES = 8 * 1024
         const val REGULAR_CHUNKS_PER_WAVE = 64
         const val REGULAR_WAVE_COUNT = 20
@@ -815,10 +1474,49 @@ class RegionalGossipTopologyTest {
         val ERASURE_REPORT_PUBLISH_INTERVAL =
             Integer.getInteger("quicsim.erasureGossip.waveIntervalSeconds", 30).seconds
         val ERASURE_REPORT_COMPLETION_GRACE = 2.minutes
+        val PARTIAL_ERASURE_REPORT_WAVE_COUNT = Integer.getInteger("quicsim.partialErasureGossip.waveCount", 20)
+        val PARTIAL_ERASURE_REPORT_SEED_COUNT = Integer.getInteger("quicsim.partialErasureGossip.seedCount", 10)
+        val PARTIAL_ERASURE_REPORT_SEED_START = Integer.getInteger("quicsim.partialErasureGossip.seedStart", 70_000)
+        val PARTIAL_ERASURE_REPORT_PUBLISH_INTERVAL =
+            Integer.getInteger("quicsim.partialErasureGossip.waveIntervalSeconds", 30).seconds
+        val PARTIAL_ERASURE_REPORT_COMPLETION_GRACE = 2.minutes
         const val LATENCY_WINDOW_PARALLELISM = 8
         const val SAMPLE_GOSSIP_LOG_PROPERTY = "quicsim.sampleGossip.log"
+        const val LARGE_GOSSIP_PROGRESS_FILE_PROPERTY = "quicsim.largeGossip.progressFile"
+        private val largeGossipProgressFileLock = Any()
+
+        fun emitLargeGossipProgress(line: String) {
+            println(line)
+            System.getProperty(LARGE_GOSSIP_PROGRESS_FILE_PROPERTY)?.let { path ->
+                synchronized(largeGossipProgressFileLock) {
+                    Files.writeString(
+                        Path.of(path),
+                        "$line\n",
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.APPEND
+                    )
+                }
+            }
+        }
+
+        fun formatRate(value: Double): String = "%.3f".format(java.util.Locale.US, value)
+
+        fun formatVolume(value: Double): String =
+            "%.3f".format(java.util.Locale.US, value / (1024 * 1024))
+
         val MESH_D = Integer.getInteger("quicsim.regionalGossip.meshD", 3)
         val MESH_D_LOW = Integer.getInteger("quicsim.regionalGossip.meshDLow", 2)
+        val MESH_D_HIGH = Integer.getInteger("quicsim.regionalGossip.meshDHigh", 4)
+        val MESH_D_OUT = Integer.getInteger("quicsim.regionalGossip.meshDOut", 1)
+        val LARGE_REPORT_WAVE_COUNT = Integer.getInteger("quicsim.largeGossip.waveCount", 10)
+        val LARGE_REPORT_SEED_COUNT = Integer.getInteger("quicsim.largeGossip.seedCount", 10)
+        val LARGE_REPORT_SEED_START = Integer.getInteger("quicsim.largeGossip.seedStart", 70_000)
+        val LARGE_REPORT_EC_ONLY = java.lang.Boolean.getBoolean("quicsim.largeGossip.ecOnly")
+        val LARGE_REPORT_NO_REPUBLISH = java.lang.Boolean.getBoolean("quicsim.largeGossip.noRepublish")
+        const val LARGE_REPORT_SIZE_KIB = 256
+        val LARGE_REPORT_PUBLISH_INTERVAL = 30.seconds
+        val LARGE_REPORT_SETTLE_WINDOW = 5.seconds
+        val LARGE_P95_RECIPIENT_COUNT = ((NODE_COUNT - PUBLISHER_COUNT) * 0.95).toInt()
         val REGIONAL_LATENCY_MULTIPLIER = Integer.getInteger("quicsim.regionalGossip.latencyMultiplier", 1)
         val INITIAL_PUBLISH_DELAY = 10.seconds
         val MAX_RUN_DURATION = 2.minutes
