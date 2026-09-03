@@ -276,7 +276,7 @@ class DcNetworkBuilderTest {
                 spreadOverRegions()
                 bandwidth = Bandwidths.VPS
             }
-        }.hasMessageContaining("at most one of region")
+        }.hasMessageContaining("at most one placement option")
 
         assertThatThrownBy {
             DcNetworkBuilder.world().addGroup(count = 4) {
@@ -284,7 +284,7 @@ class DcNetworkBuilderTest {
                 validators = 1
                 validatorsTotal = 10
             }
-        }.hasMessageContaining("validators or validatorsTotal")
+        }.hasMessageContaining("at most one validator allocation option")
 
         assertThatThrownBy {
             DcNetworkBuilder.world().addGroup(count = 4) {
@@ -292,7 +292,114 @@ class DcNetworkBuilderTest {
                 subnets = setOf(1)
                 subnetsByIndex { setOf(it) }
             }
-        }.hasMessageContaining("subnets or subnetsByIndex")
+        }.hasMessageContaining("at most one subnet assignment option")
+    }
+
+    @Test
+    fun `groups inherit defaults and may override them`() {
+        val network = DcNetworkBuilder.world()
+            .defaults {
+                bandwidth = Bandwidths.RESIDENTIAL
+                peers = 12
+                region = ASIA
+                subnets = setOf(3)
+            }
+            // groups are big enough that peer counts are not clamped by the network size
+            .addGroup(count = 30) { validators = 1 }
+            .addGroup(count = 30) {
+                // overrides every inherited option
+                region = EUROPE
+                bandwidth = Bandwidths.DATACENTER
+                peers = 40
+                subnets = setOf(7, 8)
+                validators = 100
+            }
+            .build()
+
+        val inherited = network.nodes.take(30)
+        assertThat(inherited.map { it.region }.distinct()).containsExactly(ASIA)
+        assertThat(inherited.map { it.peerCount }.distinct()).containsExactly(12)
+        assertThat(inherited.map { it.bandwidthBytesPerSecond }.distinct())
+            .containsExactly(Bandwidths.RESIDENTIAL.bytesPerSecond)
+        assertThat(inherited.map { it.attestationSubnetIds }.distinct()).containsExactly(setOf(3))
+
+        val overridden = network.nodes.drop(30)
+        assertThat(overridden.map { it.region }.distinct()).containsExactly(EUROPE)
+        assertThat(overridden.map { it.peerCount }.distinct()).containsExactly(40)
+        assertThat(overridden.map { it.validatorCount }.distinct()).containsExactly(100)
+        assertThat(overridden.map { it.attestationSubnetIds }.distinct()).containsExactly(setOf(7, 8))
+    }
+
+    @Test
+    fun `defaults calls layer on top of each other`() {
+        val network = DcNetworkBuilder.world()
+            .defaults { bandwidth = Bandwidths.VPS; peers = 7 }
+            .defaults { validators = 3 }
+            .addGroup(count = 20)
+            .build()
+
+        assertThat(network.nodes.map { it.peerCount }.distinct()).containsExactly(7)
+        assertThat(network.nodes.map { it.validatorCount }.distinct()).containsExactly(3)
+        assertThat(network.nodes.map { it.bandwidthBytesPerSecond }.distinct())
+            .containsExactly(Bandwidths.VPS.bytesPerSecond)
+    }
+
+    @Test
+    fun `withDefaults scopes to its block and nests`() {
+        val network = DcNetworkBuilder.world()
+            .defaults { bandwidth = Bandwidths.RESIDENTIAL; peers = 1 }
+            .withDefaults({ peers = 2; region = EUROPE }) {
+                addGroup(count = 1) { validators = 1 }
+                withDefaults({ peers = 3 }) {
+                    addGroup(count = 1) { validators = 2 }
+                }
+                addGroup(count = 1) { validators = 3 }
+            }
+            .addGroup(count = 1) { validators = 4 }
+            .build()
+
+        // inner scopes override, and the outer defaults come back afterwards
+        assertThat(network.nodes.map { it.peerCount }).containsExactly(2, 3, 2, 1)
+        assertThat(network.nodes.map { it.validatorCount }).containsExactly(1, 2, 3, 4)
+        assertThat(network.nodes.map { it.region }).containsExactly(EUROPE, EUROPE, EUROPE, US_EAST)
+    }
+
+    @Test
+    fun `draws a random subnet subset per node`() {
+        val network = DcNetworkBuilder.world(randomSeed = 42)
+            .defaults { bandwidth = Bandwidths.RESIDENTIAL }
+            .addGroup(count = 50) { randomSubnets(count = 2, of = 64) }
+            .build()
+
+        assertThat(network.nodes.map { it.attestationSubnetIds.size }.distinct()).containsExactly(2)
+        assertThat(network.attestationSubnetIds()).allMatch { it in 0 until 64 }
+        // a 2-of-64 draw over 50 nodes should not collapse onto one subnet
+        assertThat(network.attestationSubnetIds().size).isGreaterThan(10)
+    }
+
+    @Test
+    fun `random subnet draw is reproducible for a given seed`() {
+        fun buildWith(seed: Long) = DcNetworkBuilder.world(randomSeed = seed)
+            .addGroup(count = 20) {
+                bandwidth = Bandwidths.VPS
+                randomSubnets(count = 3, of = 32)
+            }
+            .build()
+            .nodes
+            .map { it.attestationSubnetIds }
+
+        assertThat(buildWith(7)).isEqualTo(buildWith(7))
+        assertThat(buildWith(7)).isNotEqualTo(buildWith(8))
+    }
+
+    @Test
+    fun `rejects an impossible random subnet draw`() {
+        assertThatThrownBy {
+            DcNetworkBuilder.world().addGroup(count = 1) {
+                bandwidth = Bandwidths.VPS
+                randomSubnets(count = 5, of = 4)
+            }
+        }.hasMessageContaining("randomSubnets count must be in")
     }
 
     @Test

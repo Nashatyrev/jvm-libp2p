@@ -14,10 +14,17 @@ import kotlin.time.Duration
  * attestation subnets it subscribes to.
  *
  * Nodes are added a group at a time, each group configured as a block (see [DcNodeGroup]) so that
- * attributes are named and adding a new one never grows an argument list:
+ * attributes are named and adding a new one never grows an argument list. Whatever the groups have
+ * in common goes in a surrounding [defaults] or [withDefaults] block:
  *
  * ```
  * val network = DcNetworkBuilder.world()
+ *     .defaults {
+ *         bandwidth = Bandwidths.RESIDENTIAL
+ *         peers = 20
+ *         spreadOverRegions()
+ *         randomSubnets(count = 2, of = 64)
+ *     }
  *     // 4 big staking operators in Europe, subscribed to every subnet
  *     .addGroup(count = 4) {
  *         region = ContinentRegion.EUROPE
@@ -26,13 +33,8 @@ import kotlin.time.Duration
  *         peers = 100
  *         subnets = (0 until 64).toSet()
  *     }
- *     // 60 home stakers spread over all continents, 2 subnets apiece
- *     .addGroup(count = 60) {
- *         spreadOverRegions()
- *         bandwidth = Bandwidths.RESIDENTIAL
- *         validators = 1
- *         subnetsByIndex { index -> setOf(index % 64, (index + 32) % 64) }
- *     }
+ *     // 60 home stakers on the defaults above
+ *     .addGroup(count = 60) { validators = 1 }
  *     // 20 VPS nodes sharing 400 validators between them
  *     .addGroup(count = 20) {
  *         regionWeights = mapOf(ContinentRegion.EUROPE to 0.6, ContinentRegion.ASIA to 0.4)
@@ -42,8 +44,9 @@ import kotlin.time.Duration
  *     .build()
  * ```
  *
- * Placement is deterministic (round-robin, or largest remainder for weighted splits), so a given
- * builder sequence always produces the same network.
+ * Placement is deterministic (round-robin, or largest remainder for weighted splits) and random
+ * subnet draws are seeded per node from [randomSeed], so a given builder sequence always produces
+ * the same network.
  *
  * [build] hands back both the [DcNode] descriptors and the [QuicNetworkTopology] to feed to the
  * simulator; the two are index-aligned, so `network.nodes[i].simNodeId == i`.
@@ -51,9 +54,13 @@ import kotlin.time.Duration
 class DcNetworkBuilder<R>(
     val descriptor: RegionalNetworkDescriptor<R>,
     private val maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME,
+    private val randomSeed: Long = 0,
     private val hostId: (SimNodeId) -> String = { "node-$it" }
 ) {
     private val nodes = mutableListOf<DcNode<R>>()
+
+    /** Innermost defaults; groups start from a copy of this. */
+    private var currentDefaults = DcNodeGroup<R>(descriptor.regions)
 
     /** Nodes added so far. */
     val nodeCount: Int get() = nodes.size
@@ -61,10 +68,35 @@ class DcNetworkBuilder<R>(
     /** Validators across all nodes added so far. */
     val validatorCount: Int get() = nodes.sumOf { it.validatorCount }
 
-    /** Adds [count] nodes described by [configure]. */
-    fun addGroup(count: Int, configure: DcNodeGroup<R>.() -> Unit): DcNetworkBuilder<R> = apply {
+    /**
+     * Sets the defaults every following group inherits. Call it more than once to refine them; each
+     * call layers on top of what is already in effect.
+     */
+    fun defaults(configure: DcNodeGroup<R>.() -> Unit): DcNetworkBuilder<R> = apply {
+        currentDefaults = currentDefaults.copyAsTemplate().apply(configure)
+    }
+
+    /**
+     * Applies [configure] as defaults for the groups added inside [block] only, then restores the
+     * previous defaults. Nests freely.
+     */
+    fun withDefaults(
+        configure: DcNodeGroup<R>.() -> Unit,
+        block: DcNetworkBuilder<R>.() -> Unit
+    ): DcNetworkBuilder<R> = apply {
+        val outer = currentDefaults
+        currentDefaults = outer.copyAsTemplate().apply(configure)
+        try {
+            block()
+        } finally {
+            currentDefaults = outer
+        }
+    }
+
+    /** Adds [count] nodes described by [configure], on top of the defaults in effect. */
+    fun addGroup(count: Int, configure: DcNodeGroup<R>.() -> Unit = {}): DcNetworkBuilder<R> = apply {
         require(count > 0) { "count must be > 0, got $count" }
-        val group = DcNodeGroup<R>(descriptor.regions).apply(configure).validated()
+        val group = currentDefaults.copyAsTemplate().apply(configure).validated()
         val groupRegions = group.regionsFor(count)
         val groupValidators = group.validatorsFor(count)
         val bandwidthBytesPerSecond = requireNotNull(group.bandwidth).bytesPerSecond
@@ -78,13 +110,13 @@ class DcNetworkBuilder<R>(
                 bandwidthBytesPerSecond = bandwidthBytesPerSecond,
                 validatorCount = groupValidators[index],
                 peerCount = group.peers,
-                attestationSubnetIds = group.subnetsFor(index)
+                attestationSubnetIds = group.subnetsFor(index, simNodeId, randomSeed)
             )
         }
     }
 
-    /** Adds a single node described by [configure]. */
-    fun addNode(configure: DcNodeGroup<R>.() -> Unit): DcNetworkBuilder<R> = addGroup(1, configure)
+    /** Adds a single node described by [configure], on top of the defaults in effect. */
+    fun addNode(configure: DcNodeGroup<R>.() -> Unit = {}): DcNetworkBuilder<R> = addGroup(1, configure)
 
     /**
      * A node cannot have more peers than there are other nodes, so requested peer counts are
@@ -106,9 +138,10 @@ class DcNetworkBuilder<R>(
     companion object {
         /** Builder over the simulator's six-continent world model. */
         fun world(
-            maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME
+            maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME,
+            randomSeed: Long = 0
         ): DcNetworkBuilder<ContinentRegion> =
-            DcNetworkBuilder(RegionalNetworkDescriptor.WORLD_DESCRIPTOR_1, maxQueueWaitTime)
+            DcNetworkBuilder(RegionalNetworkDescriptor.WORLD_DESCRIPTOR_1, maxQueueWaitTime, randomSeed)
     }
 }
 
