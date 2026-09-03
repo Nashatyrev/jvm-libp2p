@@ -1,0 +1,22 @@
+// Decoupled Consensus (DC) simulations built on top of the QUIC simulator.
+//
+// This module intentionally has no `src/main`: every scenario lives as a JUnit test under
+// `src/test/kotlin`, matching the style used by `:tools:quic-simulator` itself.
+//
+// Run everything:
+//   ./gradlew :examples:dc:test
+// Run a single scenario:
+//   ./gradlew :examples:dc:test --tests "io.libp2p.example.dc.DcSimulationTest.*full custody*"
+
+dependencies {
+  implementation project(':tools:quic-simulator')
+
+  implementation("io.netty:netty-handler")
+
+  testRuntimeOnly("org.apache.logging.log4j:log4j-slf4j2-impl")
+}
+
+test {
+  // The simulator runs in virtual time but is CPU/heap hungry for larger node counts.
+  maxHeapSize = '4g'
+}

@@ -18,7 +18,7 @@ import io.libp2p.quicsim.udpnetwork.impl.FqCodelUdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.impl.UnshapedUdpSimBandwidthQueue
 import io.netty.channel.socket.DatagramPacket
 
-internal fun QuicNetworkTopology.toUdpSimNetwork(
+fun QuicNetworkTopology.toUdpSimNetwork(
     bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE,
     hostIdMapper: (Int, QuicNetworkHost) -> String = { _, host -> host.id }
 ): UdpSimNetwork {
