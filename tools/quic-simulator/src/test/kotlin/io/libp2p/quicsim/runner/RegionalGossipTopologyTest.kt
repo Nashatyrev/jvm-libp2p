@@ -129,20 +129,30 @@ class RegionalGossipTopologyTest {
     }
 
     @Test
-    @Timeout(7_200)
+    @Timeout(86_400)
     fun `report large network chunk and erasure dissemination`() {
         assumeTrue(
             java.lang.Boolean.getBoolean("quicsim.largeGossip.report"),
             "Set -Dquicsim.largeGossip.report=true to run this large-scale report"
         )
+        check(!(LARGE_REPORT_EC_ONLY && LARGE_REPORT_CHUNK_ONLY)) {
+            "quicsim.largeGossip.ecOnly and quicsim.largeGossip.chunkOnly are mutually exclusive"
+        }
         System.getProperty(LARGE_GOSSIP_PROGRESS_FILE_PROPERTY)?.let {
             Files.deleteIfExists(Path.of(it))
         }
 
         val seeds = List(LARGE_REPORT_SEED_COUNT) { LARGE_REPORT_SEED_START + it }
+        // Settle window after the final wave. Larger logical messages need a
+        // proportionally longer tail, otherwise the run trips the simulation
+        // limit with the last few nodes still recovering. Overridable via
+        // -Dquicsim.largeGossip.settleSeconds.
+        val defaultSettleWindow =
+            if (LARGE_REPORT_EC_ONLY && LARGE_REPORT_NO_REPUBLISH) 1.seconds else LARGE_REPORT_SETTLE_WINDOW
+        val settleWindow = LARGE_REPORT_SETTLE_SECONDS?.seconds ?: defaultSettleWindow
         val completeAfter = INITIAL_PUBLISH_DELAY +
             LARGE_REPORT_PUBLISH_INTERVAL * (LARGE_REPORT_WAVE_COUNT - 1) +
-            if (LARGE_REPORT_EC_ONLY && LARGE_REPORT_NO_REPUBLISH) 1.seconds else LARGE_REPORT_SETTLE_WINDOW
+            settleWindow
         println(
             "LARGE_GOSSIP_PROGRESS phase=configuration nodes=$NODE_COUNT peersPerNode=$PEERS_PER_NODE " +
                 "meshD=$MESH_D meshDLow=$MESH_D_LOW meshDHigh=$MESH_D_HIGH meshDOut=$MESH_D_OUT " +
@@ -182,6 +192,11 @@ class RegionalGossipTopologyTest {
                 p95.inWholeMilliseconds.toDouble()
             }
             printLargeGossipSummary("regular64", regularRuns)
+        }
+
+        if (LARGE_REPORT_CHUNK_ONLY) {
+            println("LARGE_GOSSIP_PROGRESS phase=skippedEc reason=chunkOnly")
+            return
         }
 
         val ecSymbolSizeBytes = LARGE_REPORT_SIZE_KIB * 1024 / ERASURE_RECOVERY_THRESHOLD
@@ -1512,8 +1527,10 @@ class RegionalGossipTopologyTest {
         val LARGE_REPORT_SEED_COUNT = Integer.getInteger("quicsim.largeGossip.seedCount", 10)
         val LARGE_REPORT_SEED_START = Integer.getInteger("quicsim.largeGossip.seedStart", 70_000)
         val LARGE_REPORT_EC_ONLY = java.lang.Boolean.getBoolean("quicsim.largeGossip.ecOnly")
+        val LARGE_REPORT_CHUNK_ONLY = java.lang.Boolean.getBoolean("quicsim.largeGossip.chunkOnly")
         val LARGE_REPORT_NO_REPUBLISH = java.lang.Boolean.getBoolean("quicsim.largeGossip.noRepublish")
-        const val LARGE_REPORT_SIZE_KIB = 256
+        val LARGE_REPORT_SIZE_KIB = Integer.getInteger("quicsim.largeGossip.sizeKiB", 256)
+        val LARGE_REPORT_SETTLE_SECONDS: Int? = Integer.getInteger("quicsim.largeGossip.settleSeconds")
         val LARGE_REPORT_PUBLISH_INTERVAL = 30.seconds
         val LARGE_REPORT_SETTLE_WINDOW = 5.seconds
         val LARGE_P95_RECIPIENT_COUNT = ((NODE_COUNT - PUBLISHER_COUNT) * 0.95).toInt()
