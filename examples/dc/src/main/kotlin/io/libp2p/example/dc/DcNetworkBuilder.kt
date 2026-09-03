@@ -5,7 +5,6 @@ import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor
 import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.ContinentRegion
 import io.libp2p.quicsim.scenario.RegionalNetworkTopologyBuilder
 import io.libp2p.quicsim.sim.SimNodeId
-import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.UdpSimNetworkDefaults
 import kotlin.time.Duration
 
@@ -14,27 +13,37 @@ import kotlin.time.Duration
  * regions, each with a given access bandwidth, number of validators, peer count, and set of
  * attestation subnets it subscribes to.
  *
- * Nodes are added in groups, so a realistic population is a handful of calls:
+ * Nodes are added a group at a time, each group configured as a block (see [DcNodeGroup]) so that
+ * attributes are named and adding a new one never grows an argument list:
  *
  * ```
  * val network = DcNetworkBuilder.world()
- *     // 4 big staking operators in Europe, 500 validators each, subscribed to every subnet
- *     .addNodes(
- *         count = 4, region = ContinentRegion.EUROPE, bandwidth = Bandwidths.DATACENTER,
- *         validatorsPerNode = 500, peers = 100, attestationSubnetIds = (0 until 64).toSet()
- *     )
- *     // 60 home stakers spread over all continents, 1 validator each, 2 subnets apiece
- *     .addNodesWithSubnets(
- *         count = 60, bandwidth = Bandwidths.RESIDENTIAL, validatorsPerNode = 1, peers = 20,
- *         subnetIdsOf = { index -> setOf(index % 64, (index + 32) % 64) }
- *     )
+ *     // 4 big staking operators in Europe, subscribed to every subnet
+ *     .addGroup(count = 4) {
+ *         region = ContinentRegion.EUROPE
+ *         bandwidth = Bandwidths.DATACENTER
+ *         validators = 500
+ *         peers = 100
+ *         subnets = (0 until 64).toSet()
+ *     }
+ *     // 60 home stakers spread over all continents, 2 subnets apiece
+ *     .addGroup(count = 60) {
+ *         spreadOverRegions()
+ *         bandwidth = Bandwidths.RESIDENTIAL
+ *         validators = 1
+ *         subnetsByIndex { index -> setOf(index % 64, (index + 32) % 64) }
+ *     }
  *     // 20 VPS nodes sharing 400 validators between them
- *     .addNodesWithTotalValidators(count = 20, bandwidth = Bandwidths.VPS, validatorsTotal = 400)
+ *     .addGroup(count = 20) {
+ *         regionWeights = mapOf(ContinentRegion.EUROPE to 0.6, ContinentRegion.ASIA to 0.4)
+ *         bandwidth = Bandwidths.VPS
+ *         validatorsTotal = 400
+ *     }
  *     .build()
  * ```
  *
- * Region assignment is deterministic (round-robin, or largest remainder for weighted splits), so a
- * given builder sequence always produces the same network.
+ * Placement is deterministic (round-robin, or largest remainder for weighted splits), so a given
+ * builder sequence always produces the same network.
  *
  * [build] hands back both the [DcNode] descriptors and the [QuicNetworkTopology] to feed to the
  * simulator; the two are index-aligned, so `network.nodes[i].simNodeId == i`.
@@ -52,138 +61,30 @@ class DcNetworkBuilder<R>(
     /** Validators across all nodes added so far. */
     val validatorCount: Int get() = nodes.sumOf { it.validatorCount }
 
-    /** Adds a single node in [region]. */
-    fun addNode(
-        region: R,
-        bandwidth: Bandwidth,
-        validators: Int = 0,
-        peers: Int = DEFAULT_PEER_COUNT,
-        attestationSubnetIds: Set<Int> = emptySet()
-    ): DcNetworkBuilder<R> = apply {
-        require(region in descriptor.regions) { "Unknown region: $region" }
-        require(validators >= 0) { "validators must be >= 0, got $validators" }
-        require(peers >= 0) { "peers must be >= 0, got $peers" }
-        require(attestationSubnetIds.all { it >= 0 }) {
-            "attestation subnet ids must be >= 0, got $attestationSubnetIds"
-        }
-        val simNodeId = nodes.size
-        nodes += DcNode(
-            simNodeId = simNodeId,
-            id = hostId(simNodeId),
-            region = region,
-            bandwidthBytesPerSecond = bandwidth.bytesPerSecond,
-            validatorCount = validators,
-            peerCount = peers,
-            attestationSubnetIds = attestationSubnetIds.toSet()
-        )
-    }
+    /** Adds [count] nodes described by [configure]. */
+    fun addGroup(count: Int, configure: DcNodeGroup<R>.() -> Unit): DcNetworkBuilder<R> = apply {
+        require(count > 0) { "count must be > 0, got $count" }
+        val group = DcNodeGroup<R>(descriptor.regions).apply(configure).validated()
+        val groupRegions = group.regionsFor(count)
+        val groupValidators = group.validatorsFor(count)
+        val bandwidthBytesPerSecond = requireNotNull(group.bandwidth).bytesPerSecond
 
-    /** Adds [count] identical nodes, all in [region], each running [validatorsPerNode] validators. */
-    fun addNodes(
-        count: Int,
-        region: R,
-        bandwidth: Bandwidth,
-        validatorsPerNode: Int = 0,
-        peers: Int = DEFAULT_PEER_COUNT,
-        attestationSubnetIds: Set<Int> = emptySet()
-    ): DcNetworkBuilder<R> = apply {
-        requirePositiveCount(count)
-        repeat(count) { addNode(region, bandwidth, validatorsPerNode, peers, attestationSubnetIds) }
-    }
-
-    /**
-     * Adds [count] nodes spread round-robin over [regions] (all of the descriptor's regions by
-     * default), each running [validatorsPerNode] validators.
-     */
-    fun addNodes(
-        count: Int,
-        bandwidth: Bandwidth,
-        validatorsPerNode: Int = 0,
-        regions: List<R> = descriptor.regions,
-        peers: Int = DEFAULT_PEER_COUNT,
-        attestationSubnetIds: Set<Int> = emptySet()
-    ): DcNetworkBuilder<R> = apply {
-        requirePositiveCount(count)
-        require(regions.isNotEmpty()) { "regions must not be empty" }
         repeat(count) { index ->
-            addNode(regions[index % regions.size], bandwidth, validatorsPerNode, peers, attestationSubnetIds)
+            val simNodeId = nodes.size
+            nodes += DcNode(
+                simNodeId = simNodeId,
+                id = hostId(simNodeId),
+                region = groupRegions[index],
+                bandwidthBytesPerSecond = bandwidthBytesPerSecond,
+                validatorCount = groupValidators[index],
+                peerCount = group.peers,
+                attestationSubnetIds = group.subnetsFor(index)
+            )
         }
     }
 
-    /**
-     * Adds [count] nodes distributed over regions according to [regionWeights], using the largest
-     * remainder method so the per-region counts always add up to [count] exactly.
-     */
-    fun addNodes(
-        count: Int,
-        regionWeights: Map<R, Double>,
-        bandwidth: Bandwidth,
-        validatorsPerNode: Int = 0,
-        peers: Int = DEFAULT_PEER_COUNT,
-        attestationSubnetIds: Set<Int> = emptySet()
-    ): DcNetworkBuilder<R> = apply {
-        requirePositiveCount(count)
-        countsByWeight(count, regionWeights).forEach { (region, regionNodeCount) ->
-            addNodes(regionNodeCount, region, bandwidth, validatorsPerNode, peers, attestationSubnetIds)
-        }
-    }
-
-    /**
-     * Adds [count] nodes whose attestation subnets are assigned per node by [subnetIdsOf], which is
-     * called with the index of the node *within this group*. Use it to spread subnet subscriptions
-     * over a group, e.g. `subnetIdsOf = { index -> setOf(index % subnetCount) }`.
-     */
-    fun addNodesWithSubnets(
-        count: Int,
-        bandwidth: Bandwidth,
-        subnetIdsOf: (Int) -> Set<Int>,
-        validatorsPerNode: Int = 0,
-        regions: List<R> = descriptor.regions,
-        peers: Int = DEFAULT_PEER_COUNT
-    ): DcNetworkBuilder<R> = apply {
-        requirePositiveCount(count)
-        require(regions.isNotEmpty()) { "regions must not be empty" }
-        repeat(count) { index ->
-            addNode(regions[index % regions.size], bandwidth, validatorsPerNode, peers, subnetIdsOf(index))
-        }
-    }
-
-    /**
-     * Adds [count] nodes in [region] and spreads [validatorsTotal] validators across them as evenly
-     * as possible; the remainder goes to the first nodes of the group.
-     */
-    fun addNodesWithTotalValidators(
-        count: Int,
-        region: R,
-        bandwidth: Bandwidth,
-        validatorsTotal: Int,
-        peers: Int = DEFAULT_PEER_COUNT,
-        attestationSubnetIds: Set<Int> = emptySet()
-    ): DcNetworkBuilder<R> = apply {
-        requirePositiveCount(count)
-        distribute(validatorsTotal, count).forEach { validators ->
-            addNode(region, bandwidth, validators, peers, attestationSubnetIds)
-        }
-    }
-
-    /**
-     * Adds [count] nodes spread round-robin over [regions] and splits [validatorsTotal] evenly
-     * across them.
-     */
-    fun addNodesWithTotalValidators(
-        count: Int,
-        bandwidth: Bandwidth,
-        validatorsTotal: Int,
-        regions: List<R> = descriptor.regions,
-        peers: Int = DEFAULT_PEER_COUNT,
-        attestationSubnetIds: Set<Int> = emptySet()
-    ): DcNetworkBuilder<R> = apply {
-        requirePositiveCount(count)
-        require(regions.isNotEmpty()) { "regions must not be empty" }
-        distribute(validatorsTotal, count).forEachIndexed { index, validators ->
-            addNode(regions[index % regions.size], bandwidth, validators, peers, attestationSubnetIds)
-        }
-    }
+    /** Adds a single node described by [configure]. */
+    fun addNode(configure: DcNodeGroup<R>.() -> Unit): DcNetworkBuilder<R> = addGroup(1, configure)
 
     /**
      * A node cannot have more peers than there are other nodes, so requested peer counts are
@@ -202,47 +103,7 @@ class DcNetworkBuilder<R>(
         return DcNetwork(builtNodes, topologyBuilder.build())
     }
 
-    private fun requirePositiveCount(count: Int) =
-        require(count > 0) { "count must be > 0, got $count" }
-
-    /** Splits [total] into [parts] near-equal integers, larger parts first. Sums to [total]. */
-    private fun distribute(total: Int, parts: Int): List<Int> {
-        require(total >= 0) { "validatorsTotal must be >= 0, got $total" }
-        val base = total / parts
-        val remainder = total % parts
-        return List(parts) { index -> base + if (index < remainder) 1 else 0 }
-    }
-
-    /** Largest remainder apportionment of [count] over weighted regions. */
-    private fun countsByWeight(count: Int, regionWeights: Map<R, Double>): List<Pair<R, Int>> {
-        require(regionWeights.isNotEmpty()) { "regionWeights must not be empty" }
-        regionWeights.keys.forEach { region ->
-            require(region in descriptor.regions) { "Unknown region: $region" }
-        }
-        require(regionWeights.values.all { it >= 0.0 }) { "Region weights must be >= 0: $regionWeights" }
-        val weightSum = regionWeights.values.sum()
-        require(weightSum > 0.0) { "Region weights must not sum to zero: $regionWeights" }
-
-        val entries = regionWeights.entries.toList()
-        val exact = entries.map { (_, weight) -> count * weight / weightSum }
-        val floors = exact.map { it.toInt() }.toMutableList()
-        var remaining = count - floors.sum()
-        exact.mapIndexed { index, value -> index to (value - floors[index]) }
-            .sortedByDescending { it.second }
-            .forEach { (index, _) ->
-                if (remaining > 0) {
-                    floors[index]++
-                    remaining--
-                }
-            }
-        return entries.mapIndexed { index, entry -> entry.key to floors[index] }
-            .filter { it.second > 0 }
-    }
-
     companion object {
-        /** Peers a node connects to when the caller does not say otherwise. */
-        const val DEFAULT_PEER_COUNT: Int = 20
-
         /** Builder over the simulator's six-continent world model. */
         fun world(
             maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME

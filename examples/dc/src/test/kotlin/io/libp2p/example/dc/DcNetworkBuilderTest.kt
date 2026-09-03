@@ -13,8 +13,16 @@ class DcNetworkBuilderTest {
     @Test
     fun `generates nodes per region with the requested bandwidth and validators`() {
         val network = DcNetworkBuilder.world()
-            .addNodes(count = 4, region = EUROPE, bandwidth = Bandwidths.DATACENTER, validatorsPerNode = 500)
-            .addNodes(count = 2, region = ASIA, bandwidth = Bandwidths.VPS, validatorsPerNode = 10)
+            .addGroup(count = 4) {
+                region = EUROPE
+                bandwidth = Bandwidths.DATACENTER
+                validators = 500
+            }
+            .addGroup(count = 2) {
+                region = ASIA
+                bandwidth = Bandwidths.VPS
+                validators = 10
+            }
             .build()
 
         assertThat(network.nodeCount).isEqualTo(6)
@@ -31,7 +39,11 @@ class DcNetworkBuilderTest {
     @Test
     fun `spreads nodes round-robin over regions`() {
         val network = DcNetworkBuilder.world()
-            .addNodes(count = 12, bandwidth = Bandwidths.RESIDENTIAL, validatorsPerNode = 1)
+            .addGroup(count = 12) {
+                spreadOverRegions()
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1
+            }
             .build()
 
         val regions = ContinentRegion.values().toList()
@@ -47,12 +59,11 @@ class DcNetworkBuilderTest {
     @Test
     fun `restricts round-robin to the given regions`() {
         val network = DcNetworkBuilder.world()
-            .addNodes(
-                count = 5,
-                bandwidth = Bandwidths.VPS,
-                validatorsPerNode = 2,
-                regions = listOf(EUROPE, US_EAST)
-            )
+            .addGroup(count = 5) {
+                spreadOverRegions(EUROPE, US_EAST)
+                bandwidth = Bandwidths.VPS
+                validators = 2
+            }
             .build()
 
         assertThat(network.nodesIn(EUROPE)).hasSize(3)
@@ -63,12 +74,11 @@ class DcNetworkBuilderTest {
     @Test
     fun `distributes nodes by region weights without losing any`() {
         val network = DcNetworkBuilder.world()
-            .addNodes(
-                count = 100,
-                regionWeights = mapOf(EUROPE to 0.5, US_EAST to 0.3, ASIA to 0.2),
-                bandwidth = Bandwidths.RESIDENTIAL,
-                validatorsPerNode = 1
-            )
+            .addGroup(count = 100) {
+                regionWeights = mapOf(EUROPE to 0.5, US_EAST to 0.3, ASIA to 0.2)
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1
+            }
             .build()
 
         assertThat(network.nodeCount).isEqualTo(100)
@@ -80,11 +90,10 @@ class DcNetworkBuilderTest {
     @Test
     fun `weighted distribution still totals the requested count when shares do not divide evenly`() {
         val network = DcNetworkBuilder.world()
-            .addNodes(
-                count = 10,
-                regionWeights = mapOf(EUROPE to 1.0, US_EAST to 1.0, ASIA to 1.0),
+            .addGroup(count = 10) {
+                regionWeights = mapOf(EUROPE to 1.0, US_EAST to 1.0, ASIA to 1.0)
                 bandwidth = Bandwidths.VPS
-            )
+            }
             .build()
 
         assertThat(network.nodeCount).isEqualTo(10)
@@ -94,7 +103,10 @@ class DcNetworkBuilderTest {
     @Test
     fun `spreads a total validator count across generated nodes`() {
         val network = DcNetworkBuilder.world()
-            .addNodesWithTotalValidators(count = 3, bandwidth = Bandwidths.VPS, validatorsTotal = 10)
+            .addGroup(count = 3) {
+                bandwidth = Bandwidths.VPS
+                validatorsTotal = 10
+            }
             .build()
 
         assertThat(network.validatorCount).isEqualTo(10)
@@ -104,7 +116,11 @@ class DcNetworkBuilderTest {
     @Test
     fun `builds a regional topology with an access link pair per node`() {
         val network = DcNetworkBuilder.world()
-            .addNodes(count = 3, region = EUROPE, bandwidth = Bandwidths.DATACENTER, validatorsPerNode = 1)
+            .addGroup(count = 3) {
+                region = EUROPE
+                bandwidth = Bandwidths.DATACENTER
+                validators = 1
+            }
             .build()
 
         assertThat(network.topology.hosts.map { it.id })
@@ -123,64 +139,21 @@ class DcNetworkBuilderTest {
     }
 
     @Test
-    fun `rejects invalid input`() {
-        assertThatThrownBy {
-            DcNetworkBuilder.world().addNodes(count = 0, region = EUROPE, bandwidth = Bandwidths.VPS)
-        }.isInstanceOf(IllegalArgumentException::class.java)
-
-        assertThatThrownBy {
-            DcNetworkBuilder.world().addNode(region = EUROPE, bandwidth = Bandwidths.VPS, validators = -1)
-        }.isInstanceOf(IllegalArgumentException::class.java)
-
-        assertThatThrownBy {
-            DcNetworkBuilder.world().addNode(region = EUROPE, bandwidth = Bandwidths.VPS, peers = -1)
-        }.isInstanceOf(IllegalArgumentException::class.java)
-
-        assertThatThrownBy {
-            DcNetworkBuilder.world()
-                .addNode(region = EUROPE, bandwidth = Bandwidths.VPS, attestationSubnetIds = setOf(0, -3))
-        }.isInstanceOf(IllegalArgumentException::class.java)
-
-        assertThatThrownBy {
-            DcNetworkBuilder.world()
-                .addNodes(count = 5, regionWeights = mapOf(EUROPE to 0.0), bandwidth = Bandwidths.VPS)
-        }.isInstanceOf(IllegalArgumentException::class.java)
-
-        assertThatThrownBy { DcNetworkBuilder.world().build() }
-            .isInstanceOf(IllegalArgumentException::class.java)
-    }
-
-    @Test
-    fun `summary reports the generated population`() {
-        val network = DcNetworkBuilder.world()
-            .addNodes(count = 2, region = EUROPE, bandwidth = Bandwidths.DATACENTER, validatorsPerNode = 100)
-            .addNodes(count = 6, bandwidth = Bandwidths.RESIDENTIAL, validatorsPerNode = 1)
-            .build()
-
-        println(network.summary())
-        assertThat(network.summary())
-            .contains("nodes=8 validators=206")
-            .contains("EUROPE")
-    }
-
-    @Test
     fun `records peer count and attestation subnets per node`() {
         val network = DcNetworkBuilder.world()
-            .addNodes(
-                count = 2,
-                region = EUROPE,
-                bandwidth = Bandwidths.DATACENTER,
-                validatorsPerNode = 100,
-                peers = 5,
-                attestationSubnetIds = setOf(0, 1, 2)
-            )
-            .addNodes(
-                count = 4,
-                bandwidth = Bandwidths.RESIDENTIAL,
-                validatorsPerNode = 1,
-                peers = 3,
-                attestationSubnetIds = setOf(2)
-            )
+            .addGroup(count = 2) {
+                region = EUROPE
+                bandwidth = Bandwidths.DATACENTER
+                validators = 100
+                peers = 5
+                subnets = setOf(0, 1, 2)
+            }
+            .addGroup(count = 4) {
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1
+                peers = 3
+                subnets = setOf(2)
+            }
             .build()
 
         assertThat(network.nodes.map { it.peerCount }).containsExactly(5, 5, 3, 3, 3, 3)
@@ -197,12 +170,11 @@ class DcNetworkBuilderTest {
     fun `assigns subnets per node within a group`() {
         val subnetCount = 4
         val network = DcNetworkBuilder.world()
-            .addNodesWithSubnets(
-                count = 8,
-                bandwidth = Bandwidths.VPS,
-                subnetIdsOf = { index -> setOf(index % subnetCount) },
-                validatorsPerNode = 1
-            )
+            .addGroup(count = 8) {
+                bandwidth = Bandwidths.VPS
+                validators = 1
+                subnetsByIndex { index -> setOf(index % subnetCount) }
+            }
             .build()
 
         assertThat(network.attestationSubnetIds()).containsExactly(0, 1, 2, 3)
@@ -214,7 +186,11 @@ class DcNetworkBuilderTest {
     @Test
     fun `clamps peer count to the number of other nodes`() {
         val network = DcNetworkBuilder.world()
-            .addNodes(count = 3, region = EUROPE, bandwidth = Bandwidths.VPS, peers = 50)
+            .addGroup(count = 3) {
+                region = EUROPE
+                bandwidth = Bandwidths.VPS
+                peers = 50
+            }
             .build()
 
         assertThat(network.nodes.map { it.peerCount }).containsExactly(2, 2, 2)
@@ -223,11 +199,119 @@ class DcNetworkBuilderTest {
     @Test
     fun `defaults to no subnets and the default peer count`() {
         val network = DcNetworkBuilder.world()
-            .addNodes(count = 40, bandwidth = Bandwidths.RESIDENTIAL, validatorsPerNode = 1)
+            .addGroup(count = 40) {
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1
+            }
             .build()
 
         assertThat(network.attestationSubnetIds()).isEmpty()
         assertThat(network.nodes.map { it.peerCount }.distinct())
-            .containsExactly(DcNetworkBuilder.DEFAULT_PEER_COUNT)
+            .containsExactly(DcNodeGroup.DEFAULT_PEER_COUNT)
+    }
+
+    @Test
+    fun `adds a single node`() {
+        val network = DcNetworkBuilder.world()
+            .addNode {
+                region = ASIA
+                bandwidth = Bandwidths.VPS
+                validators = 7
+            }
+            .build()
+
+        assertThat(network.nodeCount).isEqualTo(1)
+        assertThat(network.node(0).region).isEqualTo(ASIA)
+        assertThat(network.node(0).validatorCount).isEqualTo(7)
+        assertThat(network.node(0).peerCount).isZero()
+    }
+
+    @Test
+    fun `rejects invalid group configuration`() {
+        assertThatThrownBy {
+            DcNetworkBuilder.world().addGroup(count = 0) { bandwidth = Bandwidths.VPS }
+        }.isInstanceOf(IllegalArgumentException::class.java)
+
+        assertThatThrownBy {
+            DcNetworkBuilder.world().addGroup(count = 1) { validators = 1 }
+        }.hasMessageContaining("bandwidth is required")
+
+        assertThatThrownBy {
+            DcNetworkBuilder.world().addGroup(count = 1) {
+                bandwidth = Bandwidths.VPS
+                validators = -1
+            }
+        }.isInstanceOf(IllegalArgumentException::class.java)
+
+        assertThatThrownBy {
+            DcNetworkBuilder.world().addGroup(count = 1) {
+                bandwidth = Bandwidths.VPS
+                peers = -1
+            }
+        }.isInstanceOf(IllegalArgumentException::class.java)
+
+        assertThatThrownBy {
+            DcNetworkBuilder.world().addGroup(count = 1) {
+                bandwidth = Bandwidths.VPS
+                subnets = setOf(0, -3)
+            }
+        }.isInstanceOf(IllegalArgumentException::class.java)
+
+        assertThatThrownBy {
+            DcNetworkBuilder.world().addGroup(count = 5) {
+                regionWeights = mapOf(EUROPE to 0.0)
+                bandwidth = Bandwidths.VPS
+            }
+        }.isInstanceOf(IllegalArgumentException::class.java)
+
+        assertThatThrownBy { DcNetworkBuilder.world().build() }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `rejects conflicting group options`() {
+        assertThatThrownBy {
+            DcNetworkBuilder.world().addGroup(count = 4) {
+                region = EUROPE
+                spreadOverRegions()
+                bandwidth = Bandwidths.VPS
+            }
+        }.hasMessageContaining("at most one of region")
+
+        assertThatThrownBy {
+            DcNetworkBuilder.world().addGroup(count = 4) {
+                bandwidth = Bandwidths.VPS
+                validators = 1
+                validatorsTotal = 10
+            }
+        }.hasMessageContaining("validators or validatorsTotal")
+
+        assertThatThrownBy {
+            DcNetworkBuilder.world().addGroup(count = 4) {
+                bandwidth = Bandwidths.VPS
+                subnets = setOf(1)
+                subnetsByIndex { setOf(it) }
+            }
+        }.hasMessageContaining("subnets or subnetsByIndex")
+    }
+
+    @Test
+    fun `summary reports the generated population`() {
+        val network = DcNetworkBuilder.world()
+            .addGroup(count = 2) {
+                region = EUROPE
+                bandwidth = Bandwidths.DATACENTER
+                validators = 100
+            }
+            .addGroup(count = 6) {
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1
+            }
+            .build()
+
+        println(network.summary())
+        assertThat(network.summary())
+            .contains("nodes=8 validators=206")
+            .contains("EUROPE")
     }
 }
