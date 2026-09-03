@@ -133,6 +133,15 @@ class DcNetworkBuilderTest {
         }.isInstanceOf(IllegalArgumentException::class.java)
 
         assertThatThrownBy {
+            DcNetworkBuilder.world().addNode(region = EUROPE, bandwidth = Bandwidths.VPS, peers = -1)
+        }.isInstanceOf(IllegalArgumentException::class.java)
+
+        assertThatThrownBy {
+            DcNetworkBuilder.world()
+                .addNode(region = EUROPE, bandwidth = Bandwidths.VPS, attestationSubnetIds = setOf(0, -3))
+        }.isInstanceOf(IllegalArgumentException::class.java)
+
+        assertThatThrownBy {
             DcNetworkBuilder.world()
                 .addNodes(count = 5, regionWeights = mapOf(EUROPE to 0.0), bandwidth = Bandwidths.VPS)
         }.isInstanceOf(IllegalArgumentException::class.java)
@@ -152,5 +161,73 @@ class DcNetworkBuilderTest {
         assertThat(network.summary())
             .contains("nodes=8 validators=206")
             .contains("EUROPE")
+    }
+
+    @Test
+    fun `records peer count and attestation subnets per node`() {
+        val network = DcNetworkBuilder.world()
+            .addNodes(
+                count = 2,
+                region = EUROPE,
+                bandwidth = Bandwidths.DATACENTER,
+                validatorsPerNode = 100,
+                peers = 5,
+                attestationSubnetIds = setOf(0, 1, 2)
+            )
+            .addNodes(
+                count = 4,
+                bandwidth = Bandwidths.RESIDENTIAL,
+                validatorsPerNode = 1,
+                peers = 3,
+                attestationSubnetIds = setOf(2)
+            )
+            .build()
+
+        assertThat(network.nodes.map { it.peerCount }).containsExactly(5, 5, 3, 3, 3, 3)
+        assertThat(network.node(0).attestationSubnetIds).containsExactly(0, 1, 2)
+        assertThat(network.node(0).subscribesTo(1)).isTrue()
+        assertThat(network.node(2).subscribesTo(1)).isFalse()
+        assertThat(network.attestationSubnetIds()).containsExactly(0, 1, 2)
+        assertThat(network.nodesSubscribedTo(2)).hasSize(6)
+        assertThat(network.nodesSubscribedTo(0)).hasSize(2)
+        assertThat(network.subscribersPerSubnet()).isEqualTo(mapOf(0 to 2, 1 to 2, 2 to 6))
+    }
+
+    @Test
+    fun `assigns subnets per node within a group`() {
+        val subnetCount = 4
+        val network = DcNetworkBuilder.world()
+            .addNodesWithSubnets(
+                count = 8,
+                bandwidth = Bandwidths.VPS,
+                subnetIdsOf = { index -> setOf(index % subnetCount) },
+                validatorsPerNode = 1
+            )
+            .build()
+
+        assertThat(network.attestationSubnetIds()).containsExactly(0, 1, 2, 3)
+        assertThat(network.subscribersPerSubnet().values).allMatch { it == 2 }
+        assertThat(network.node(0).attestationSubnetIds).containsExactly(0)
+        assertThat(network.node(5).attestationSubnetIds).containsExactly(1)
+    }
+
+    @Test
+    fun `clamps peer count to the number of other nodes`() {
+        val network = DcNetworkBuilder.world()
+            .addNodes(count = 3, region = EUROPE, bandwidth = Bandwidths.VPS, peers = 50)
+            .build()
+
+        assertThat(network.nodes.map { it.peerCount }).containsExactly(2, 2, 2)
+    }
+
+    @Test
+    fun `defaults to no subnets and the default peer count`() {
+        val network = DcNetworkBuilder.world()
+            .addNodes(count = 40, bandwidth = Bandwidths.RESIDENTIAL, validatorsPerNode = 1)
+            .build()
+
+        assertThat(network.attestationSubnetIds()).isEmpty()
+        assertThat(network.nodes.map { it.peerCount }.distinct())
+            .containsExactly(DcNetworkBuilder.DEFAULT_PEER_COUNT)
     }
 }

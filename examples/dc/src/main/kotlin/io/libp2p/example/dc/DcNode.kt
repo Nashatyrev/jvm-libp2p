@@ -20,14 +20,21 @@ data class DcNode<R>(
     /** Access link rate, applied in both directions. */
     val bandwidthBytesPerSecond: Long,
     /** Number of validators hosted by this node. Zero means a non-validating (full) node. */
-    val validatorCount: Int
+    val validatorCount: Int,
+    /** Number of gossip peers this node maintains connections to. */
+    val peerCount: Int,
+    /** Attestation subnets this node subscribes to. */
+    val attestationSubnetIds: Set<Int>
 ) {
     val bandwidth: Bandwidth get() = Bandwidth(bandwidthBytesPerSecond)
 
     val isValidator: Boolean get() = validatorCount > 0
 
+    fun subscribesTo(subnetId: Int): Boolean = subnetId in attestationSubnetIds
+
     override fun toString(): String =
-        "$id[$region, $bandwidth, validators=$validatorCount]"
+        "$id[$region, $bandwidth, validators=$validatorCount, peers=$peerCount, " +
+            "subnets=${attestationSubnetIds.sorted()}]"
 }
 
 /** Convenience constructors for [Bandwidth] in the units people actually quote links in. */
