@@ -45,7 +45,7 @@ class DcScenarioRunnerTest {
                     ContinentRegion.US_WEST to 0.2,
                 )
                 bandwidth = Bandwidths.DATACENTER
-                validators = 10000
+                validators = 20000
                 peers = 200
                 allSubnets()
             }
@@ -57,7 +57,7 @@ class DcScenarioRunnerTest {
                     ContinentRegion.US_WEST to 0.2,
                 )
                 bandwidth = Bandwidths.DATACENTER
-                validators = 200
+                validators = 400
                 peers = 100
                 allSubnets()
             }
@@ -65,7 +65,7 @@ class DcScenarioRunnerTest {
                 // home stakers
                 spreadOverRegions()
                 bandwidth = Bandwidths.RESIDENTIAL
-                validators = 5
+                validators = 10
                 peers = 40
                 randomSubnets(10)
             }
