@@ -28,9 +28,6 @@ import io.libp2p.quicsim.sim.SimContext
 import io.libp2p.quicsim.sim.SimNodeId
 import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.TestStarNetworkBuilder2
-import io.libp2p.quicsim.udpnetwork.UdpSimNode
-import io.libp2p.quicsim.udpnetwork.impl.BasicUdpSimNetwork
-import io.libp2p.quicsim.udpnetwork.TestUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.TestQDiscFactory
 import io.libp2p.quicsim.udpnetwork.fifoUdpSimQueue
 import io.libp2p.quicsim.udpnetwork.latencyThenBandwidthUdpSimQueue
@@ -64,7 +61,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.random.Random
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -141,19 +137,15 @@ class SimulatedRunnerTest {
 
     @Test
     fun sendMessageFromNPublishers() {
-        val nodeCount = intProperty("quicsim.sendMessageFromNPublishers.nodeCount", 500)
+        val nodeCount = intProperty("quicsim.sendMessageFromNPublishers.nodeCount", 1000)
         val publishersCount = intProperty("quicsim.sendMessageFromNPublishers.publishersCount", nodeCount)
         val neighboursToConnect = intProperty("quicsim.sendMessageFromNPublishers.neighboursToConnect", 20)
-        val messagesPerPublisher = intProperty("quicsim.sendMessageFromNPublishers.messagesPerPublisher", 1)
+        val messagesPerPublisher = intProperty("quicsim.sendMessageFromNPublishers.messagesPerPublisher", 2)
         val initialPublishDelaySeconds =
-            intProperty("quicsim.sendMessageFromNPublishers.initialPublishDelaySeconds", 10)
-        val maxPublishedMessagesPerRpc =
-            intProperty("quicsim.sendMessageFromNPublishers.maxPublishedMessagesPerRpc", 256)
-        val maxGossipMessageSizeBytes =
-            intProperty("quicsim.sendMessageFromNPublishers.maxGossipMessageSizeBytes", 1 shl 20)
+            intProperty("quicsim.sendMessageFromNPublishers.initialPublishDelaySeconds", 30)
         val bandwidth = Bandwidth(5_000_000L)
-        val halfLatency = 20.milliseconds
-        val messageSizeBytes = intProperty("quicsim.sendMessageFromNPublishers.messageSizeBytes", 130)
+        val latency = 20.milliseconds
+        val messageSizeBytes = intProperty("quicsim.sendMessageFromNPublishers.messageSizeBytes", 240)
         val nodePrograms = mutableListOf<SampleGossipNodeProgram>()
         val heapStats = HeapStatsSampler()
         val packetStats = PacketStatsNodeVisitorFactory(
@@ -204,7 +196,7 @@ class SimulatedRunnerTest {
         val networkBuilder = TestStarNetworkBuilder2()
         networkBuilder.addIpNodes(nodeCount)
         val qdiscFactory = fifoQDiscFactory(bandwidth)
-        networkBuilder.linkAllToRouter(halfLatency, qdiscFactory).build()
+        networkBuilder.linkAllToRouter(latency, qdiscFactory).build()
         val udpNetwork = networkBuilder.build()
 
         val runner = SimulatedRunner(
@@ -218,8 +210,6 @@ class SimulatedRunnerTest {
 //                            // switch off IHAVE
 //                            gossipFactor = 0.0,
 //                            DLazy = 0,
-                            maxPublishedMessages = maxPublishedMessagesPerRpc,
-                            maxGossipMessageSize = maxGossipMessageSizeBytes,
                         ),
                         randomSeed = id.toLong(),
                         messageSizeBytes = messageSizeBytes,
@@ -263,9 +253,7 @@ class SimulatedRunnerTest {
         println(
             "Params: neighboursToConnect: $neighboursToConnect, " +
                 "publishersCount: $publishersCount, messagesPerPublisher: $messagesPerPublisher, " +
-                "initialPublishDelaySeconds: $initialPublishDelaySeconds, " +
-                "maxPublishedMessagesPerRpc: $maxPublishedMessagesPerRpc, " +
-                "maxGossipMessageSizeBytes: $maxGossipMessageSizeBytes"
+                "initialPublishDelaySeconds: $initialPublishDelaySeconds, "
         )
         println("Allocator mode: ${if (forceHeapByteBufs) "heap" else allocatorMode}")
         println("Allocator scope: ${if (useSharedAllocator) "shared-counted" else "per-node"}")
