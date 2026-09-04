@@ -46,6 +46,15 @@ dependencies {
     jmhAnnotationProcessor("org.openjdk.jmh:jmh-generator-annprocess")
 }
 
+jmh {
+    // The plugin forces its own default (1.36) onto the jmh compile classpath, while
+    // versions.gradle pins jmh-generator-annprocess to 1.37 and so the annotation processor runs
+    // with jmh-core 1.37. The 1.37 generator emits `control.shouldYield`, a field that only exists
+    // in 1.37's InfraControl, so the generated sources fail to compile against 1.36.
+    // Keep this in step with the JMH version in versions.gradle.
+    jmhVersion.set("1.37")
+}
+
 fun nativeClassifier(): String {
     val os = System.getProperty("os.name").lowercase()
     val archRaw = System.getProperty("os.arch").lowercase()
