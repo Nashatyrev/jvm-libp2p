@@ -1,0 +1,26 @@
+# 1000 residential nodes, 2 validators each, every validator attesting at the same moment.
+#
+# Only the keys that matter for this run are listed; everything else comes from the defaults in
+# DcRunConfig.kt. Unknown keys are rejected rather than ignored, so a typo fails fast.
+
+name: attestation-1000-residential
+
+population:
+  nodes: 1000
+  validatorsPerNode: 2      # 2000 validators, so 2000 attestations per wave
+  bandwidth: residential    # residential | vps | datacenter
+  peers: 20
+  subnetCount: 64
+  subnetsPerNode: 2
+
+attestation:
+  mode: allValidators       # allValidators | sample
+  waveCount: 1              # one burst; raise to repeat it every waveIntervalSeconds
+  sizeBytes: 240            # Electra SingleAttestation
+  warmupSeconds: 60         # let the gossipsub meshes form before measuring anything
+  settleSeconds: 30         # observation window; slower than this counts as undelivered
+
+run:
+  seed: 1
+  minPeersPerSubnet: 2
+  latencyWindowParallelism: 8

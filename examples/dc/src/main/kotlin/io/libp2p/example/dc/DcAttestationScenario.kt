@@ -87,14 +87,14 @@ object DcAttestationScenario {
     fun <R> of(
         network: DcNetwork<R>,
         graph: DcPeerGraph<R>,
-        config: DcAttestationConfig = DcAttestationConfig()
-    ): QuicScenario<DcAttestationNodeProgramFactory<R>> {
-        val schedule = DcAttestationSchedule.random(
+        config: DcAttestationConfig = DcAttestationConfig(),
+        schedule: DcAttestationSchedule = DcAttestationSchedule.random(
             network = network,
             waveTimes = config.waveTimes,
             attestersPerWave = config.attestersPerWave,
             randomSeed = config.randomSeed
         )
+    ): QuicScenario<DcAttestationNodeProgramFactory<R>> {
         return QuicScenario(
             name = "dc-attestations-${network.nodeCount}n-" +
                 "${config.attestersPerWave}x${config.waveCount}-${config.attestationSizeBytes}B",
@@ -111,10 +111,16 @@ object DcAttestationScenario {
         network: DcNetwork<R>,
         graph: DcPeerGraph<R>,
         config: DcAttestationConfig = DcAttestationConfig(),
-        latencyWindowParallelism: Int = 8
+        latencyWindowParallelism: Int = 8,
+        schedule: DcAttestationSchedule = DcAttestationSchedule.random(
+            network = network,
+            waveTimes = config.waveTimes,
+            attestersPerWave = config.attestersPerWave,
+            randomSeed = config.randomSeed
+        )
     ): DcAttestationReport {
         val result = SimulatedQuicScenarioRunner(latencyWindowParallelism = latencyWindowParallelism)
-            .run(of(network, graph, config))
+            .run(of(network, graph, config, schedule))
         return result.nodeProgramFactory.report()
     }
 }

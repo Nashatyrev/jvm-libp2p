@@ -13,6 +13,9 @@ dependencies {
   implementation project(':tools:quic-simulator')
 
   implementation("io.netty:netty-handler")
+  // Scenario files. Plain YAML -> Map parsing; the overlay onto DcRunConfig defaults is hand-written
+  // in DcRunConfigYaml so that unknown keys are rejected with a useful message.
+  implementation("org.yaml:snakeyaml:1.33")
 
   testRuntimeOnly("org.apache.logging.log4j:log4j-slf4j2-impl")
 }
@@ -20,4 +23,27 @@ dependencies {
 test {
   // The simulator runs in virtual time but is CPU/heap hungry for larger node counts.
   maxHeapSize = '4g'
+  // Scenario runs are studies, not tests: minutes to hours. Keep them out of the normal build.
+  // "interop" repeats the root build's exclusion, since this call replaces those options.
+  useJUnitPlatform {
+    excludeTags("interop", "simulation")
+  }
+}
+
+// Runs the scenario runners that `test` excludes:
+//   ./gradlew :examples:dc:simulation
+//   ./gradlew :examples:dc:simulation --tests "*attestation 1000 residential*"
+tasks.register('simulation', Test) {
+  description = 'Runs DC scenario runners (tagged "simulation").'
+  group = 'verification'
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  maxHeapSize = '8g'
+  useJUnitPlatform {
+    includeTags("simulation")
+  }
+  testLogging {
+    showStandardStreams = true
+  }
+  outputs.upToDateWhen { false }
 }

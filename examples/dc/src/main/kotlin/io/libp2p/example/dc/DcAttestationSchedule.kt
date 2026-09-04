@@ -63,6 +63,41 @@ class DcAttestationSchedule(
             return DcAttestationSchedule(waveTimes, attestations)
         }
 
+        /**
+         * Every validator in the network attests in every wave. A node running N validators
+         * publishes N attestations, each on one of that node's own subnets, chosen independently —
+         * so a multi-validator node spreads its attestations across the subnets it subscribes to.
+         *
+         * This is the "everybody votes at once" shape, and it is much heavier than [random]: the
+         * number of published messages is the validator count, not the node count.
+         */
+        fun <R> allValidators(
+            network: DcNetwork<R>,
+            waveTimes: List<Duration>,
+            randomSeed: Long = 0
+        ): DcAttestationSchedule {
+            val attesting = network.nodes.filter { it.isValidator && it.attestationSubnetIds.isNotEmpty() }
+            require(attesting.isNotEmpty()) {
+                "No node runs a validator and subscribes to a subnet"
+            }
+
+            val random = Random(randomSeed)
+            var nextId = 0
+            val attestations = waveTimes.indices.flatMap { waveIndex ->
+                attesting.flatMap { node ->
+                    List(node.validatorCount) {
+                        DcAttestation(
+                            id = nextId++,
+                            waveIndex = waveIndex,
+                            attesterNodeId = node.simNodeId,
+                            subnetId = node.attestationSubnetIds.random(random)
+                        )
+                    }
+                }
+            }
+            return DcAttestationSchedule(waveTimes, attestations)
+        }
+
         /** Evenly spaced wave times, the usual case: one attestation round per slot. */
         fun waveTimes(count: Int, first: Duration, interval: Duration): List<Duration> {
             require(count > 0) { "count must be > 0, got $count" }
