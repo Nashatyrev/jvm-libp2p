@@ -10,7 +10,6 @@ import io.libp2p.pubsub.gossip.GossipParams
 import org.assertj.core.api.Assertions
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
-import java.time.Duration
 
 /**
  * Scenario runners. One `@Test` per scenario file; the file supplies the parameters, the defaults in
@@ -47,11 +46,13 @@ class DcScenarioRunnerTest {
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 1)
         Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
 
+        // Mesh-only: disables the lazy IHAVE/IWANT gossip mechanism, leaving plain mesh push
+        // (GRAFT/PRUNE) as the only way messages travel. gossipSize = 0 means no message ids are
+        // exposed for lazy gossip, so IHAVE (and therefore IWANT) never fire.
         val gossipParams = GossipParams.builder()
-            .D(8)
-            .DLow(6)
-            .DHigh(12)
-            .heartbeatInterval(Duration.ofMillis(500))
+            .DLazy(0)
+            .gossipFactor(0.0)
+            .gossipSize(0)
             .build()
 
         val attestationConfig = DcAttestationConfig(
