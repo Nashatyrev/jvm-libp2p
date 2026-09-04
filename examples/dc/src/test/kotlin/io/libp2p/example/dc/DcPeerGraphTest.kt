@@ -54,9 +54,12 @@ class DcPeerGraphTest {
         graph.network.nodes.forEach { node ->
             assertThat(graph.peersOf(node.simNodeId)).doesNotContain(node.simNodeId)
             graph.peersOf(node.simNodeId).forEach { peer ->
-                assertThat(graph.peersOf(peer))
+                // Asserted on the boolean rather than with contains(): AssertJ's iterable asserts are
+                // recursively generic, and Kotlin loses the element type through describedAs(),
+                // inferring Nothing for the expected value.
+                assertThat(node.simNodeId in graph.peersOf(peer))
                     .describedAs("$peer should know ${node.simNodeId}")
-                    .contains(node.simNodeId)
+                    .isTrue()
             }
         }
     }
