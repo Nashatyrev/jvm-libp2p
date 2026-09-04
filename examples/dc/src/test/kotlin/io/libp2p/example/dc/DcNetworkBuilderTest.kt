@@ -403,6 +403,50 @@ class DcNetworkBuilderTest {
     }
 
     @Test
+    fun `randomSubnets defaults its range to the builder's subnet count`() {
+        val network = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 8)
+            .addGroup(count = 30) {
+                bandwidth = Bandwidths.RESIDENTIAL
+                randomSubnets(count = 2)
+            }
+            .build()
+
+        assertThat(network.attestationSubnetIds()).allMatch { it in 0 until 8 }
+        assertThat(network.nodes.map { it.attestationSubnetIds.size }.distinct()).containsExactly(2)
+    }
+
+    @Test
+    fun `rejects a non-positive subnet count`() {
+        assertThatThrownBy { DcNetworkBuilder.world(subnetCount = 0) }
+            .hasMessageContaining("subnetCount must be > 0")
+    }
+
+    @Test
+    fun `subscribes a group to every subnet`() {
+        val network = DcNetworkBuilder.world(subnetCount = 12)
+            .addGroup(count = 3) {
+                bandwidth = Bandwidths.DATACENTER
+                allSubnets()
+            }
+            .build()
+
+        network.nodes.forEach { node ->
+            assertThat(node.attestationSubnetIds).isEqualTo((0 until 12).toSet())
+        }
+    }
+
+    @Test
+    fun `allSubnets and subnets are mutually exclusive`() {
+        assertThatThrownBy {
+            DcNetworkBuilder.world().addGroup(count = 1) {
+                bandwidth = Bandwidths.VPS
+                allSubnets()
+                subnets = setOf(1)
+            }
+        }.hasMessageContaining("Set at most one subnet assignment option")
+    }
+
+    @Test
     fun `summary reports the generated population`() {
         val network = DcNetworkBuilder.world()
             .addGroup(count = 2) {

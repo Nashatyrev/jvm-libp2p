@@ -24,7 +24,9 @@ import kotlin.random.Random
  * one subnet assignment each, checked in [validated].
  */
 class DcNodeGroup<R> internal constructor(
-    private val allRegions: List<R>
+    private val allRegions: List<R>,
+    /** Total attestation subnets in the network, from [DcNetworkBuilder.subnetCount]. */
+    private val subnetCount: Int
 ) {
     private var placement: Placement<R> = Placement.AllRegions()
     private var validatorSpec: ValidatorSpec = ValidatorSpec.PerNode(0)
@@ -101,13 +103,21 @@ class DcNodeGroup<R> internal constructor(
     }
 
     /**
-     * Subscribes each node to [count] distinct subnets drawn at random from `0 until of`. The draw
-     * is seeded per node from the builder's seed, so it is reproducible across runs and unaffected
-     * by the order in which groups are added.
+     * Subscribes each node to [count] distinct subnets drawn at random from `0 until of`. [of]
+     * defaults to the network's total subnet count ([DcNetworkBuilder.subnetCount]); pass it
+     * explicitly to draw from a smaller range instead. The draw is seeded per node from the
+     * builder's seed, so it is reproducible across runs and unaffected by the order in which groups
+     * are added.
      */
-    fun randomSubnets(count: Int, of: Int) {
+    fun randomSubnets(count: Int, of: Int = subnetCount) {
         assign("randomSubnets")
         subnetSpec = SubnetSpec.RandomOf(count, of)
+    }
+
+    /** Subscribes each node of the group to every subnet in the network (`0 until subnetCount`). */
+    fun allSubnets() {
+        assign("allSubnets")
+        subnetSpec = SubnetSpec.Fixed((0 until subnetCount).toSet())
     }
 
     private fun assign(kind: String) {
@@ -115,7 +125,7 @@ class DcNodeGroup<R> internal constructor(
     }
 
     /** A copy usable as the starting point of a nested scope or a group, with no assignments yet. */
-    internal fun copyAsTemplate(): DcNodeGroup<R> = DcNodeGroup(allRegions).also {
+    internal fun copyAsTemplate(): DcNodeGroup<R> = DcNodeGroup(allRegions, subnetCount).also {
         it.placement = placement
         it.validatorSpec = validatorSpec
         it.subnetSpec = subnetSpec
@@ -126,7 +136,7 @@ class DcNodeGroup<R> internal constructor(
     internal fun validated(): DcNodeGroup<R> = apply {
         requireSingleAssignment("placement", "region", "regionWeights", "spreadOverRegions")
         requireSingleAssignment("validator allocation", "validators", "validatorsTotal")
-        requireSingleAssignment("subnet assignment", "subnets", "subnetsByIndex", "randomSubnets")
+        requireSingleAssignment("subnet assignment", "subnets", "subnetsByIndex", "randomSubnets", "allSubnets")
         require(bandwidth != null) { "bandwidth is required" }
         require(peers >= 0) { "peers must be >= 0, got $peers" }
         when (val spec = validatorSpec) {

@@ -54,13 +54,13 @@ data class DcPopulationConfig(
     }
 
     fun build(): DcNetwork<ContinentRegion> =
-        DcNetworkBuilder.world(randomSeed = seed)
+        DcNetworkBuilder.world(randomSeed = seed, subnetCount = subnetCount)
             .addGroup(count = nodes) {
                 spreadOverRegions()
                 bandwidth = this@DcPopulationConfig.bandwidth.value
                 validators = validatorsPerNode
                 peers = this@DcPopulationConfig.peers
-                randomSubnets(count = subnetsPerNode, of = subnetCount)
+                randomSubnets(count = subnetsPerNode)
             }
             .build()
 }
