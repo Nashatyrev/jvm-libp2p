@@ -1,5 +1,8 @@
 package io.libp2p.example.dc
 
+import io.libp2p.quicsim.runner.DatagramPacketTraceEvent
+import io.libp2p.quicsim.runner.DatagramPacketTraceEvent.Direction.INBOUND
+import io.libp2p.quicsim.runner.DatagramPacketTraceEvent.Direction.OUTBOUND
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import kotlin.time.Duration
@@ -18,6 +21,24 @@ class DcAttestationStatsTest {
 
     private fun attestation(id: Int, wave: Int = 0) =
         DcAttestation(id = id, waveIndex = wave, attesterNodeId = 0, subnetId = 0)
+
+    private fun packet(direction: DatagramPacketTraceEvent.Direction, nodeId: Int, atMs: Int, bytes: Int) =
+        DatagramPacketTraceEvent(
+            direction = direction,
+            nodeId = nodeId,
+            at = atMs.milliseconds,
+            localHost = "127.0.0.1",
+            localPort = 1000,
+            remoteHost = "127.0.0.1",
+            remotePort = 2000,
+            bytes = bytes,
+            payloadSha256 = "deadbeef"
+        )
+
+    private fun noTraffic(nodeCount: Int = 1) = DcTrafficReport(
+        overall = DcTrafficStats(nodeCount, packetsSent = 0, packetsReceived = 0, bytesSent = 0, bytesReceived = 0),
+        perWave = emptyMap()
+    )
 
     @Test
     fun `percentiles use nearest rank over the observed latencies`() {
@@ -85,7 +106,7 @@ class DcAttestationStatsTest {
             delivery(id = 1, receiver = 2, latencyMs = 300, wave = 1)
         )
 
-        val report = DcAttestationReport.of(published, deliveries) { 2 }
+        val report = DcAttestationReport.of(published, deliveries, expectedDeliveriesOf = { 2 }, traffic = noTraffic())
 
         assertThat(report.overall.actualDeliveries).isEqualTo(4)
         assertThat(report.overall.expectedDeliveries).isEqualTo(4)
@@ -105,5 +126,56 @@ class DcAttestationStatsTest {
 
         assertThat(recorder.published().map { it.id }).containsExactly(0, 1)
         assertThat(recorder.deliveries().map { it.attestationId }).containsExactly(0, 1)
+    }
+
+    @Test
+    fun `traffic stats average packets and bytes per node`() {
+        val events = listOf(
+            packet(OUTBOUND, nodeId = 0, atMs = 0, bytes = 100),
+            packet(OUTBOUND, nodeId = 1, atMs = 0, bytes = 200),
+            packet(INBOUND, nodeId = 2, atMs = 0, bytes = 50)
+        )
+
+        val stats = DcTrafficStats.of(events, nodeCount = 4)
+
+        assertThat(stats.packetsSent).isEqualTo(2)
+        assertThat(stats.packetsReceived).isEqualTo(1)
+        assertThat(stats.bytesSent).isEqualTo(300)
+        assertThat(stats.bytesReceived).isEqualTo(50)
+        assertThat(stats.avgPacketsSentPerNode).isEqualTo(0.5)
+        assertThat(stats.avgPacketsReceivedPerNode).isEqualTo(0.25)
+        assertThat(stats.avgBytesSentPerNode).isEqualTo(75.0)
+        assertThat(stats.avgBytesReceivedPerNode).isEqualTo(12.5)
+    }
+
+    @Test
+    fun `traffic stats of no events are all zero`() {
+        val stats = DcTrafficStats.of(emptyList(), nodeCount = 5)
+
+        assertThat(stats.packetsSent).isZero()
+        assertThat(stats.bytesSent).isZero()
+        assertThat(stats.avgPacketsSentPerNode).isZero()
+    }
+
+    @Test
+    fun `traffic report buckets events into waves by time, overall spans the whole run`() {
+        val waveTimes = listOf(100.milliseconds, 200.milliseconds)
+        val completeAt = 250.milliseconds
+        val events = listOf(
+            packet(OUTBOUND, nodeId = 0, atMs = 50, bytes = 10), // warmup: before wave 0, not in any wave
+            packet(OUTBOUND, nodeId = 0, atMs = 100, bytes = 20), // wave 0
+            packet(OUTBOUND, nodeId = 0, atMs = 150, bytes = 30), // wave 0
+            packet(OUTBOUND, nodeId = 0, atMs = 200, bytes = 40), // wave 1
+            packet(OUTBOUND, nodeId = 0, atMs = 240, bytes = 50) // wave 1
+        )
+
+        val report = DcTrafficReport.of(events, waveTimes, completeAt, nodeCount = 1)
+
+        // overall covers everything, including the warmup packet
+        assertThat(report.overall.bytesSent).isEqualTo(150)
+        assertThat(report.overall.packetsSent).isEqualTo(5)
+        assertThat(report.perWave.keys).containsExactly(0, 1)
+        assertThat(report.perWave.getValue(0).bytesSent).isEqualTo(50)
+        assertThat(report.perWave.getValue(1).bytesSent).isEqualTo(90)
     }
 }

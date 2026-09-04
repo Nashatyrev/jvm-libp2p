@@ -1,5 +1,6 @@
 package io.libp2p.example.dc
 
+import io.libp2p.quicsim.runner.DatagramPacketTraceEvent
 import io.libp2p.quicsim.sim.SimNodeId
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.time.Duration
@@ -108,20 +109,23 @@ data class DcDeliveryStats(
 /** Stats for the whole run plus a breakdown per wave, so a slow wave does not hide in the average. */
 data class DcAttestationReport(
     val overall: DcDeliveryStats,
-    val perWave: Map<Int, DcDeliveryStats>
+    val perWave: Map<Int, DcDeliveryStats>,
+    val traffic: DcTrafficReport
 ) {
     override fun toString(): String = buildString {
         append("overall: $overall")
         perWave.toSortedMap().forEach { (wave, stats) ->
             append("wave $wave: $stats")
         }
+        append(traffic)
     }
 
     companion object {
         fun of(
             published: List<DcAttestation>,
             deliveries: List<DcDelivery>,
-            expectedDeliveriesOf: (DcAttestation) -> Int
+            expectedDeliveriesOf: (DcAttestation) -> Int,
+            traffic: DcTrafficReport
         ): DcAttestationReport {
             val deliveriesByWave = deliveries.groupBy { it.waveIndex }
             val publishedByWave = published.groupBy { it.waveIndex }
@@ -137,7 +141,112 @@ data class DcAttestationReport(
                         deliveries = deliveriesByWave[wave].orEmpty(),
                         expectedDeliveries = wavePublished.sumOf(expectedDeliveriesOf)
                     )
+                },
+                traffic = traffic
+            )
+        }
+    }
+}
+
+/**
+ * Raw UDP datagram traffic sent/received by every node during a period of the run, e.g. one wave.
+ * This is transport-level traffic — including QUIC's own overhead (handshakes, ACKs, retransmits),
+ * not just gossip payload bytes — so it reflects what the network actually had to carry, and it is
+ * symmetric by construction: every packet a node emits is also recorded as inbound at its peer.
+ *
+ * Per-node figures are simple averages ([totalPackets] and [totalBytes] each divided by
+ * [nodeCount]), not a distribution — a node's role (publisher vs. plain subscriber, high- vs.
+ * low-degree) affects its share, but this is meant as a single cost-per-node headline number rather
+ * than another set of percentiles.
+ */
+data class DcTrafficStats(
+    val nodeCount: Int,
+    val packetsSent: Long,
+    val packetsReceived: Long,
+    val bytesSent: Long,
+    val bytesReceived: Long
+) {
+    val avgPacketsSentPerNode: Double get() = perNode(packetsSent)
+    val avgPacketsReceivedPerNode: Double get() = perNode(packetsReceived)
+    val avgBytesSentPerNode: Double get() = perNode(bytesSent)
+    val avgBytesReceivedPerNode: Double get() = perNode(bytesReceived)
+
+    private fun perNode(total: Long): Double = if (nodeCount == 0) 0.0 else total.toDouble() / nodeCount
+
+    override fun toString(): String =
+        "packets/node: sent=%.1f recv=%.1f (%d/%d total); bytes/node: sent=%.0f recv=%.0f (%d/%d total)"
+            .format(
+                avgPacketsSentPerNode, avgPacketsReceivedPerNode, packetsSent, packetsReceived,
+                avgBytesSentPerNode, avgBytesReceivedPerNode, bytesSent, bytesReceived
+            )
+
+    companion object {
+        fun of(events: List<DatagramPacketTraceEvent>, nodeCount: Int): DcTrafficStats {
+            var packetsSent = 0L
+            var packetsReceived = 0L
+            var bytesSent = 0L
+            var bytesReceived = 0L
+            events.forEach { event ->
+                when (event.direction) {
+                    DatagramPacketTraceEvent.Direction.OUTBOUND -> {
+                        packetsSent++
+                        bytesSent += event.bytes
+                    }
+                    DatagramPacketTraceEvent.Direction.INBOUND -> {
+                        packetsReceived++
+                        bytesReceived += event.bytes
+                    }
                 }
+            }
+            return DcTrafficStats(
+                nodeCount = nodeCount,
+                packetsSent = packetsSent,
+                packetsReceived = packetsReceived,
+                bytesSent = bytesSent,
+                bytesReceived = bytesReceived
+            )
+        }
+    }
+}
+
+/**
+ * Traffic for the whole run plus a breakdown per wave. [overall] spans the entire run — including
+ * mesh formation during [DcAttestationConfig.warmup], before any wave publishes — so it reflects the
+ * true bandwidth cost; [perWave] only covers each wave's own time window, for comparing waves to
+ * each other.
+ */
+data class DcTrafficReport(
+    val overall: DcTrafficStats,
+    val perWave: Map<Int, DcTrafficStats>
+) {
+    override fun toString(): String = buildString {
+        appendLine("traffic overall: $overall")
+        perWave.toSortedMap().forEach { (wave, stats) ->
+            appendLine("traffic wave $wave: $stats")
+        }
+    }
+
+    companion object {
+        /**
+         * Buckets [events] by wave using [waveTimes]: wave `i` spans from its own publish time up to
+         * the next wave's (or [completeAt] for the last wave). Events before the first wave time
+         * (mesh formation during warmup) fall into no wave and are only reflected in [overall].
+         */
+        fun of(
+            events: List<DatagramPacketTraceEvent>,
+            waveTimes: List<Duration>,
+            completeAt: Duration,
+            nodeCount: Int
+        ): DcTrafficReport {
+            val boundaries = waveTimes + completeAt
+            val perWave = waveTimes.indices.associateWith { wave ->
+                val start = boundaries[wave]
+                val end = boundaries[wave + 1]
+                DcTrafficStats.of(events.filter { it.at >= start && it.at < end }, nodeCount)
+            }
+            return DcTrafficReport(
+                overall = DcTrafficStats.of(events, nodeCount),
+                perWave = perWave
             )
         }
     }

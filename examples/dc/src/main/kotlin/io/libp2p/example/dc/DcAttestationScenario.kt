@@ -3,6 +3,7 @@ package io.libp2p.example.dc
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
+import io.libp2p.quicsim.runner.RecordingDatagramPacketTraceRecorder
 import io.libp2p.quicsim.runner.SimulatedQuicScenarioRunner
 import io.libp2p.quicsim.scenario.QuicScenario
 import io.libp2p.quicsim.sim.SimNodeId
@@ -70,11 +71,12 @@ class DcAttestationNodeProgramFactory<R>(
     fun expectedDeliveriesOf(attestation: DcAttestation): Int =
         network.nodesSubscribedTo(attestation.subnetId).count { it.simNodeId != attestation.attesterNodeId }
 
-    fun report(): DcAttestationReport =
+    fun report(traffic: DcTrafficReport): DcAttestationReport =
         DcAttestationReport.of(
             published = recorder.published(),
             deliveries = recorder.deliveries(),
-            expectedDeliveriesOf = ::expectedDeliveriesOf
+            expectedDeliveriesOf = ::expectedDeliveriesOf,
+            traffic = traffic
         )
 }
 
@@ -106,7 +108,12 @@ object DcAttestationScenario {
         )
     }
 
-    /** Runs the scenario on the deterministic simulator and returns the latency report. */
+    /**
+     * Runs the scenario on the deterministic simulator and returns the delivery-latency and traffic
+     * report. Traffic is captured via a [RecordingDatagramPacketTraceRecorder], which taps every raw
+     * UDP datagram sent or received by every node — so the traffic figures include QUIC's own
+     * overhead (handshakes, ACKs, retransmits), not just gossip payload bytes.
+     */
     fun <R> run(
         network: DcNetwork<R>,
         graph: DcPeerGraph<R>,
@@ -119,8 +126,17 @@ object DcAttestationScenario {
             randomSeed = config.randomSeed
         )
     ): DcAttestationReport {
-        val result = SimulatedQuicScenarioRunner(latencyWindowParallelism = latencyWindowParallelism)
-            .run(of(network, graph, config, schedule))
-        return result.nodeProgramFactory.report()
+        val traceRecorder = RecordingDatagramPacketTraceRecorder()
+        val result = SimulatedQuicScenarioRunner(
+            latencyWindowParallelism = latencyWindowParallelism,
+            datagramPacketTraceRecorder = traceRecorder
+        ).run(of(network, graph, config, schedule))
+        val traffic = DcTrafficReport.of(
+            events = traceRecorder.events(),
+            waveTimes = config.waveTimes,
+            completeAt = config.completeAt,
+            nodeCount = network.nodeCount
+        )
+        return result.nodeProgramFactory.report(traffic)
     }
 }
