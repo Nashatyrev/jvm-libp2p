@@ -6,9 +6,11 @@ import io.libp2p.example.dc.DcAttestationScenario
 import io.libp2p.example.dc.DcAttestationSchedule
 import io.libp2p.example.dc.DcNetworkBuilder
 import io.libp2p.example.dc.peerGraph
+import io.libp2p.pubsub.gossip.GossipParams
 import org.assertj.core.api.Assertions
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import java.time.Duration
 
 /**
  * Scenario runners. One `@Test` per scenario file; the file supplies the parameters, the defaults in
@@ -45,9 +47,17 @@ class DcScenarioRunnerTest {
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 1)
         Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
 
+        val gossipParams = GossipParams.builder()
+            .D(8)
+            .DLow(6)
+            .DHigh(12)
+            .heartbeatInterval(Duration.ofMillis(500))
+            .build()
+
         val attestationConfig = DcAttestationConfig(
             waveCount = 1,
             attestationSizeBytes = 240,
+            gossipParams = gossipParams,
             randomSeed = 1
         )
         val schedule = DcAttestationSchedule.allValidators(
