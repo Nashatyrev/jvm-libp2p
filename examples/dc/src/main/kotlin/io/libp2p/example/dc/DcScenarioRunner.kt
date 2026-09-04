@@ -39,7 +39,7 @@ object DcScenarioRunner {
                 "population.subnetsPerNode, or lower population.subnetCount."
         }
 
-        val attestationConfig = config.attestation.toScenarioConfig(config.run.seed)
+        val attestationConfig = config.attestation.toScenarioConfig(config.run.seed, config.gossip.toGossipParams())
         val schedule = when (config.attestation.mode) {
             DcAttesterMode.ALL_VALIDATORS -> DcAttestationSchedule.allValidators(
                 network = network,

@@ -37,12 +37,13 @@ object DcRunConfigYaml {
     fun parse(yaml: String, defaults: DcRunConfig = DcRunConfig()): DcRunConfig {
         @Suppress("UNCHECKED_CAST")
         val root = (Yaml().load<Any?>(yaml) as? Map<String, Any?>).orEmpty()
-        val node = DcYamlNode("", root).checkKeys("name", "population", "attestation", "run")
+        val node = DcYamlNode("", root).checkKeys("name", "population", "attestation", "gossip", "run")
 
         return defaults.copy(
             name = node.string("name", defaults.name) ?: defaults.name,
             population = node.section("population").let { population(it, defaults.population) },
             attestation = node.section("attestation").let { attestation(it, defaults.attestation) },
+            gossip = node.section("gossip").let { gossip(it, defaults.gossip) },
             run = node.section("run").let { run(it, defaults.run) }
         )
     }
@@ -73,6 +74,65 @@ object DcRunConfigYaml {
             warmup = node.seconds("warmupSeconds", defaults.warmup),
             waveInterval = node.seconds("waveIntervalSeconds", defaults.waveInterval),
             settle = node.seconds("settleSeconds", defaults.settle)
+        )
+    }
+
+    /**
+     * Every key is optional: an absent key keeps whatever [defaults] already had (typically `null`,
+     * meaning "leave it at the [io.libp2p.pubsub.gossip.GossipParams] default"). Durations follow the
+     * same `xxxSeconds` convention as the other sections.
+     */
+    private fun gossip(node: DcYamlNode, defaults: DcGossipConfig): DcGossipConfig {
+        node.checkKeys(
+            "D", "DLow", "DHigh", "DScore", "DOut", "DLazy",
+            "fanoutTTLSeconds", "maxGossipMessageSize", "gossipSize", "gossipHistoryLength",
+            "heartbeatIntervalSeconds", "seenTTLSeconds", "floodPublishMaxMessageSizeThreshold",
+            "gossipFactor", "opportunisticGraftPeers", "opportunisticGraftTicks",
+            "graftFloodThresholdSeconds", "maxPublishedMessages", "maxTopicsPerPublishedMessage",
+            "maxSubscriptions", "maxIHaveLength", "maxIHaveMessages", "maxIWantMessageIds",
+            "iWantFollowupTimeSeconds", "maxGraftMessages", "maxPeersSentInPruneMsg",
+            "maxPeersAcceptedInPruneMsg", "pruneBackoffSeconds", "maxPruneMessages",
+            "gossipRetransmission", "maxIDontWantMessageIds", "iDontWantMinMessageSizeThreshold",
+            "iDontWantTTLSeconds"
+        )
+        return DcGossipConfig(
+            D = node.intOrNull("D") ?: defaults.D,
+            DLow = node.intOrNull("DLow") ?: defaults.DLow,
+            DHigh = node.intOrNull("DHigh") ?: defaults.DHigh,
+            DScore = node.intOrNull("DScore") ?: defaults.DScore,
+            DOut = node.intOrNull("DOut") ?: defaults.DOut,
+            DLazy = node.intOrNull("DLazy") ?: defaults.DLazy,
+            fanoutTTL = node.secondsOrNull("fanoutTTLSeconds") ?: defaults.fanoutTTL,
+            maxGossipMessageSize = node.intOrNull("maxGossipMessageSize") ?: defaults.maxGossipMessageSize,
+            gossipSize = node.intOrNull("gossipSize") ?: defaults.gossipSize,
+            gossipHistoryLength = node.intOrNull("gossipHistoryLength") ?: defaults.gossipHistoryLength,
+            heartbeatInterval = node.secondsOrNull("heartbeatIntervalSeconds") ?: defaults.heartbeatInterval,
+            seenTTL = node.secondsOrNull("seenTTLSeconds") ?: defaults.seenTTL,
+            floodPublishMaxMessageSizeThreshold = node.intOrNull("floodPublishMaxMessageSizeThreshold")
+                ?: defaults.floodPublishMaxMessageSizeThreshold,
+            gossipFactor = node.doubleOrNull("gossipFactor") ?: defaults.gossipFactor,
+            opportunisticGraftPeers = node.intOrNull("opportunisticGraftPeers") ?: defaults.opportunisticGraftPeers,
+            opportunisticGraftTicks = node.intOrNull("opportunisticGraftTicks") ?: defaults.opportunisticGraftTicks,
+            graftFloodThreshold = node.secondsOrNull("graftFloodThresholdSeconds") ?: defaults.graftFloodThreshold,
+            maxPublishedMessages = node.intOrNull("maxPublishedMessages") ?: defaults.maxPublishedMessages,
+            maxTopicsPerPublishedMessage = node.intOrNull("maxTopicsPerPublishedMessage")
+                ?: defaults.maxTopicsPerPublishedMessage,
+            maxSubscriptions = node.intOrNull("maxSubscriptions") ?: defaults.maxSubscriptions,
+            maxIHaveLength = node.intOrNull("maxIHaveLength") ?: defaults.maxIHaveLength,
+            maxIHaveMessages = node.intOrNull("maxIHaveMessages") ?: defaults.maxIHaveMessages,
+            maxIWantMessageIds = node.intOrNull("maxIWantMessageIds") ?: defaults.maxIWantMessageIds,
+            iWantFollowupTime = node.secondsOrNull("iWantFollowupTimeSeconds") ?: defaults.iWantFollowupTime,
+            maxGraftMessages = node.intOrNull("maxGraftMessages") ?: defaults.maxGraftMessages,
+            maxPeersSentInPruneMsg = node.intOrNull("maxPeersSentInPruneMsg") ?: defaults.maxPeersSentInPruneMsg,
+            maxPeersAcceptedInPruneMsg = node.intOrNull("maxPeersAcceptedInPruneMsg")
+                ?: defaults.maxPeersAcceptedInPruneMsg,
+            pruneBackoff = node.secondsOrNull("pruneBackoffSeconds") ?: defaults.pruneBackoff,
+            maxPruneMessages = node.intOrNull("maxPruneMessages") ?: defaults.maxPruneMessages,
+            gossipRetransmission = node.intOrNull("gossipRetransmission") ?: defaults.gossipRetransmission,
+            maxIDontWantMessageIds = node.intOrNull("maxIDontWantMessageIds") ?: defaults.maxIDontWantMessageIds,
+            iDontWantMinMessageSizeThreshold = node.intOrNull("iDontWantMinMessageSizeThreshold")
+                ?: defaults.iDontWantMinMessageSizeThreshold,
+            iDontWantTTL = node.secondsOrNull("iDontWantTTLSeconds") ?: defaults.iDontWantTTL
         )
     }
 
@@ -123,6 +183,27 @@ private class DcYamlNode(private val path: String, private val values: Map<Strin
 
     fun seconds(key: String, default: Duration): Duration = when (val raw = values[key]) {
         null -> default
+        is Number -> raw.toDouble().seconds
+        else -> raw.toString().toDoubleOrNull()?.seconds
+            ?: throw IllegalArgumentException("${childPath(key)} must be a number of seconds, got '$raw'")
+    }
+
+    fun intOrNull(key: String): Int? = when (val raw = values[key]) {
+        null -> null
+        is Number -> raw.toInt()
+        else -> raw.toString().toIntOrNull()
+            ?: throw IllegalArgumentException("${childPath(key)} must be an integer, got '$raw'")
+    }
+
+    fun doubleOrNull(key: String): Double? = when (val raw = values[key]) {
+        null -> null
+        is Number -> raw.toDouble()
+        else -> raw.toString().toDoubleOrNull()
+            ?: throw IllegalArgumentException("${childPath(key)} must be a number, got '$raw'")
+    }
+
+    fun secondsOrNull(key: String): Duration? = when (val raw = values[key]) {
+        null -> null
         is Number -> raw.toDouble().seconds
         else -> raw.toString().toDoubleOrNull()?.seconds
             ?: throw IllegalArgumentException("${childPath(key)} must be a number of seconds, got '$raw'")
