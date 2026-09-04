@@ -37,17 +37,37 @@ class DcScenarioRunnerTest {
                 randomSeed = 1,
                 subnetCount = 64
             )
-            .addGroup(count = 300) {
-//                spreadOverRegions()
+            .addGroup(count = 6) {
+                // validator pools
                 regionWeights = mapOf(
                     ContinentRegion.EUROPE to 0.4,
                     ContinentRegion.US_EAST to 0.4,
                     ContinentRegion.US_WEST to 0.2,
                 )
                 bandwidth = Bandwidths.DATACENTER
-                validators = 100
-                peers = 40
+                validators = 10000
+                peers = 200
                 allSubnets()
+            }
+            .addGroup(count = 200) {
+                // business
+                regionWeights = mapOf(
+                    ContinentRegion.EUROPE to 0.4,
+                    ContinentRegion.US_EAST to 0.4,
+                    ContinentRegion.US_WEST to 0.2,
+                )
+                bandwidth = Bandwidths.DATACENTER
+                validators = 200
+                peers = 100
+                allSubnets()
+            }
+            .addGroup(count = 300) {
+                // home stakers
+                spreadOverRegions()
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 5
+                peers = 40
+                randomSubnets(10)
             }
 //            .addGroup(count = 700) {
 //                spreadOverRegions()
@@ -86,7 +106,6 @@ class DcScenarioRunnerTest {
             network = network,
             graph = graph,
             config = attestationConfig,
-            latencyWindowParallelism = 16,
             schedule = schedule
         )
         println(report)

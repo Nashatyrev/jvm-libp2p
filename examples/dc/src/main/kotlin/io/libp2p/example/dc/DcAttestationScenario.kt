@@ -118,7 +118,7 @@ object DcAttestationScenario {
         network: DcNetwork<R>,
         graph: DcPeerGraph<R>,
         config: DcAttestationConfig = DcAttestationConfig(),
-        latencyWindowParallelism: Int = 8,
+        latencyWindowParallelism: Int = Runtime.getRuntime().availableProcessors(),
         schedule: DcAttestationSchedule = DcAttestationSchedule.random(
             network = network,
             waveTimes = config.waveTimes,
