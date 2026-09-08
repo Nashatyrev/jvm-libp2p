@@ -115,6 +115,8 @@ data class DcAttestationReport(
     val gossipBytesReceived: Long = 0,
     val gossipPublishBytesSent: Long = 0,
     val gossipPublishBytesReceived: Long = 0,
+    val gossipPublishBytesSentByWave: Map<Int, Long> = emptyMap(),
+    val gossipPublishBytesReceivedByWave: Map<Int, Long> = emptyMap(),
     val mesh: DcMeshStats? = null
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
@@ -154,6 +156,19 @@ data class DcAttestationReport(
                     gossipControlBytesSent, gossipControlBytesReceived
                 )
         )
+        // Attributed by the wave index in the payload rather than by wall clock, so a wave's bytes
+        // stay credited to it even once the next wave has started publishing.
+        gossipPublishBytesSentByWave.keys.union(gossipPublishBytesReceivedByWave.keys).sorted()
+            .forEach { wave ->
+                val sent = gossipPublishBytesSentByWave[wave] ?: 0
+                val recv = gossipPublishBytesReceivedByWave[wave] ?: 0
+                appendLine(
+                    "gossip publish bytes/node wave $wave: sent=%.0f recv=%.0f (%d/%d total)"
+                        .format(
+                            sent.toDouble() / nodeCount, recv.toDouble() / nodeCount, sent, recv
+                        )
+                )
+            }
         mesh?.let { append(it) }
     }
 
@@ -167,6 +182,8 @@ data class DcAttestationReport(
             gossipBytesReceived: Long = 0,
             gossipPublishBytesSent: Long = 0,
             gossipPublishBytesReceived: Long = 0,
+            gossipPublishBytesSentByWave: Map<Int, Long> = emptyMap(),
+            gossipPublishBytesReceivedByWave: Map<Int, Long> = emptyMap(),
             mesh: DcMeshStats? = null
         ): DcAttestationReport {
             val deliveriesByWave = deliveries.groupBy { it.waveIndex }
@@ -189,6 +206,8 @@ data class DcAttestationReport(
                 gossipBytesReceived = gossipBytesReceived,
                 gossipPublishBytesSent = gossipPublishBytesSent,
                 gossipPublishBytesReceived = gossipPublishBytesReceived,
+                gossipPublishBytesSentByWave = gossipPublishBytesSentByWave,
+                gossipPublishBytesReceivedByWave = gossipPublishBytesReceivedByWave,
                 mesh = mesh
             )
         }

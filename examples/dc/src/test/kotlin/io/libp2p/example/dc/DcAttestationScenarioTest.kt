@@ -50,6 +50,15 @@ class DcAttestationScenarioTest {
         assertThat(report.overall.p95!!).isLessThanOrEqualTo(report.overall.p99!!)
         assertThat(report.overall.p99!!).isLessThanOrEqualTo(config.settle)
         assertThat(report.perWave.keys).containsExactly(0, 1)
+
+        // Publish bytes are attributed to a wave by reading the wave index back out of the payload.
+        // Requiring the per-wave figures to add up to the aggregate proves every publish message
+        // was recognised: an unparsed payload would be silently dropped from the breakdown.
+        assertThat(report.gossipPublishBytesReceivedByWave.keys).containsExactlyInAnyOrder(0, 1)
+        assertThat(report.gossipPublishBytesReceivedByWave.values.sum())
+            .isEqualTo(report.gossipPublishBytesReceived)
+        assertThat(report.gossipPublishBytesSentByWave.values.sum())
+            .isEqualTo(report.gossipPublishBytesSent)
     }
 
     @Test

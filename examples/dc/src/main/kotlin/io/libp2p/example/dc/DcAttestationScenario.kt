@@ -82,8 +82,23 @@ class DcAttestationNodeProgramFactory<R>(
             gossipBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.bytesRead },
             gossipPublishBytesSent = nodePrograms.sumOf { it.gossipByteCounter.publishBytesWritten },
             gossipPublishBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.publishBytesRead },
+            gossipPublishBytesSentByWave = nodePrograms.sumByWave { it.publishBytesWrittenByWave },
+            gossipPublishBytesReceivedByWave = nodePrograms.sumByWave { it.publishBytesReadByWave },
             mesh = DcMeshStats.of(nodePrograms.map { it.finalMeshSizes })
         )
+}
+
+/** Totals each node's per-wave byte counts into one map keyed by wave index. */
+private fun List<DcAttestationNodeProgram>.sumByWave(
+    counts: (GossipByteCounter) -> Map<Int, Long>
+): Map<Int, Long> {
+    val totals = mutableMapOf<Int, Long>()
+    forEach { program ->
+        counts(program.gossipByteCounter).forEach { (wave, bytes) ->
+            totals[wave] = (totals[wave] ?: 0) + bytes
+        }
+    }
+    return totals
 }
 
 object DcAttestationScenario {

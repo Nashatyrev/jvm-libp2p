@@ -165,9 +165,12 @@ class DcAttestationNodeProgram(
     )
 
     companion object {
-        private const val MAGIC = 0x0DCA7757.toInt()
+        internal const val MAGIC = 0x0DCA7757.toInt()
 
         /** magic + id + wave + subnet + timestamp */
         const val HEADER_BYTES: Int = 4 + 4 + 4 + 4 + 8
+
+        /** Byte offset of the wave index within the payload, for readers that only need that. */
+        internal const val WAVE_INDEX_OFFSET: Int = 4 + 4
     }
 }
