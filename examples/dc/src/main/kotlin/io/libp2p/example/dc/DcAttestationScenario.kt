@@ -81,7 +81,8 @@ class DcAttestationNodeProgramFactory<R>(
             gossipBytesSent = nodePrograms.sumOf { it.gossipByteCounter.bytesWritten },
             gossipBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.bytesRead },
             gossipPublishBytesSent = nodePrograms.sumOf { it.gossipByteCounter.publishBytesWritten },
-            gossipPublishBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.publishBytesRead }
+            gossipPublishBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.publishBytesRead },
+            mesh = DcMeshStats.of(nodePrograms.map { it.finalMeshSizes })
         )
 }
 

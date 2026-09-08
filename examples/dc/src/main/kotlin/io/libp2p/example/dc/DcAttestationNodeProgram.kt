@@ -45,6 +45,14 @@ class DcAttestationNodeProgram(
     private val random = Random(randomSeed)
     val gossipByteCounter = GossipByteCounter()
 
+    /**
+     * Mesh peer counts per topic, sampled at [completeAt] on this node's own event thread — the
+     * thread that owns the router's mesh — so the report can read them once the run is over.
+     */
+    @Volatile
+    var finalMeshSizes: List<Int> = emptyList()
+        private set
+
     override fun createDebugGossipHandler(): ChannelHandler = gossipByteCounter
 
     // Ethereum StrictNoSign: message ID = SHA256(data)[0:20], no from/seqno/signature on wire.
@@ -78,7 +86,10 @@ class DcAttestationNodeProgram(
         // Every node stops at the same simulated moment, whether or not it attested, so the run ends
         // on the settle deadline instead of when the last publisher happens to finish.
         val delay = (completeAt - simContext.timer.elapsedTime()).coerceAtLeast(Duration.ZERO)
-        simContext.scheduler.executeAfterDelay(delay) { completeFuture.complete(Unit) }
+        simContext.scheduler.executeAfterDelay(delay) {
+            finalMeshSizes = meshSizes()
+            completeFuture.complete(Unit)
+        }
     }
 
     private fun subscribe(simContext: SimContext) {

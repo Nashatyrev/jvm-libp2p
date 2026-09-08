@@ -114,7 +114,8 @@ data class DcAttestationReport(
     val gossipBytesSent: Long = 0,
     val gossipBytesReceived: Long = 0,
     val gossipPublishBytesSent: Long = 0,
-    val gossipPublishBytesReceived: Long = 0
+    val gossipPublishBytesReceived: Long = 0,
+    val mesh: DcMeshStats? = null
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
     val gossipControlBytesReceived: Long get() = gossipBytesReceived - gossipPublishBytesReceived
@@ -153,6 +154,7 @@ data class DcAttestationReport(
                     gossipControlBytesSent, gossipControlBytesReceived
                 )
         )
+        mesh?.let { append(it) }
     }
 
     companion object {
@@ -164,7 +166,8 @@ data class DcAttestationReport(
             gossipBytesSent: Long = 0,
             gossipBytesReceived: Long = 0,
             gossipPublishBytesSent: Long = 0,
-            gossipPublishBytesReceived: Long = 0
+            gossipPublishBytesReceived: Long = 0,
+            mesh: DcMeshStats? = null
         ): DcAttestationReport {
             val deliveriesByWave = deliveries.groupBy { it.waveIndex }
             val publishedByWave = published.groupBy { it.waveIndex }
@@ -185,7 +188,8 @@ data class DcAttestationReport(
                 gossipBytesSent = gossipBytesSent,
                 gossipBytesReceived = gossipBytesReceived,
                 gossipPublishBytesSent = gossipPublishBytesSent,
-                gossipPublishBytesReceived = gossipPublishBytesReceived
+                gossipPublishBytesReceived = gossipPublishBytesReceived,
+                mesh = mesh
             )
         }
     }

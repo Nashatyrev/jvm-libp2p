@@ -42,6 +42,13 @@ abstract class GossipNodeProgram(
     /** Override to inject a per-stream debug handler into every gossip peer channel. */
     protected open fun createDebugGossipHandler(): ChannelHandler? = debugGossipHandler
 
+    /**
+     * Current number of mesh peers, one entry per subscribed topic. Empty before the router is
+     * built. `mesh` is owned by the gossip event thread, so call this from that thread.
+     */
+    fun meshSizes(): List<Int> =
+        if (this::gossipRouter.isInitialized) gossipRouter.mesh.values.map { it.size } else emptyList()
+
     override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> {
         gossipRouter = GossipRouterBuilder().also {
             it.params = params
