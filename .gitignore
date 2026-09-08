@@ -197,3 +197,6 @@ package-lock.json
 # Claude
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Working files (scripts, results, scratch — not for commit)
+work.dir/

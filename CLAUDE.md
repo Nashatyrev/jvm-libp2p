@@ -8,6 +8,10 @@ jvm-libp2p is a JVM implementation of the [libp2p](https://libp2p.io/) networkin
 
 Notable users: Teku (Ethereum Consensus Layer client), Nabu (minimal IPFS), Peergos (peer-to-peer encrypted filesystem).
 
+## Working Files
+
+Any temporary or working files that should not be committed (scripts, result dumps, scratch outputs) must be placed under `work.dir/` in the repository root. This directory is `.gitignore`d. Do not use `/tmp` or other system directories for such files.
+
 ## Build Commands
 
 ```bash
