@@ -61,14 +61,14 @@ class DcScenarioRunnerTest {
                 peers = 100
                 allSubnets()
             }
-            .addGroup(count = 300) {
-                // home stakers
-                spreadOverRegions()
-                bandwidth = Bandwidths.RESIDENTIAL
-                validators = 10
-                peers = 40
-                randomSubnets(10)
-            }
+//            .addGroup(count = 300) {
+//                // home stakers
+//                spreadOverRegions()
+//                bandwidth = Bandwidths.RESIDENTIAL
+//                validators = 10
+//                peers = 40
+//                randomSubnets(10)
+//            }
 //            .addGroup(count = 700) {
 //                spreadOverRegions()
 //                bandwidth = Bandwidths.RESIDENTIAL
