@@ -13,12 +13,18 @@ import kotlin.time.Duration.Companion.seconds
  */
 class DcAttestationScenarioTest {
 
-    private fun population(nodeCount: Int, subnetCount: Int, subnetsPerNode: Int, peers: Int) =
+    private fun population(
+        nodeCount: Int,
+        subnetCount: Int,
+        subnetsPerNode: Int,
+        peers: Int,
+        validatorsPerNode: Int = 1
+    ) =
         DcNetworkBuilder.world(randomSeed = 1)
             .addGroup(count = nodeCount) {
                 spreadOverRegions()
                 bandwidth = Bandwidths.RESIDENTIAL
-                validators = 1
+                validators = validatorsPerNode
                 this.peers = peers
                 randomSubnets(count = subnetsPerNode, of = subnetCount)
             }
@@ -104,6 +110,58 @@ class DcAttestationScenarioTest {
                 .contains(attestation.subnetId)
         }
         assertThat(schedule.attestationsOf(schedule.attestations.first().attesterNodeId)).isNotEmpty()
+    }
+
+    @Test
+    fun `validator-level schedule draws the requested attesters per wave from the validator set`() {
+        // 10 nodes x 4 validators = 40 validator slots, so 25 per wave is well over the node count.
+        val network = population(
+            nodeCount = 10,
+            subnetCount = 4,
+            subnetsPerNode = 1,
+            peers = 4,
+            validatorsPerNode = 4
+        )
+        val schedule = DcAttestationSchedule.randomValidators(
+            network = network,
+            waveTimes = DcAttestationSchedule.waveTimes(count = 3, first = 30.seconds, interval = 12.seconds),
+            attestersPerWave = 25,
+            randomSeed = 4
+        )
+
+        assertThat(schedule.attestations).hasSize(75)
+        schedule.attestations.groupBy { it.waveIndex }.forEach { (wave, attestations) ->
+            assertThat(attestations)
+                .describedAs(
+                    "attesters in wave %s; drawing over validators rather than nodes is " +
+                        "what lets a wave exceed the 10 nodes",
+                    wave
+                )
+                .hasSize(25)
+        }
+        schedule.attestations.forEach { attestation ->
+            assertThat(network.node(attestation.attesterNodeId).attestationSubnetIds)
+                .contains(attestation.subnetId)
+        }
+    }
+
+    @Test
+    fun `validator-level schedule rejects asking for more attesters than there are validators`() {
+        val network = population(
+            nodeCount = 10,
+            subnetCount = 4,
+            subnetsPerNode = 1,
+            peers = 4,
+            validatorsPerNode = 4
+        )
+
+        assertThatThrownBy {
+            DcAttestationSchedule.randomValidators(
+                network = network,
+                waveTimes = listOf(30.seconds),
+                attestersPerWave = 41
+            )
+        }.hasMessageContaining("exceeds the 40 validators")
     }
 
     @Test

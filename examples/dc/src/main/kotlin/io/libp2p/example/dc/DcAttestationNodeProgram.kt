@@ -9,10 +9,10 @@ import io.libp2p.pubsub.gossip.GossipScoreParams
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.quicsim.program.GossipNodeProgram
 import io.libp2p.quicsim.sim.NetworkContext
-import io.netty.channel.ChannelHandler
 import io.libp2p.quicsim.sim.SimContext
 import io.libp2p.quicsim.sim.SimNodeId
 import io.netty.buffer.Unpooled
+import io.netty.channel.ChannelHandler
 import pubsub.pb.Rpc
 import java.nio.ByteBuffer
 import java.util.concurrent.CompletableFuture

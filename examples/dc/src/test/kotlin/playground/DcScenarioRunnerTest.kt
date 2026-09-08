@@ -114,9 +114,7 @@ class DcScenarioRunnerTest {
             schedule = schedule
         )
         println(report)
-
     }
-
 
     @Test
     fun `rolling attestation`() {
@@ -153,22 +151,23 @@ class DcScenarioRunnerTest {
 
         val attestationConfig = DcAttestationConfig(
             waveCount = 8,
+            // A 32nd of the validator set per wave: one slot's worth of committees over 32 subnets.
             attestersPerWave = 1024 * 1024 / 32,
             waveInterval = 1.seconds,
             attestationSizeBytes = 240,
-            // ~223MB reaches each node, and a 50 Mbit/s residential link carries 6.25MB/s, so the
-            // wave needs ~36s of link time alone. The default 12s settle would cut off around two
-            // thirds of it and report the shortfall as undelivered; 150s leaves room for the
-            // transfer plus queueing so the latency figures mean something.
             settle = 30.seconds,
             gossipParams = gossipParams,
             randomSeed = 1
         )
-        val schedule = DcAttestationSchedule.allValidators(
-            network = network,
-            waveTimes = attestationConfig.waveTimes,
-            randomSeed = 1
-        )
+        // randomValidators, not allValidators: the latter ignores attestersPerWave and has all
+        // 1,048,576 validators attest in every wave, 32x a slot's worth.
+        val schedule = DcAttestationSchedule
+            .randomValidators(
+                network = network,
+                waveTimes = attestationConfig.waveTimes,
+                attestersPerWave = attestationConfig.attestersPerWave,
+                randomSeed = 1
+            )
 
         val report = DcAttestationScenario.run(
             network = network,
@@ -177,6 +176,5 @@ class DcScenarioRunnerTest {
             schedule = schedule
         )
         println(report)
-
     }
 }

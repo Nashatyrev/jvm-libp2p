@@ -29,15 +29,22 @@ data class DcMeshStats(
         appendLine(
             "mesh size per (node,topic): mean=%.2f min=%d p50=%d p95=%d max=%d (%d meshes over %d nodes)"
                 .format(
-                    meanSize, sizes.first(), sizes.intPercentile(0.50),
-                    sizes.intPercentile(0.95), sizes.last(), meshCount, nodeCount
+                    meanSize,
+                    sizes.first(),
+                    sizes.intPercentile(0.50),
+                    sizes.intPercentile(0.95),
+                    sizes.last(),
+                    meshCount,
+                    nodeCount
                 )
         )
         appendLine(
             "mesh degree per node (summed over topics): mean=%.1f min=%d p50=%d max=%d"
                 .format(
-                    perNodeDegrees.average(), perNodeDegrees.first(),
-                    perNodeDegrees.intPercentile(0.50), perNodeDegrees.last()
+                    perNodeDegrees.average(),
+                    perNodeDegrees.first(),
+                    perNodeDegrees.intPercentile(0.50),
+                    perNodeDegrees.last()
                 )
         )
         appendLine("mesh size histogram: " + sizes.groupingBy { it }.eachCount().toSortedMap())

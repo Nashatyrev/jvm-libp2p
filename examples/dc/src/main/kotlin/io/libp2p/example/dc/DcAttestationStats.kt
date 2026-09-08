@@ -136,7 +136,8 @@ data class DcAttestationReport(
                 .format(
                     gossipBytesSent.toDouble() / nodeCount,
                     gossipBytesReceived.toDouble() / nodeCount,
-                    gossipBytesSent, gossipBytesReceived,
+                    gossipBytesSent,
+                    gossipBytesReceived,
                     gossipFraction * 100
                 )
         )
@@ -145,7 +146,8 @@ data class DcAttestationReport(
                 .format(
                     gossipPublishBytesSent.toDouble() / nodeCount,
                     gossipPublishBytesReceived.toDouble() / nodeCount,
-                    gossipPublishBytesSent, gossipPublishBytesReceived
+                    gossipPublishBytesSent,
+                    gossipPublishBytesReceived
                 )
         )
         appendLine(
@@ -153,7 +155,8 @@ data class DcAttestationReport(
                 .format(
                     gossipControlBytesSent.toDouble() / nodeCount,
                     gossipControlBytesReceived.toDouble() / nodeCount,
-                    gossipControlBytesSent, gossipControlBytesReceived
+                    gossipControlBytesSent,
+                    gossipControlBytesReceived
                 )
         )
         // Attributed by the wave index in the payload rather than by wall clock, so a wave's bytes
@@ -165,7 +168,10 @@ data class DcAttestationReport(
                 appendLine(
                     "gossip publish bytes/node wave $wave: sent=%.0f recv=%.0f (%d/%d total)"
                         .format(
-                            sent.toDouble() / nodeCount, recv.toDouble() / nodeCount, sent, recv
+                            sent.toDouble() / nodeCount,
+                            recv.toDouble() / nodeCount,
+                            sent,
+                            recv
                         )
                 )
             }
@@ -242,8 +248,14 @@ data class DcTrafficStats(
     override fun toString(): String =
         "packets/node: sent=%.1f recv=%.1f (%d/%d total); bytes/node: sent=%.0f recv=%.0f (%d/%d total)"
             .format(
-                avgPacketsSentPerNode, avgPacketsReceivedPerNode, packetsSent, packetsReceived,
-                avgBytesSentPerNode, avgBytesReceivedPerNode, bytesSent, bytesReceived
+                avgPacketsSentPerNode,
+                avgPacketsReceivedPerNode,
+                packetsSent,
+                packetsReceived,
+                avgBytesSentPerNode,
+                avgBytesReceivedPerNode,
+                bytesSent,
+                bytesReceived
             )
 
     companion object {

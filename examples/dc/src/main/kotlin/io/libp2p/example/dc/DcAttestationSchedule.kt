@@ -64,6 +64,49 @@ class DcAttestationSchedule(
         }
 
         /**
+         * At every time in [waveTimes], picks [attestersPerWave] validators at random from the
+         * whole validator set, each attesting on one of its own node's subnets.
+         *
+         * This is the per-slot shape of the real protocol — a fraction of the validator set votes
+         * each slot — and sits between [random], which draws whole nodes and so cannot exceed the
+         * node count, and [allValidators], which has everyone vote every wave.
+         *
+         * The draw is over validators rather than nodes, so a node running many validators is
+         * expected to appear several times in one wave; that repetition is the point, and it is why
+         * [attestersPerWave] may exceed the number of nodes.
+         */
+        fun <R> randomValidators(
+            network: DcNetwork<R>,
+            waveTimes: List<Duration>,
+            attestersPerWave: Int,
+            randomSeed: Long = 0
+        ): DcAttestationSchedule {
+            require(attestersPerWave > 0) { "attestersPerWave must be > 0, got $attestersPerWave" }
+            // One entry per validator, so the draw is uniform over validators, not over nodes.
+            val validatorSlots = network.nodes
+                .filter { it.isValidator && it.attestationSubnetIds.isNotEmpty() }
+                .flatMap { node -> List(node.validatorCount) { node } }
+            require(validatorSlots.size >= attestersPerWave) {
+                "attestersPerWave=$attestersPerWave exceeds the ${validatorSlots.size} validators " +
+                    "running on nodes that subscribe to a subnet"
+            }
+
+            val random = Random(randomSeed)
+            var nextId = 0
+            val attestations = waveTimes.indices.flatMap { waveIndex ->
+                validatorSlots.shuffled(random).take(attestersPerWave).map { node ->
+                    DcAttestation(
+                        id = nextId++,
+                        waveIndex = waveIndex,
+                        attesterNodeId = node.simNodeId,
+                        subnetId = node.attestationSubnetIds.random(random)
+                    )
+                }
+            }
+            return DcAttestationSchedule(waveTimes, attestations)
+        }
+
+        /**
          * Every validator in the network attests in every wave. A node running N validators
          * publishes N attestations, each on one of that node's own subnets, chosen independently —
          * so a multi-validator node spreads its attestations across the subnets it subscribes to.
