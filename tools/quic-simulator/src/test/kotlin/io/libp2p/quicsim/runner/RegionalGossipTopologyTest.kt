@@ -169,7 +169,7 @@ class RegionalGossipTopologyTest {
                     gossipSeedBase = seed.toLong() + 20_000L,
                     messagesPerPublisher = LARGE_REPORT_WAVE_COUNT * REGULAR_CHUNKS_PER_WAVE,
                     messagesPerWave = REGULAR_CHUNKS_PER_WAVE,
-                    chunkTopicCount = 2,
+                    chunkTopicCount = LARGE_REPORT_CHUNK_TOPIC_COUNT,
                     batchPublish = true,
                     publishInterval = LARGE_REPORT_PUBLISH_INTERVAL,
                     maxRunDuration = completeAfter,
@@ -1531,6 +1531,13 @@ class RegionalGossipTopologyTest {
         val LARGE_REPORT_NO_REPUBLISH = java.lang.Boolean.getBoolean("quicsim.largeGossip.noRepublish")
         val LARGE_REPORT_SIZE_KIB = Integer.getInteger("quicsim.largeGossip.sizeKiB", 256)
         val LARGE_REPORT_SETTLE_SECONDS: Int? = Integer.getInteger("quicsim.largeGossip.settleSeconds")
+
+        /**
+         * Number of topics ("subnets") the [REGULAR_CHUNKS_PER_WAVE] chunks of a wave are
+         * spread across, round-robin. Must divide the chunk count evenly.
+         */
+        val LARGE_REPORT_CHUNK_TOPIC_COUNT =
+            Integer.getInteger("quicsim.largeGossip.chunkTopicCount", 2)
         val LARGE_REPORT_PUBLISH_INTERVAL = 30.seconds
         val LARGE_REPORT_SETTLE_WINDOW = 5.seconds
         val LARGE_P95_RECIPIENT_COUNT = ((NODE_COUNT - PUBLISHER_COUNT) * 0.95).toInt()

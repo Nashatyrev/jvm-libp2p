@@ -150,6 +150,7 @@ configure(
             "quicsim.largeGossip.chunkOnly",
             "quicsim.largeGossip.sizeKiB",
             "quicsim.largeGossip.settleSeconds",
+            "quicsim.largeGossip.chunkTopicCount",
             "quicsim.largeGossip.noRepublish",
             "quicsim.largeGossip.seedCount",
             "quicsim.largeGossip.seedStart",
