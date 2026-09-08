@@ -39,6 +39,9 @@ abstract class GossipNodeProgram(
         }
     }
 
+    /** Override to inject a per-stream debug handler into every gossip peer channel. */
+    protected open fun createDebugGossipHandler(): ChannelHandler? = debugGossipHandler
+
     override fun createProtocols(context: SimContext): List<ProtocolBinding<*>> {
         gossipRouter = GossipRouterBuilder().also {
             it.params = params
@@ -51,7 +54,7 @@ abstract class GossipNodeProgram(
         }.build()
 
         messageApi = createPubsubApi(gossipRouter)
-        gossipProtocol = Gossip(router = gossipRouter, api = messageApi, debugGossipHandler = debugGossipHandler)
+        gossipProtocol = Gossip(router = gossipRouter, api = messageApi, debugGossipHandler = createDebugGossipHandler())
         return listOf(gossipProtocol)
     }
 

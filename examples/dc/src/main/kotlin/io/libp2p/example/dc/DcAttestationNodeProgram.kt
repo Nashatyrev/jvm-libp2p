@@ -1,12 +1,19 @@
 package io.libp2p.example.dc
 
+import io.libp2p.core.crypto.sha256
+import io.libp2p.etc.types.toWBytes
+import io.libp2p.pubsub.AbstractPubsubMessage
+import io.libp2p.pubsub.DEFAULT_PUBSUB_MESSAGE_ID_LENGTH
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.pubsub.gossip.GossipScoreParams
+import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.quicsim.program.GossipNodeProgram
 import io.libp2p.quicsim.sim.NetworkContext
+import io.netty.channel.ChannelHandler
 import io.libp2p.quicsim.sim.SimContext
 import io.libp2p.quicsim.sim.SimNodeId
 import io.netty.buffer.Unpooled
+import pubsub.pb.Rpc
 import java.nio.ByteBuffer
 import java.util.concurrent.CompletableFuture
 import java.util.function.Consumer
@@ -36,6 +43,25 @@ class DcAttestationNodeProgram(
 ) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed) {
 
     private val random = Random(randomSeed)
+    val gossipByteCounter = GossipByteCounter()
+
+    override fun createDebugGossipHandler(): ChannelHandler = gossipByteCounter
+
+    // Ethereum StrictNoSign: message ID = SHA256(data)[0:20], no from/seqno/signature on wire.
+    override fun configureGossipRouterBuilder(builder: GossipRouterBuilder) {
+        super.configureGossipRouterBuilder(builder)
+        builder.messageFactory = { msg: Rpc.Message ->
+            object : AbstractPubsubMessage() {
+                override val protobufMessage: Rpc.Message = Rpc.Message.newBuilder()
+                    .setData(msg.data)
+                    .addAllTopicIDs(msg.topicIDsList)
+                    .build()
+                override val messageId by lazy {
+                    sha256(msg.data.toByteArray()).copyOf(DEFAULT_PUBSUB_MESSAGE_ID_LENGTH).toWBytes()
+                }
+            }
+        }
+    }
 
     init {
         require(attestationSizeBytes >= HEADER_BYTES) {
@@ -79,7 +105,7 @@ class DcAttestationNodeProgram(
     private fun schedulePublications(simContext: SimContext, networkContext: NetworkContext) {
         val mine = schedule.attestationsOf(simNodeId)
         if (mine.isEmpty()) return
-        val publisher = messageApi.createPublisher(networkContext.myHost.privKey)
+        val publisher = messageApi.createPublisher(privKey = null, seqIdGenerator = { null })
         mine.forEach { attestation ->
             val at = schedule.timeOf(attestation)
             val delay = (at - simContext.timer.elapsedTime()).coerceAtLeast(Duration.ZERO)

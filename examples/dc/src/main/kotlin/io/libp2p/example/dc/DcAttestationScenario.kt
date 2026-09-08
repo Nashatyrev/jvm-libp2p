@@ -50,6 +50,7 @@ class DcAttestationNodeProgramFactory<R>(
     val recorder = DcAttestationRecorder()
 
     private val dialTargets = graph.dialTargets()
+    private val nodePrograms = mutableListOf<DcAttestationNodeProgram>()
 
     override fun createNode(id: SimNodeId): NodeProgram =
         DcAttestationNodeProgram(
@@ -62,7 +63,7 @@ class DcAttestationNodeProgramFactory<R>(
             completeAt = config.completeAt,
             params = config.gossipParams,
             randomSeed = config.randomSeed + id
-        )
+        ).also { nodePrograms += it }
 
     /**
      * Everyone subscribed to the subnet except the publisher. This is the denominator for the
@@ -76,7 +77,9 @@ class DcAttestationNodeProgramFactory<R>(
             published = recorder.published(),
             deliveries = recorder.deliveries(),
             expectedDeliveriesOf = ::expectedDeliveriesOf,
-            traffic = traffic
+            traffic = traffic,
+            gossipBytesSent = nodePrograms.sumOf { it.gossipByteCounter.bytesWritten },
+            gossipBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.bytesRead }
         )
 }
 

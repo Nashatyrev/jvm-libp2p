@@ -110,7 +110,9 @@ data class DcDeliveryStats(
 data class DcAttestationReport(
     val overall: DcDeliveryStats,
     val perWave: Map<Int, DcDeliveryStats>,
-    val traffic: DcTrafficReport
+    val traffic: DcTrafficReport,
+    val gossipBytesSent: Long = 0,
+    val gossipBytesReceived: Long = 0
 ) {
     override fun toString(): String = buildString {
         append("overall: $overall")
@@ -118,6 +120,18 @@ data class DcAttestationReport(
             append("wave $wave: $stats")
         }
         append(traffic)
+        val nodeCount = traffic.overall.nodeCount
+        val udpRecv = traffic.overall.bytesReceived
+        val gossipFraction = if (udpRecv > 0) gossipBytesReceived.toDouble() / udpRecv else 0.0
+        appendLine(
+            "gossip bytes/node: sent=%.0f recv=%.0f (%d/%d total); gossip/udp ratio: %.1f%%"
+                .format(
+                    gossipBytesSent.toDouble() / nodeCount,
+                    gossipBytesReceived.toDouble() / nodeCount,
+                    gossipBytesSent, gossipBytesReceived,
+                    gossipFraction * 100
+                )
+        )
     }
 
     companion object {
@@ -125,7 +139,9 @@ data class DcAttestationReport(
             published: List<DcAttestation>,
             deliveries: List<DcDelivery>,
             expectedDeliveriesOf: (DcAttestation) -> Int,
-            traffic: DcTrafficReport
+            traffic: DcTrafficReport,
+            gossipBytesSent: Long = 0,
+            gossipBytesReceived: Long = 0
         ): DcAttestationReport {
             val deliveriesByWave = deliveries.groupBy { it.waveIndex }
             val publishedByWave = published.groupBy { it.waveIndex }
@@ -142,7 +158,9 @@ data class DcAttestationReport(
                         expectedDeliveries = wavePublished.sumOf(expectedDeliveriesOf)
                     )
                 },
-                traffic = traffic
+                traffic = traffic,
+                gossipBytesSent = gossipBytesSent,
+                gossipBytesReceived = gossipBytesReceived
             )
         }
     }
