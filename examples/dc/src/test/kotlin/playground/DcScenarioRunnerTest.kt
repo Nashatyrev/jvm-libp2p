@@ -116,4 +116,67 @@ class DcScenarioRunnerTest {
         println(report)
 
     }
+
+
+    @Test
+    fun `rolling attestation`() {
+        val network = DcNetworkBuilder
+            .world(
+                randomSeed = 1,
+                subnetCount = 32
+            )
+            .addGroup(count = 1024) {
+                // validator pools
+                regionWeights = mapOf(
+                    ContinentRegion.EUROPE to 0.4,
+                    ContinentRegion.US_EAST to 0.4,
+                    ContinentRegion.US_WEST to 0.2,
+                )
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1024
+                peers = 30
+                randomSubnets(1)
+            }
+            .build()
+
+        val graph = network.peerGraph(minPeersPerSubnet = 8, randomSeed = 1)
+        Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
+
+        val gossipParams = GossipParams.builder()
+            // Mesh-only: disables the lazy IHAVE/IWANT gossip mechanism, leaving plain mesh push
+            // (GRAFT/PRUNE) as the only way messages travel. gossipSize = 0 means no message ids are
+            // exposed for lazy gossip, so IHAVE (and therefore IWANT) never fire.
+            .DLazy(0)
+            .gossipFactor(0.0)
+            .gossipSize(0)
+            .build()
+
+        val attestationConfig = DcAttestationConfig(
+            waveCount = 8,
+            attestersPerWave = 1024 * 1024 / 32,
+            waveInterval = 1.seconds,
+            attestationSizeBytes = 240,
+            // ~223MB reaches each node, and a 50 Mbit/s residential link carries 6.25MB/s, so the
+            // wave needs ~36s of link time alone. The default 12s settle would cut off around two
+            // thirds of it and report the shortfall as undelivered; 150s leaves room for the
+            // transfer plus queueing so the latency figures mean something.
+            settle = 30.seconds,
+            gossipParams = gossipParams,
+            randomSeed = 1
+        )
+        val schedule = DcAttestationSchedule.allValidators(
+            network = network,
+            waveTimes = attestationConfig.waveTimes,
+            randomSeed = 1
+        )
+
+        val report = DcAttestationScenario.run(
+            network = network,
+            graph = graph,
+            config = attestationConfig,
+            schedule = schedule
+        )
+        println(report)
+
+    }
 }
