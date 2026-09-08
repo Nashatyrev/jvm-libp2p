@@ -79,7 +79,9 @@ class DcAttestationNodeProgramFactory<R>(
             expectedDeliveriesOf = ::expectedDeliveriesOf,
             traffic = traffic,
             gossipBytesSent = nodePrograms.sumOf { it.gossipByteCounter.bytesWritten },
-            gossipBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.bytesRead }
+            gossipBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.bytesRead },
+            gossipPublishBytesSent = nodePrograms.sumOf { it.gossipByteCounter.publishBytesWritten },
+            gossipPublishBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.publishBytesRead }
         )
 }
 

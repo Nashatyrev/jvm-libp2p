@@ -112,8 +112,13 @@ data class DcAttestationReport(
     val perWave: Map<Int, DcDeliveryStats>,
     val traffic: DcTrafficReport,
     val gossipBytesSent: Long = 0,
-    val gossipBytesReceived: Long = 0
+    val gossipBytesReceived: Long = 0,
+    val gossipPublishBytesSent: Long = 0,
+    val gossipPublishBytesReceived: Long = 0
 ) {
+    val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
+    val gossipControlBytesReceived: Long get() = gossipBytesReceived - gossipPublishBytesReceived
+
     override fun toString(): String = buildString {
         append("overall: $overall")
         perWave.toSortedMap().forEach { (wave, stats) ->
@@ -132,6 +137,22 @@ data class DcAttestationReport(
                     gossipFraction * 100
                 )
         )
+        appendLine(
+            "gossip publish bytes/node: sent=%.0f recv=%.0f (%d/%d total)"
+                .format(
+                    gossipPublishBytesSent.toDouble() / nodeCount,
+                    gossipPublishBytesReceived.toDouble() / nodeCount,
+                    gossipPublishBytesSent, gossipPublishBytesReceived
+                )
+        )
+        appendLine(
+            "gossip control bytes/node: sent=%.0f recv=%.0f (%d/%d total)"
+                .format(
+                    gossipControlBytesSent.toDouble() / nodeCount,
+                    gossipControlBytesReceived.toDouble() / nodeCount,
+                    gossipControlBytesSent, gossipControlBytesReceived
+                )
+        )
     }
 
     companion object {
@@ -141,7 +162,9 @@ data class DcAttestationReport(
             expectedDeliveriesOf: (DcAttestation) -> Int,
             traffic: DcTrafficReport,
             gossipBytesSent: Long = 0,
-            gossipBytesReceived: Long = 0
+            gossipBytesReceived: Long = 0,
+            gossipPublishBytesSent: Long = 0,
+            gossipPublishBytesReceived: Long = 0
         ): DcAttestationReport {
             val deliveriesByWave = deliveries.groupBy { it.waveIndex }
             val publishedByWave = published.groupBy { it.waveIndex }
@@ -160,7 +183,9 @@ data class DcAttestationReport(
                 },
                 traffic = traffic,
                 gossipBytesSent = gossipBytesSent,
-                gossipBytesReceived = gossipBytesReceived
+                gossipBytesReceived = gossipBytesReceived,
+                gossipPublishBytesSent = gossipPublishBytesSent,
+                gossipPublishBytesReceived = gossipPublishBytesReceived
             )
         }
     }
