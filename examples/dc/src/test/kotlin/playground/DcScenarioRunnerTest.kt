@@ -7,11 +7,10 @@ import io.libp2p.example.dc.DcAttestationSchedule
 import io.libp2p.example.dc.DcNetworkBuilder
 import io.libp2p.example.dc.peerGraph
 import io.libp2p.pubsub.gossip.GossipParams
-import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor
-import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.ContinentRegion
 import org.assertj.core.api.Assertions
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Scenario runners. One `@Test` per scenario file; the file supplies the parameters, the defaults in
@@ -39,25 +38,17 @@ class DcScenarioRunnerTest {
             )
             .addGroup(count = 6) {
                 // validator pools
-                regionWeights = mapOf(
-                    ContinentRegion.EUROPE to 0.4,
-                    ContinentRegion.US_EAST to 0.4,
-                    ContinentRegion.US_WEST to 0.2,
-                )
-                bandwidth = Bandwidths.DATACENTER
-                validators = 20000
+                spreadOverRegions()
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 10000
                 peers = 200
                 allSubnets()
             }
             .addGroup(count = 200) {
                 // business
-                regionWeights = mapOf(
-                    ContinentRegion.EUROPE to 0.4,
-                    ContinentRegion.US_EAST to 0.4,
-                    ContinentRegion.US_WEST to 0.2,
-                )
-                bandwidth = Bandwidths.DATACENTER
-                validators = 400
+                spreadOverRegions()
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 200
                 peers = 100
                 allSubnets()
             }
@@ -93,6 +84,11 @@ class DcScenarioRunnerTest {
         val attestationConfig = DcAttestationConfig(
             waveCount = 1,
             attestationSizeBytes = 240,
+            // ~223MB reaches each node, and a 50 Mbit/s residential link carries 6.25MB/s, so the
+            // wave needs ~36s of link time alone. The default 12s settle would cut off around two
+            // thirds of it and report the shortfall as undelivered; 150s leaves room for the
+            // transfer plus queueing so the latency figures mean something.
+            settle = 150.seconds,
             gossipParams = gossipParams,
             randomSeed = 1
         )
