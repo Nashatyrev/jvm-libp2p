@@ -38,7 +38,8 @@ tasks.register('simulation', Test) {
   group = 'verification'
   testClassesDirs = sourceSets.test.output.classesDirs
   classpath = sourceSets.test.runtimeClasspath
-  maxHeapSize = '8g'
+  maxHeapSize = '300g'
+  jvmArgs('-XX:MaxDirectMemorySize=200g')
   useJUnitPlatform {
     includeTags("simulation")
   }
