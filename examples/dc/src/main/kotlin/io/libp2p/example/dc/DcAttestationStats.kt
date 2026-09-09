@@ -59,7 +59,9 @@ data class DcDeliveryStats(
     val p99: Duration?,
     val min: Duration?,
     val max: Duration?,
-    val mean: Duration?
+    val mean: Duration?,
+    /** What was published, for the first line of [toString]; the maths is the same either way. */
+    val what: String = "attestations"
 ) {
     val deliveryRatio: Double
         get() = if (expectedDeliveries == 0) 0.0 else actualDeliveries.toDouble() / expectedDeliveries
@@ -68,7 +70,7 @@ data class DcDeliveryStats(
 
     override fun toString(): String = buildString {
         appendLine(
-            "attestations=$publishedCount deliveries=$actualDeliveries/$expectedDeliveries " +
+            "$what=$publishedCount deliveries=$actualDeliveries/$expectedDeliveries " +
                 "(${"%.2f".format(deliveryRatio * 100)}%)"
         )
         appendLine(
@@ -89,18 +91,109 @@ data class DcDeliveryStats(
             published: List<DcAttestation>,
             deliveries: List<DcDelivery>,
             expectedDeliveries: Int
+        ): DcDeliveryStats = of(
+            publishedCount = published.size,
+            latencies = deliveries.map { it.latency },
+            expectedDeliveries = expectedDeliveries
+        )
+
+        /**
+         * The kind-agnostic form: everything above is computed from a published count and the
+         * latencies that were observed, so blocks and attestations share one implementation.
+         */
+        fun of(
+            publishedCount: Int,
+            latencies: List<Duration>,
+            expectedDeliveries: Int,
+            what: String = "attestations"
         ): DcDeliveryStats {
-            val latencies = deliveries.map { it.latency }.sorted()
+            val sorted = latencies.sorted()
             return DcDeliveryStats(
-                publishedCount = published.size,
+                publishedCount = publishedCount,
                 expectedDeliveries = expectedDeliveries,
-                actualDeliveries = deliveries.size,
-                p50 = latencies.percentile(0.50),
-                p95 = latencies.percentile(0.95),
-                p99 = latencies.percentile(0.99),
-                min = latencies.firstOrNull(),
-                max = latencies.lastOrNull(),
-                mean = latencies.meanOrNull()
+                actualDeliveries = sorted.size,
+                p50 = sorted.percentile(0.50),
+                p95 = sorted.percentile(0.95),
+                p99 = sorted.percentile(0.99),
+                min = sorted.firstOrNull(),
+                max = sorted.lastOrNull(),
+                mean = sorted.meanOrNull(),
+                what = what
+            )
+        }
+    }
+}
+
+/**
+ * Delivery of blocks, alongside the two configured quantities worth checking against what the run
+ * actually did: [sizeBytes] and [publishOffset].
+ *
+ * [publishTimes] is the absolute moment each wave's proposer published, so the offset within the
+ * slot can be verified rather than assumed — `publishTimes[wave] - waveTimes[wave]` should be
+ * [publishOffset] exactly.
+ */
+data class DcBlockReport(
+    val overall: DcDeliveryStats,
+    val perWave: Map<Int, DcDeliveryStats>,
+    val sizeBytes: Int,
+    val publishOffset: Duration,
+    val publishTimes: Map<Int, Duration>,
+    val proposers: Map<Int, SimNodeId>,
+    val warmupWaves: Int = 0
+) {
+    /** Wave indices behind [overall], i.e. every wave except the warm-up ones. */
+    val measuredWaves: List<Int> get() = perWave.keys.filter { it >= warmupWaves }.sorted()
+
+    override fun toString(): String = buildString {
+        appendLine(
+            "blocks: size=%d B (%.0f KiB) publishOffset=%s".format(
+                sizeBytes,
+                sizeBytes / 1024.0,
+                publishOffset
+            )
+        )
+        append("blocks overall: $overall")
+        perWave.toSortedMap().forEach { (wave, stats) ->
+            val tag = if (wave < warmupWaves) " [warmup, excluded from overall]" else ""
+            val proposer = proposers[wave]?.let { " proposer=node-$it" } ?: ""
+            val at = publishTimes[wave]?.let { " publishedAt=$it" } ?: ""
+            append("blocks wave $wave$tag$proposer$at: $stats")
+        }
+    }
+
+    companion object {
+        fun of(
+            published: List<DcBlockPublication>,
+            deliveries: List<DcBlockDelivery>,
+            expectedDeliveriesPerBlock: Int,
+            sizeBytes: Int,
+            publishOffset: Duration,
+            warmupWaves: Int = 0
+        ): DcBlockReport {
+            val deliveriesByWave = deliveries.groupBy { it.waveIndex }
+            val measuredPublished = published.filter { it.block.waveIndex >= warmupWaves }
+            val measuredDeliveries = deliveries.filter { it.waveIndex >= warmupWaves }
+            return DcBlockReport(
+                overall = DcDeliveryStats.of(
+                    publishedCount = measuredPublished.size,
+                    latencies = measuredDeliveries.map { it.latency },
+                    expectedDeliveries = measuredPublished.size * expectedDeliveriesPerBlock,
+                    what = "blocks"
+                ),
+                perWave = published.associate { publication ->
+                    val wave = publication.block.waveIndex
+                    wave to DcDeliveryStats.of(
+                        publishedCount = 1,
+                        latencies = deliveriesByWave[wave].orEmpty().map { it.latency },
+                        expectedDeliveries = expectedDeliveriesPerBlock,
+                        what = "blocks"
+                    )
+                },
+                sizeBytes = sizeBytes,
+                publishOffset = publishOffset,
+                publishTimes = published.associate { it.block.waveIndex to it.publishedAt },
+                proposers = published.associate { it.block.waveIndex to it.block.proposerNodeId },
+                warmupWaves = warmupWaves
             )
         }
     }
@@ -123,7 +216,9 @@ data class DcAttestationReport(
     val gossipPublishMessagesReceivedByWave: Map<Int, Long> = emptyMap(),
     /** Leading waves excluded from [overall]; see [DcAttestationConfig.warmupWaves]. */
     val warmupWaves: Int = 0,
-    val mesh: DcMeshStats? = null
+    val mesh: DcMeshStats? = null,
+    /** Null when the run issued no blocks; see [DcAttestationConfig.blocks]. */
+    val blocks: DcBlockReport? = null
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
     val gossipControlBytesReceived: Long get() = gossipBytesReceived - gossipPublishBytesReceived
@@ -246,6 +341,7 @@ data class DcAttestationReport(
                 )
             }
         mesh?.let { append(it) }
+        blocks?.let { append(it) }
     }
 
     companion object {
@@ -265,7 +361,8 @@ data class DcAttestationReport(
             gossipPublishMessagesSentByWave: Map<Int, Long> = emptyMap(),
             gossipPublishMessagesReceivedByWave: Map<Int, Long> = emptyMap(),
             warmupWaves: Int = 0,
-            mesh: DcMeshStats? = null
+            mesh: DcMeshStats? = null,
+            blocks: DcBlockReport? = null
         ): DcAttestationReport {
             val deliveriesByWave = deliveries.groupBy { it.waveIndex }
             val publishedByWave = published.groupBy { it.waveIndex }
@@ -298,7 +395,8 @@ data class DcAttestationReport(
                 gossipPublishMessagesSentByWave = gossipPublishMessagesSentByWave,
                 gossipPublishMessagesReceivedByWave = gossipPublishMessagesReceivedByWave,
                 warmupWaves = warmupWaves,
-                mesh = mesh
+                mesh = mesh,
+                blocks = blocks
             )
         }
     }

@@ -1,6 +1,5 @@
 package io.libp2p.example.dc
 
-import com.google.protobuf.ByteString
 import com.google.protobuf.CodedOutputStream
 import io.netty.channel.ChannelDuplexHandler
 import io.netty.channel.ChannelHandlerContext
@@ -21,7 +20,9 @@ import java.util.concurrent.atomic.AtomicLong
  * The sum + 2 (varint length prefix) equals the total stream bytes per RPC.
  *
  * Publish bytes are additionally attributed to the wave that produced them, by reading the wave
- * index out of the attestation payload. That attribution is exact, unlike the wall-clock bucketing
+ * index out of the payload ([DcMessagePayload.waveIndexOf], which recognises every message kind, so
+ * blocks are credited to their wave alongside attestations). That attribution is exact, unlike the
+ * wall-clock bucketing
  * used for UDP traffic in [DcTrafficReport] — when waves overlap (a short [DcAttestationConfig
  * .waveInterval] relative to dissemination time) a wave's bytes keep flowing long after the next
  * wave has started, so time windows credit them to the wrong wave.
@@ -105,7 +106,7 @@ class GossipByteCounter : ChannelDuplexHandler() {
             rpc.publishList.forEach { message ->
                 val size = encodedFieldSize(message)
                 publishBytes += size
-                waveIndexOf(message.data)?.let { wave ->
+                DcMessagePayload.waveIndexOf(message.data)?.let { wave ->
                     val counts = byWave.computeIfAbsent(wave) { WaveCounts() }
                     counts.bytes.addAndGet(size)
                     counts.messages.incrementAndGet()
@@ -118,22 +119,5 @@ class GossipByteCounter : ChannelDuplexHandler() {
             publishAcc.addAndGet(publishBytes)
             controlAcc.addAndGet(totalBytes - publishBytes)
         }
-
-        /**
-         * Wave index from an attestation payload, or null if [data] is not one — the magic guard
-         * keeps foreign traffic on the same channels from being attributed to a wave.
-         */
-        private fun waveIndexOf(data: ByteString): Int? {
-            if (data.size() < DcAttestationNodeProgram.HEADER_BYTES) return null
-            if (intAt(data, 0) != DcAttestationNodeProgram.MAGIC) return null
-            return intAt(data, DcAttestationNodeProgram.WAVE_INDEX_OFFSET)
-        }
-
-        /** Big-endian int, matching the [java.nio.ByteBuffer] the payload is written with. */
-        private fun intAt(data: ByteString, offset: Int): Int =
-            ((data.byteAt(offset).toInt() and 0xFF) shl 24) or
-                ((data.byteAt(offset + 1).toInt() and 0xFF) shl 16) or
-                ((data.byteAt(offset + 2).toInt() and 0xFF) shl 8) or
-                (data.byteAt(offset + 3).toInt() and 0xFF)
     }
 }

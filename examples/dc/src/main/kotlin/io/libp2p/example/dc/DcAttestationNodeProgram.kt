@@ -1,6 +1,8 @@
 package io.libp2p.example.dc
 
 import io.libp2p.core.crypto.sha256
+import io.libp2p.core.pubsub.MessageApi
+import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.toWBytes
 import io.libp2p.pubsub.AbstractPubsubMessage
 import io.libp2p.pubsub.DEFAULT_PUBSUB_MESSAGE_ID_LENGTH
@@ -14,16 +16,14 @@ import io.libp2p.quicsim.sim.SimNodeId
 import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandler
 import pubsub.pb.Rpc
-import java.nio.ByteBuffer
 import java.util.concurrent.CompletableFuture
 import java.util.function.Consumer
 import kotlin.random.Random
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.nanoseconds
 
 /**
- * A node that subscribes to its assigned attestation subnets and, when the schedule says so,
- * publishes an attestation on one of them.
+ * A node that subscribes to its assigned attestation subnets — plus the global block topic when the
+ * run issues blocks — and publishes on them when the schedules say so.
  *
  * Delivery latency is measured by putting the publisher's timestamp in the payload. Every node's
  * scheduler starts at zero and they are advanced in lockstep, so `timer.elapsedTime()` is a clock
@@ -37,6 +37,10 @@ class DcAttestationNodeProgram(
     private val recorder: DcAttestationRecorder,
     private val attestationSizeBytes: Int,
     private val completeAt: Duration,
+    /** Null when the run issues no blocks, in which case the block topic is not joined either. */
+    private val blockSchedule: DcBlockSchedule? = null,
+    private val blockRecorder: DcBlockRecorder? = null,
+    private val blockSizeBytes: Int = 0,
     params: GossipParams = GossipParams(),
     scoreParams: GossipScoreParams = GossipScoreParams(),
     randomSeed: Long = 0
@@ -44,6 +48,8 @@ class DcAttestationNodeProgram(
 
     private val random = Random(randomSeed)
     val gossipByteCounter = GossipByteCounter()
+
+    private val issuesBlocks: Boolean get() = blockSchedule != null
 
     /**
      * Mesh peer counts per topic, sampled at [completeAt] on this node's own event thread — the
@@ -72,8 +78,14 @@ class DcAttestationNodeProgram(
     }
 
     init {
-        require(attestationSizeBytes >= HEADER_BYTES) {
-            "attestationSizeBytes must be at least $HEADER_BYTES, got $attestationSizeBytes"
+        require(attestationSizeBytes >= DcMessagePayload.HEADER_BYTES) {
+            "attestationSizeBytes must be at least ${DcMessagePayload.HEADER_BYTES}, got $attestationSizeBytes"
+        }
+        require(!issuesBlocks || blockSizeBytes >= DcMessagePayload.HEADER_BYTES) {
+            "blockSizeBytes must be at least ${DcMessagePayload.HEADER_BYTES}, got $blockSizeBytes"
+        }
+        require(!issuesBlocks || blockRecorder != null) {
+            "A block schedule needs a block recorder to report into"
         }
     }
 
@@ -82,8 +94,8 @@ class DcAttestationNodeProgram(
 
     override fun onAllConnected(simContext: SimContext, networkContext: NetworkContext) {
         subscribe(simContext)
-        schedulePublications(simContext, networkContext)
-        // Every node stops at the same simulated moment, whether or not it attested, so the run ends
+        schedulePublications(simContext)
+        // Every node stops at the same simulated moment, whether or not it published, so the run ends
         // on the settle deadline instead of when the last publisher happens to finish.
         val delay = (completeAt - simContext.timer.elapsedTime()).coerceAtLeast(Duration.ZERO)
         simContext.scheduler.executeAfterDelay(delay) {
@@ -92,85 +104,120 @@ class DcAttestationNodeProgram(
         }
     }
 
+    /**
+     * One subscription covering every topic this node follows, with a single callback that dispatches
+     * on the payload's kind. The block topic is global — every node joins it, whatever subnets it
+     * takes part in — which is how `beacon_block` works on mainnet.
+     */
     private fun subscribe(simContext: SimContext) {
-        if (subnetIds.isEmpty()) return
-        val topics = subnetIds.map { DcAttestationTopics.of(it) }.toTypedArray()
+        val topics = mutableListOf<Topic>()
+        if (issuesBlocks) topics += DcBlockTopic.TOPIC
+        subnetIds.forEach { topics += DcAttestationTopics.of(it) }
+        if (topics.isEmpty()) return
         messageApi.subscribe(
-            Consumer { msg ->
-                val payload = ByteArray(msg.data.readableBytes()).also { msg.data.getBytes(0, it) }
-                val header = readHeader(payload) ?: return@Consumer
-                recorder.recordDelivered(
-                    DcDelivery(
-                        attestationId = header.attestationId,
-                        waveIndex = header.waveIndex,
-                        receiverNodeId = simNodeId,
-                        subnetId = header.subnetId,
-                        latency = simContext.timer.elapsedTime() - header.publishedAtNanos.nanoseconds
-                    )
-                )
-            },
-            *topics
+            Consumer { msg -> onMessage(msg, simContext) },
+            *topics.toTypedArray()
         )
     }
 
-    private fun schedulePublications(simContext: SimContext, networkContext: NetworkContext) {
-        val mine = schedule.attestationsOf(simNodeId)
-        if (mine.isEmpty()) return
+    private fun onMessage(msg: MessageApi, simContext: SimContext) {
+        val header = headerOf(msg) ?: return
+        val latency = simContext.timer.elapsedTime() - header.publishedAt
+        when (header.kind) {
+            DcMessageKind.ATTESTATION -> recorder.recordDelivered(
+                DcDelivery(
+                    attestationId = header.id,
+                    waveIndex = header.waveIndex,
+                    receiverNodeId = simNodeId,
+                    subnetId = header.subnetId,
+                    latency = latency
+                )
+            )
+
+            DcMessageKind.BLOCK -> blockRecorder?.recordDelivered(
+                DcBlockDelivery(
+                    blockId = header.id,
+                    waveIndex = header.waveIndex,
+                    receiverNodeId = simNodeId,
+                    latency = latency
+                )
+            )
+        }
+    }
+
+    /**
+     * Reads only the header out of the message, rather than copying the whole payload. A block is
+     * three or four orders of magnitude larger than its header and arrives at every node, so
+     * copying it per delivery would dominate the run's own memory traffic.
+     */
+    private fun headerOf(msg: MessageApi): DcMessageHeader? {
+        if (msg.data.readableBytes() < DcMessagePayload.HEADER_BYTES) return null
+        val headerBytes = ByteArray(DcMessagePayload.HEADER_BYTES)
+        msg.data.getBytes(0, headerBytes)
+        return DcMessagePayload.decode(headerBytes)
+    }
+
+    private fun schedulePublications(simContext: SimContext) {
+        val myAttestations = schedule.attestationsOf(simNodeId)
+        val myBlocks = blockSchedule?.blocksOf(simNodeId).orEmpty()
+        if (myAttestations.isEmpty() && myBlocks.isEmpty()) return
         val publisher = messageApi.createPublisher(privKey = null, seqIdGenerator = { null })
-        mine.forEach { attestation ->
-            val at = schedule.timeOf(attestation)
-            val delay = (at - simContext.timer.elapsedTime()).coerceAtLeast(Duration.ZERO)
-            simContext.scheduler.executeAfterDelay(delay) {
-                val publishedAt = simContext.timer.elapsedTime()
+        myAttestations.forEach { attestation ->
+            publishAt(simContext, schedule.timeOf(attestation)) { publishedAt ->
                 recorder.recordPublished(attestation)
                 publisher.publish(
-                    Unpooled.wrappedBuffer(payloadOf(attestation, publishedAt)),
+                    payload(
+                        kind = DcMessageKind.ATTESTATION,
+                        id = attestation.id,
+                        waveIndex = attestation.waveIndex,
+                        subnetId = attestation.subnetId,
+                        publishedAt = publishedAt,
+                        sizeBytes = attestationSizeBytes
+                    ),
                     DcAttestationTopics.of(attestation.subnetId)
+                )
+            }
+        }
+        myBlocks.forEach { block ->
+            publishAt(simContext, blockSchedule!!.timeOf(block)) { publishedAt ->
+                blockRecorder?.recordPublished(block, publishedAt)
+                publisher.publish(
+                    payload(
+                        kind = DcMessageKind.BLOCK,
+                        id = block.id,
+                        waveIndex = block.waveIndex,
+                        subnetId = DcMessagePayload.NO_SUBNET,
+                        publishedAt = publishedAt,
+                        sizeBytes = blockSizeBytes
+                    ),
+                    DcBlockTopic.TOPIC
                 )
             }
         }
     }
 
-    /** `[magic][id][wave][subnet][publishedAtNanos]` followed by random bytes up to the wire size. */
-    private fun payloadOf(attestation: DcAttestation, publishedAt: Duration): ByteArray {
-        val payload = ByteArray(attestationSizeBytes)
-        random.nextBytes(payload)
-        ByteBuffer.wrap(payload).apply {
-            putInt(MAGIC)
-            putInt(attestation.id)
-            putInt(attestation.waveIndex)
-            putInt(attestation.subnetId)
-            putLong(publishedAt.inWholeNanoseconds)
-        }
-        return payload
+    /** Runs [publish] at simulated time [at], handing it the moment it actually ran. */
+    private fun publishAt(simContext: SimContext, at: Duration, publish: (Duration) -> Unit) {
+        val delay = (at - simContext.timer.elapsedTime()).coerceAtLeast(Duration.ZERO)
+        simContext.scheduler.executeAfterDelay(delay) { publish(simContext.timer.elapsedTime()) }
     }
 
-    private fun readHeader(payload: ByteArray): Header? {
-        if (payload.size < HEADER_BYTES) return null
-        val buffer = ByteBuffer.wrap(payload)
-        if (buffer.int != MAGIC) return null
-        return Header(
-            attestationId = buffer.int,
-            waveIndex = buffer.int,
-            subnetId = buffer.int,
-            publishedAtNanos = buffer.long
+    private fun payload(
+        kind: DcMessageKind,
+        id: Int,
+        waveIndex: Int,
+        subnetId: Int,
+        publishedAt: Duration,
+        sizeBytes: Int
+    ) = Unpooled.wrappedBuffer(
+        DcMessagePayload.encode(
+            kind = kind,
+            id = id,
+            waveIndex = waveIndex,
+            subnetId = subnetId,
+            publishedAt = publishedAt,
+            sizeBytes = sizeBytes,
+            random = random
         )
-    }
-
-    private data class Header(
-        val attestationId: Int,
-        val waveIndex: Int,
-        val subnetId: Int,
-        val publishedAtNanos: Long
     )
-
-    companion object {
-        internal const val MAGIC = 0x0DCA7757.toInt()
-
-        /** magic + id + wave + subnet + timestamp */
-        const val HEADER_BYTES: Int = 4 + 4 + 4 + 4 + 8
-
-        /** Byte offset of the wave index within the payload, for readers that only need that. */
-        internal const val WAVE_INDEX_OFFSET: Int = 4 + 4
-    }
 }
