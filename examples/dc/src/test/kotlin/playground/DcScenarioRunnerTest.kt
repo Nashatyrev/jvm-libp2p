@@ -179,6 +179,11 @@ class DcScenarioRunnerTest {
             waveInterval = 1.seconds,
             attestationSizeBytes = 240,
             settle = 30.seconds,
+            // Waves 0-3 are the transport ramping up, not the protocol: QUIC congestion windows
+            // start small and the meshes are still settling, which showed up as a p99 two to three
+            // times the steady-state value and a max up to four times it. They stay in the per-wave
+            // breakdown, they just do not skew the headline numbers.
+            warmupWaves = 4,
             gossipParams = gossipParams,
             randomSeed = 1
         )
@@ -232,8 +237,9 @@ class DcScenarioRunnerTest {
                         report.overall.p95?.inWholeMilliseconds ?: -1,
                         report.overall.p99?.inWholeMilliseconds ?: -1,
                         report.overall.max?.inWholeMilliseconds ?: -1,
-                        report.gossipPublishBytesReceived.toDouble() / 1e6 / 1024,
-                        report.traffic.overall.avgBytesReceivedPerNode / 1e6
+                        // Per node per wave, so the figure does not move with waveCount or
+                        // warmupWaves and stays comparable across runs.
+                        report.publishBytesReceivedPerNodePerWave / 1e6
                     )
                 } catch (e: Throwable) {
                     println("FAILED D=$d subnets=$subnets: $e")
@@ -251,8 +257,8 @@ class DcScenarioRunnerTest {
 
     companion object {
         private const val SWEEP_HEADER =
-            " D  subnets  meshMean  dup    deliv%   p50    p95    p99    max     gossipMB  udpMB"
+            " D  subnets  meshMean  dup    deliv%   p50    p95    p99    max   MB/node/wave"
         private const val SWEEP_ROW =
-            "%2d  %7d  %8.2f  %5.2fx %6.2f  %5d  %5d  %5d  %6d  %8.2f  %5.2f"
+            "%2d  %7d  %8.2f  %5.2fx %6.2f  %5d  %5d  %5d  %6d  %11.2f"
     }
 }

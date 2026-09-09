@@ -119,10 +119,40 @@ data class DcAttestationReport(
     val gossipPublishBytesReceivedByWave: Map<Int, Long> = emptyMap(),
     val gossipPublishMessagesSent: Long = 0,
     val gossipPublishMessagesReceived: Long = 0,
+    val gossipPublishMessagesSentByWave: Map<Int, Long> = emptyMap(),
+    val gossipPublishMessagesReceivedByWave: Map<Int, Long> = emptyMap(),
+    /** Leading waves excluded from [overall]; see [DcAttestationConfig.warmupWaves]. */
+    val warmupWaves: Int = 0,
     val mesh: DcMeshStats? = null
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
     val gossipControlBytesReceived: Long get() = gossipBytesReceived - gossipPublishBytesReceived
+
+    /** Wave indices behind [overall], i.e. every wave except the warm-up ones. */
+    val measuredWaves: List<Int> get() = perWave.keys.filter { it >= warmupWaves }.sorted()
+
+    private fun measuredSum(byWave: Map<Int, Long>): Long =
+        byWave.entries.filter { it.key >= warmupWaves }.sumOf { it.value }
+
+    /** Publish bytes for the measured waves only, so they line up with [overall]. */
+    val measuredPublishBytesReceived: Long get() = measuredSum(gossipPublishBytesReceivedByWave)
+    val measuredPublishBytesSent: Long get() = measuredSum(gossipPublishBytesSentByWave)
+
+    /**
+     * Publish bytes one node receives for one wave. Unlike a whole-run total this does not move
+     * when [DcAttestationConfig.waveCount] or [DcAttestationConfig.warmupWaves] change, so it is
+     * the load figure to compare across runs.
+     */
+    val publishBytesReceivedPerNodePerWave: Double
+        get() {
+            val waves = measuredWaves.size
+            val nodes = traffic.overall.nodeCount
+            return if (waves == 0 || nodes == 0) {
+                0.0
+            } else {
+                measuredPublishBytesReceived.toDouble() / waves / nodes
+            }
+        }
 
     /**
      * Copies of each message a node receives, per copy it actually needed. 1.0 would mean every
@@ -130,26 +160,29 @@ data class DcAttestationReport(
      * peer forwards a new message before learning the recipient already has it.
      *
      * Measured rather than inferred: both terms are counts, so no per-message size is assumed.
+     * Restricted to the measured waves so numerator and denominator cover the same waves.
      */
     val duplicationFactor: Double
         get() = if (overall.actualDeliveries == 0) {
             0.0
         } else {
-            gossipPublishMessagesReceived.toDouble() / overall.actualDeliveries
+            measuredSum(gossipPublishMessagesReceivedByWave).toDouble() / overall.actualDeliveries
         }
 
     /** Mean wire size of one published message, including gossip framing. */
     val gossipBytesPerPublishedMessage: Double
-        get() = if (gossipPublishMessagesReceived == 0L) {
-            0.0
-        } else {
-            gossipPublishBytesReceived.toDouble() / gossipPublishMessagesReceived
+        get() {
+            val msgs = measuredSum(gossipPublishMessagesReceivedByWave)
+            return if (msgs == 0L) 0.0 else measuredPublishBytesReceived.toDouble() / msgs
         }
 
     override fun toString(): String = buildString {
-        append("overall: $overall")
+        val scope =
+            if (warmupWaves == 0) "all waves" else "waves ${measuredWaves.firstOrNull()}-${measuredWaves.lastOrNull()}"
+        append("overall ($scope): $overall")
         perWave.toSortedMap().forEach { (wave, stats) ->
-            append("wave $wave: $stats")
+            val tag = if (wave < warmupWaves) " [warmup, excluded from overall]" else ""
+            append("wave $wave$tag: $stats")
         }
         append(traffic)
         val nodeCount = traffic.overall.nodeCount
@@ -184,13 +217,17 @@ data class DcAttestationReport(
                 )
         )
         appendLine(
-            "gossip duplication: %.2fx (%d publish msgs recv / %d deliveries); %.0fB per message"
+            "gossip duplication ($scope): %.2fx (%d publish msgs recv / %d deliveries); %.0fB per message"
                 .format(
                     duplicationFactor,
-                    gossipPublishMessagesReceived,
+                    measuredSum(gossipPublishMessagesReceivedByWave),
                     overall.actualDeliveries,
                     gossipBytesPerPublishedMessage
                 )
+        )
+        appendLine(
+            "gossip publish bytes/node/wave ($scope): %.0f (%.2f MB)"
+                .format(publishBytesReceivedPerNodePerWave, publishBytesReceivedPerNodePerWave / 1e6)
         )
         // Attributed by the wave index in the payload rather than by wall clock, so a wave's bytes
         // stay credited to it even once the next wave has started publishing.
@@ -225,15 +262,22 @@ data class DcAttestationReport(
             gossipPublishBytesReceivedByWave: Map<Int, Long> = emptyMap(),
             gossipPublishMessagesSent: Long = 0,
             gossipPublishMessagesReceived: Long = 0,
+            gossipPublishMessagesSentByWave: Map<Int, Long> = emptyMap(),
+            gossipPublishMessagesReceivedByWave: Map<Int, Long> = emptyMap(),
+            warmupWaves: Int = 0,
             mesh: DcMeshStats? = null
         ): DcAttestationReport {
             val deliveriesByWave = deliveries.groupBy { it.waveIndex }
             val publishedByWave = published.groupBy { it.waveIndex }
+            // The headline figures cover the measured waves only; perWave below still carries every
+            // wave, so the warm-up ramp stays visible rather than being thrown away.
+            val measuredPublished = published.filter { it.waveIndex >= warmupWaves }
+            val measuredDeliveries = deliveries.filter { it.waveIndex >= warmupWaves }
             return DcAttestationReport(
                 overall = DcDeliveryStats.of(
-                    published = published,
-                    deliveries = deliveries,
-                    expectedDeliveries = published.sumOf(expectedDeliveriesOf)
+                    published = measuredPublished,
+                    deliveries = measuredDeliveries,
+                    expectedDeliveries = measuredPublished.sumOf(expectedDeliveriesOf)
                 ),
                 perWave = publishedByWave.mapValues { (wave, wavePublished) ->
                     DcDeliveryStats.of(
@@ -251,6 +295,9 @@ data class DcAttestationReport(
                 gossipPublishBytesReceivedByWave = gossipPublishBytesReceivedByWave,
                 gossipPublishMessagesSent = gossipPublishMessagesSent,
                 gossipPublishMessagesReceived = gossipPublishMessagesReceived,
+                gossipPublishMessagesSentByWave = gossipPublishMessagesSentByWave,
+                gossipPublishMessagesReceivedByWave = gossipPublishMessagesReceivedByWave,
+                warmupWaves = warmupWaves,
                 mesh = mesh
             )
         }

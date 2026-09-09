@@ -33,8 +33,8 @@ class GossipByteCounter : ChannelDuplexHandler() {
     private val _publishBytesWritten = AtomicLong(0)
     private val _controlBytesRead = AtomicLong(0)
     private val _controlBytesWritten = AtomicLong(0)
-    private val _publishReadByWave = ConcurrentHashMap<Int, AtomicLong>()
-    private val _publishWrittenByWave = ConcurrentHashMap<Int, AtomicLong>()
+    private val _readByWave = ConcurrentHashMap<Int, WaveCounts>()
+    private val _writtenByWave = ConcurrentHashMap<Int, WaveCounts>()
     private val _publishMessagesRead = AtomicLong(0)
     private val _publishMessagesWritten = AtomicLong(0)
 
@@ -55,21 +55,32 @@ class GossipByteCounter : ChannelDuplexHandler() {
     val bytesWritten: Long get() = publishBytesWritten + controlBytesWritten
 
     /** Publish bytes per wave index. Payloads without a recognisable header are left out. */
-    val publishBytesReadByWave: Map<Int, Long> get() = _publishReadByWave.mapValues { it.value.get() }
-    val publishBytesWrittenByWave: Map<Int, Long> get() = _publishWrittenByWave.mapValues { it.value.get() }
+    val publishBytesReadByWave: Map<Int, Long> get() = _readByWave.mapValues { it.value.bytes.get() }
+    val publishBytesWrittenByWave: Map<Int, Long> get() = _writtenByWave.mapValues { it.value.bytes.get() }
+
+    /** Publish message counts per wave index, the numerator of a per-wave duplication factor. */
+    val publishMessagesReadByWave: Map<Int, Long> get() = _readByWave.mapValues { it.value.messages.get() }
+    val publishMessagesWrittenByWave: Map<Int, Long>
+        get() = _writtenByWave.mapValues { it.value.messages.get() }
 
     override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
         if (msg is Rpc.RPC) {
-            count(msg, _publishBytesRead, _controlBytesRead, _publishReadByWave, _publishMessagesRead)
+            count(msg, _publishBytesRead, _controlBytesRead, _readByWave, _publishMessagesRead)
         }
         super.channelRead(ctx, msg)
     }
 
     override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
         if (msg is Rpc.RPC) {
-            count(msg, _publishBytesWritten, _controlBytesWritten, _publishWrittenByWave, _publishMessagesWritten)
+            count(msg, _publishBytesWritten, _controlBytesWritten, _writtenByWave, _publishMessagesWritten)
         }
         super.write(ctx, msg, promise)
+    }
+
+    /** Bytes and message count for one wave, so both are attributed in a single map lookup. */
+    private class WaveCounts {
+        val bytes = AtomicLong(0)
+        val messages = AtomicLong(0)
     }
 
     companion object {
@@ -87,7 +98,7 @@ class GossipByteCounter : ChannelDuplexHandler() {
             rpc: Rpc.RPC,
             publishAcc: AtomicLong,
             controlAcc: AtomicLong,
-            byWave: ConcurrentHashMap<Int, AtomicLong>,
+            byWave: ConcurrentHashMap<Int, WaveCounts>,
             messageAcc: AtomicLong
         ) {
             var publishBytes = 0L
@@ -95,7 +106,9 @@ class GossipByteCounter : ChannelDuplexHandler() {
                 val size = encodedFieldSize(message)
                 publishBytes += size
                 waveIndexOf(message.data)?.let { wave ->
-                    byWave.computeIfAbsent(wave) { AtomicLong(0) }.addAndGet(size)
+                    val counts = byWave.computeIfAbsent(wave) { WaveCounts() }
+                    counts.bytes.addAndGet(size)
+                    counts.messages.incrementAndGet()
                 }
             }
             messageAcc.addAndGet(rpc.publishCount.toLong())

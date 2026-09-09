@@ -26,9 +26,26 @@ data class DcAttestationConfig(
     val warmup: Duration = 30.seconds,
     val waveInterval: Duration = 12.seconds,
     val settle: Duration = 12.seconds,
+    /**
+     * Leading waves left out of the headline figures in [DcAttestationReport.overall].
+     *
+     * QUIC congestion windows start small and meshes are still settling, so the first waves deliver
+     * the same bytes more slowly than a running network would — measured at 2-3x the steady-state
+     * p99 and up to 4x the steady-state max. They stay in [DcAttestationReport.perWave] so the
+     * ramp is still visible; they are only excluded from the aggregate.
+     */
+    val warmupWaves: Int = 0,
     val gossipParams: GossipParams = GossipParams(),
     val randomSeed: Long = 0
 ) {
+    init {
+        require(warmupWaves in 0 until waveCount) {
+            "warmupWaves must leave at least one measured wave, got $warmupWaves of $waveCount"
+        }
+    }
+
+    /** Wave indices whose deliveries count toward the headline figures. */
+    val measuredWaves: IntRange get() = warmupWaves until waveCount
     val waveTimes: List<Duration>
         get() = DcAttestationSchedule.waveTimes(waveCount, warmup, waveInterval)
 
@@ -86,6 +103,9 @@ class DcAttestationNodeProgramFactory<R>(
             gossipPublishBytesReceivedByWave = nodePrograms.sumByWave { it.publishBytesReadByWave },
             gossipPublishMessagesSent = nodePrograms.sumOf { it.gossipByteCounter.publishMessagesWritten },
             gossipPublishMessagesReceived = nodePrograms.sumOf { it.gossipByteCounter.publishMessagesRead },
+            gossipPublishMessagesSentByWave = nodePrograms.sumByWave { it.publishMessagesWrittenByWave },
+            gossipPublishMessagesReceivedByWave = nodePrograms.sumByWave { it.publishMessagesReadByWave },
+            warmupWaves = config.warmupWaves,
             mesh = DcMeshStats.of(nodePrograms.map { it.finalMeshSizes })
         )
 }

@@ -69,6 +69,44 @@ class DcAttestationScenarioTest {
     }
 
     @Test
+    fun `warmupWaves excludes the leading waves from the headline figures`() {
+        val network = population(nodeCount = 40, subnetCount = 4, subnetsPerNode = 2, peers = 10)
+        val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
+        val base = DcAttestationConfig(
+            waveCount = 4,
+            attestersPerWave = 8,
+            warmupWaves = 0,
+            randomSeed = 7
+        )
+        val all = DcAttestationScenario.run(network, graph, base)
+        val measured = DcAttestationScenario.run(network, graph, base.copy(warmupWaves = 2))
+
+        // Every wave is still reported; only the aggregate narrows.
+        assertThat(measured.perWave.keys).containsExactlyInAnyOrderElementsOf(all.perWave.keys)
+        assertThat(measured.measuredWaves).containsExactly(2, 3)
+
+        // The headline now covers exactly the deliveries of waves 2-3.
+        val tailDeliveries = (2..3).sumOf { all.perWave.getValue(it).actualDeliveries }
+        assertThat(measured.overall.actualDeliveries).isEqualTo(tailDeliveries)
+        assertThat(measured.overall.actualDeliveries).isLessThan(all.overall.actualDeliveries)
+        assertThat(measured.overall.deliveryRatio).isEqualTo(1.0)
+
+        // Duplication has to narrow with it: counting all-wave messages against measured-wave
+        // deliveries would inflate it by roughly the ratio of excluded waves.
+        assertThat(measured.duplicationFactor)
+            .describedAs("duplication over waves 2-3")
+            .isCloseTo(all.duplicationFactor, org.assertj.core.data.Offset.offset(0.5))
+        assertThat(measured.measuredPublishBytesReceived)
+            .isLessThan(all.gossipPublishBytesReceived)
+    }
+
+    @Test
+    fun `warmupWaves must leave a wave to measure`() {
+        assertThatThrownBy { DcAttestationConfig(waveCount = 3, warmupWaves = 3) }
+            .hasMessageContaining("must leave at least one measured wave")
+    }
+
+    @Test
     fun `the same seed produces the same latencies`() {
         val network = population(nodeCount = 24, subnetCount = 4, subnetsPerNode = 2, peers = 8)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 3)
