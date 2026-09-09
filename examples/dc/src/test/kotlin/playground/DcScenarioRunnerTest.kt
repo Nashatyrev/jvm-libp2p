@@ -2,6 +2,7 @@ package playground
 
 import io.libp2p.example.dc.Bandwidths
 import io.libp2p.example.dc.DcAttestationConfig
+import io.libp2p.example.dc.DcAttestationReport
 import io.libp2p.example.dc.DcAttestationScenario
 import io.libp2p.example.dc.DcAttestationSchedule
 import io.libp2p.example.dc.DcNetworkBuilder
@@ -116,12 +117,18 @@ class DcScenarioRunnerTest {
         println(report)
     }
 
-    @Test
-    fun `rolling attestation`() {
+    /**
+     * One rolling-attestation run: 1024 residential nodes, 1024 validators each, one subnet apiece.
+     *
+     * [subnetCount] changes how the same total number of attestations is spread: with 1024 nodes,
+     * a subnet holds 1024/[subnetCount] nodes and carries 1/[subnetCount] of the traffic, so
+     * *fewer* subnets means bigger committees and more bytes per node.
+     */
+    private fun runRolling(d: Int, subnetCount: Int): DcAttestationReport {
         val network = DcNetworkBuilder
             .world(
                 randomSeed = 1,
-                subnetCount = 32
+                subnetCount = subnetCount
             )
             .addGroup(count = 1024) {
                 // validator pools
@@ -141,6 +148,14 @@ class DcScenarioRunnerTest {
         Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
 
         val gossipParams = GossipParams.builder()
+            .D(d)
+            // Pin the mesh to D +- 1 instead of the derived defaults (DLow = D*2/3, DHigh = D*2).
+            // The heartbeat only grafts below DLow and prunes above DHigh, so the default band
+            // leaves the mesh free to drift up to 2*D on inbound GRAFTs — measured at 8.25 for
+            // D = 6, which is where the duplication above D came from. A +-1 band keeps mesh size,
+            // and therefore duplication, close to D itself.
+            .DLow(d - 1)
+            .DHigh(d + 1)
             // Mesh-only: disables the lazy IHAVE/IWANT gossip mechanism, leaving plain mesh push
             // (GRAFT/PRUNE) as the only way messages travel. gossipSize = 0 means no message ids are
             // exposed for lazy gossip, so IHAVE (and therefore IWANT) never fire.
@@ -151,7 +166,10 @@ class DcScenarioRunnerTest {
 
         val attestationConfig = DcAttestationConfig(
             waveCount = 8,
-            // A 32nd of the validator set per wave: one slot's worth of committees over 32 subnets.
+            // A 32nd of the validator set per wave: one slot's worth, from 32 slots per epoch.
+            // Deliberately independent of subnetCount — the 32 here is slots, not subnets — so the
+            // sweep publishes the same 262144 attestations at every point and only their spread
+            // over subnets changes.
             attestersPerWave = 1024 * 1024 / 32,
             waveInterval = 1.seconds,
             attestationSizeBytes = 240,
@@ -169,12 +187,58 @@ class DcScenarioRunnerTest {
                 randomSeed = 1
             )
 
-        val report = DcAttestationScenario.run(
+        return DcAttestationScenario.run(
             network = network,
             graph = graph,
             config = attestationConfig,
             schedule = schedule
         )
-        println(report)
+    }
+
+    @Test
+    fun `rolling attestation`() {
+        println(runRolling(d = 6, subnetCount = 32))
+    }
+
+    /**
+     * D x subnetCount sweep over the rolling scenario. D drives mesh degree and therefore
+     * duplication; subnetCount drives how concentrated the traffic is. Both move bytes per node, so
+     * the interesting question is where latency starts to suffer as either is reduced.
+     */
+    @Test
+    fun `rolling attestation D x subnet sweep`() {
+        val summary = mutableListOf<String>()
+        listOf(6, 5, 4, 3).forEach { d ->
+            listOf(16, 32, 64).forEach { subnets ->
+                println("======== D=$d subnets=$subnets ========")
+                val report = runRolling(d = d, subnetCount = subnets)
+                println(report)
+                summary += SWEEP_ROW.format(
+                    d,
+                    subnets,
+                    report.mesh?.meanSize ?: 0.0,
+                    report.duplicationFactor,
+                    report.overall.deliveryRatio * 100,
+                    report.overall.p50?.inWholeMilliseconds ?: -1,
+                    report.overall.p95?.inWholeMilliseconds ?: -1,
+                    report.overall.p99?.inWholeMilliseconds ?: -1,
+                    report.overall.max?.inWholeMilliseconds ?: -1,
+                    report.gossipPublishBytesReceived.toDouble() / 1e6 / 1024,
+                    report.traffic.overall.avgBytesReceivedPerNode / 1e6
+                )
+                // Each point holds 8.4M deliveries while running; drop them before the next.
+                System.gc()
+            }
+        }
+        println("\n======== SWEEP SUMMARY ========")
+        println(SWEEP_HEADER)
+        summary.forEach(::println)
+    }
+
+    companion object {
+        private const val SWEEP_HEADER =
+            " D  subnets  meshMean  dup    deliv%   p50    p95    p99    max     gossipMB  udpMB"
+        private const val SWEEP_ROW =
+            "%2d  %7d  %8.2f  %5.2fx %6.2f  %5d  %5d  %5d  %6d  %8.2f  %5.2f"
     }
 }

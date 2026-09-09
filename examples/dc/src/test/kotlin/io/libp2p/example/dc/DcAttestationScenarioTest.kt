@@ -1,5 +1,6 @@
 package io.libp2p.example.dc
 
+import io.libp2p.pubsub.gossip.GossipParams
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -162,6 +163,30 @@ class DcAttestationScenarioTest {
                 attestersPerWave = 41
             )
         }.hasMessageContaining("exceeds the 40 validators")
+    }
+
+    @Test
+    fun `sweep D values build valid params with a D plus-minus-one mesh band`() {
+        // Guards the D x subnetCount sweep: GossipParams validates DOut < DLow and DOut <= D/2,
+        // and DOut is re-derived from whatever DLow is set explicitly, so a low D could otherwise
+        // only blow up once the sweep reached it.
+        listOf(6, 5, 4, 3).forEach { d ->
+            val params = GossipParams.builder()
+                .D(d)
+                .DLow(d - 1)
+                .DHigh(d + 1)
+                .DLazy(0)
+                .gossipFactor(0.0)
+                .gossipSize(0)
+                .build()
+
+            assertThat(params.D).describedAs("D").isEqualTo(d)
+            assertThat(params.DLow).describedAs("DLow for D=%s", d).isEqualTo(d - 1)
+            assertThat(params.DHigh).describedAs("DHigh for D=%s", d).isEqualTo(d + 1)
+            assertThat(params.DOut).describedAs("DOut for D=%s", d).isLessThan(params.DLow)
+            assertThat(params.DOut).describedAs("DOut for D=%s", d).isLessThanOrEqualTo(d / 2)
+            assertThat(params.DLazy).describedAs("DLazy stays 0 for D=%s", d).isEqualTo(0)
+        }
     }
 
     @Test

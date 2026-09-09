@@ -117,10 +117,34 @@ data class DcAttestationReport(
     val gossipPublishBytesReceived: Long = 0,
     val gossipPublishBytesSentByWave: Map<Int, Long> = emptyMap(),
     val gossipPublishBytesReceivedByWave: Map<Int, Long> = emptyMap(),
+    val gossipPublishMessagesSent: Long = 0,
+    val gossipPublishMessagesReceived: Long = 0,
     val mesh: DcMeshStats? = null
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
     val gossipControlBytesReceived: Long get() = gossipBytesReceived - gossipPublishBytesReceived
+
+    /**
+     * Copies of each message a node receives, per copy it actually needed. 1.0 would mean every
+     * message arrived exactly once; gossipsub pays about one copy per mesh peer, since every mesh
+     * peer forwards a new message before learning the recipient already has it.
+     *
+     * Measured rather than inferred: both terms are counts, so no per-message size is assumed.
+     */
+    val duplicationFactor: Double
+        get() = if (overall.actualDeliveries == 0) {
+            0.0
+        } else {
+            gossipPublishMessagesReceived.toDouble() / overall.actualDeliveries
+        }
+
+    /** Mean wire size of one published message, including gossip framing. */
+    val gossipBytesPerPublishedMessage: Double
+        get() = if (gossipPublishMessagesReceived == 0L) {
+            0.0
+        } else {
+            gossipPublishBytesReceived.toDouble() / gossipPublishMessagesReceived
+        }
 
     override fun toString(): String = buildString {
         append("overall: $overall")
@@ -159,6 +183,15 @@ data class DcAttestationReport(
                     gossipControlBytesReceived
                 )
         )
+        appendLine(
+            "gossip duplication: %.2fx (%d publish msgs recv / %d deliveries); %.0fB per message"
+                .format(
+                    duplicationFactor,
+                    gossipPublishMessagesReceived,
+                    overall.actualDeliveries,
+                    gossipBytesPerPublishedMessage
+                )
+        )
         // Attributed by the wave index in the payload rather than by wall clock, so a wave's bytes
         // stay credited to it even once the next wave has started publishing.
         gossipPublishBytesSentByWave.keys.union(gossipPublishBytesReceivedByWave.keys).sorted()
@@ -190,6 +223,8 @@ data class DcAttestationReport(
             gossipPublishBytesReceived: Long = 0,
             gossipPublishBytesSentByWave: Map<Int, Long> = emptyMap(),
             gossipPublishBytesReceivedByWave: Map<Int, Long> = emptyMap(),
+            gossipPublishMessagesSent: Long = 0,
+            gossipPublishMessagesReceived: Long = 0,
             mesh: DcMeshStats? = null
         ): DcAttestationReport {
             val deliveriesByWave = deliveries.groupBy { it.waveIndex }
@@ -214,6 +249,8 @@ data class DcAttestationReport(
                 gossipPublishBytesReceived = gossipPublishBytesReceived,
                 gossipPublishBytesSentByWave = gossipPublishBytesSentByWave,
                 gossipPublishBytesReceivedByWave = gossipPublishBytesReceivedByWave,
+                gossipPublishMessagesSent = gossipPublishMessagesSent,
+                gossipPublishMessagesReceived = gossipPublishMessagesReceived,
                 mesh = mesh
             )
         }
