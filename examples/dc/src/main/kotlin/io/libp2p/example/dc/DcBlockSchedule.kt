@@ -90,16 +90,35 @@ class DcBlockSchedule(
          * how many validators each runs — the mainnet rule, where proposer probability follows
          * stake, so a big staking operator proposes far more often than a home staker.
          *
+         * [proposerGroups] narrows the draw to the named [DcNodeGroup]s; null, the default, draws
+         * from every group. Narrowing changes only who proposes, not the population: the excluded
+         * nodes keep their validators and their attestation traffic.
+         *
          * The same node may propose in more than one wave; nothing prevents that on mainnet either.
          */
         fun <R> validatorWeighted(
             network: DcNetwork<R>,
             waveTimes: List<Duration>,
             publishOffset: Duration = Duration.ZERO,
+            proposerGroups: Set<String>? = null,
             randomSeed: Long = 0
         ): DcBlockSchedule {
-            val proposers = network.nodes.filter { it.isValidator }
-            require(proposers.isNotEmpty()) { "No node runs a validator, so nothing can propose" }
+            proposerGroups?.let { requested ->
+                val known = network.groupNames()
+                val unknown = requested - known
+                require(unknown.isEmpty()) {
+                    "proposerGroups names no such group: $unknown; the network has " +
+                        if (known.isEmpty()) "no named groups" else "$known"
+                }
+            }
+            val proposers = network.nodesInGroups(proposerGroups).filter { it.isValidator }
+            require(proposers.isNotEmpty()) {
+                if (proposerGroups == null) {
+                    "No node runs a validator, so nothing can propose"
+                } else {
+                    "No node in $proposerGroups runs a validator, so nothing can propose"
+                }
+            }
 
             // Cumulative validator counts, so one uniform draw picks a node with probability
             // proportional to its validators without materialising one entry per validator — the

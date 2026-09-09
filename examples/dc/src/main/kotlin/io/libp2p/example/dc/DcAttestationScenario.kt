@@ -24,9 +24,24 @@ import kotlin.time.Duration.Companion.seconds
  */
 data class DcBlockConfig(
     val sizeBytes: Int = DEFAULT_SIZE_BYTES,
-    val publishOffset: Duration = Duration.ZERO
+    val publishOffset: Duration = Duration.ZERO,
+    /**
+     * Names of the [DcNodeGroup]s whose validators may be drawn as proposers, or null — the
+     * default — for every group in the network.
+     *
+     * Naming groups here restricts *who* proposes without changing the population: the same nodes
+     * still run the same validators and carry the same attestation traffic, so a run can ask what
+     * happens when blocks only ever come from, say, the datacenter-hosted pools. The draw within
+     * the selected groups stays weighted by validator count.
+     */
+    val proposerGroups: Set<String>? = null
 ) {
     init {
+        proposerGroups?.let {
+            require(it.isNotEmpty()) {
+                "proposerGroups must name at least one group; leave it null to allow every group"
+            }
+        }
         require(sizeBytes >= DcMessagePayload.HEADER_BYTES) {
             "block sizeBytes must be at least ${DcMessagePayload.HEADER_BYTES}, got $sizeBytes"
         }
@@ -190,7 +205,8 @@ class DcAttestationNodeProgramFactory<R>(
                     expectedDeliveriesPerBlock = expectedBlockDeliveries,
                     sizeBytes = config.blocks?.sizeBytes ?: 0,
                     publishOffset = it.publishOffset,
-                    warmupWaves = config.warmupWaves
+                    warmupWaves = config.warmupWaves,
+                    proposerGroups = config.blocks?.proposerGroups
                 )
             }
         )
@@ -252,6 +268,7 @@ object DcAttestationScenario {
             network = network,
             waveTimes = config.waveTimes,
             publishOffset = blocks.publishOffset,
+            proposerGroups = blocks.proposerGroups,
             randomSeed = config.randomSeed
         )
     }

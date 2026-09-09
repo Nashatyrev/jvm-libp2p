@@ -120,7 +120,8 @@ class DcNetworkBuilder<R>(
                 uploadBandwidthBytesPerSecond = uploadBandwidthBytesPerSecond,
                 validatorCount = groupValidators[index],
                 peerCount = group.peers,
-                attestationSubnetIds = group.subnetsFor(index, simNodeId, randomSeed)
+                attestationSubnetIds = group.subnetsFor(index, simNodeId, randomSeed),
+                groupName = group.name
             )
         }
     }
@@ -188,12 +189,29 @@ data class DcNetwork<R>(
 
     fun nodesSubscribedTo(subnetId: Int): List<DcNode<R>> = nodes.filter { it.subscribesTo(subnetId) }
 
+    /** Names of the groups that were given one, in the order they were added. */
+    fun groupNames(): Set<String> = nodes.mapNotNullTo(LinkedHashSet()) { it.groupName }
+
+    /** Nodes of the named group, or of all the groups sharing that name. */
+    fun nodesInGroup(groupName: String): List<DcNode<R>> = nodes.filter { it.groupName == groupName }
+
+    /** Nodes of any of [groupNames]; every node when [groupNames] is null. */
+    fun nodesInGroups(groupNames: Set<String>?): List<DcNode<R>> =
+        if (groupNames == null) nodes else nodes.filter { it.groupName in groupNames }
+
     /** Subscriber count per attestation subnet, useful for spotting under-covered subnets. */
     fun subscribersPerSubnet(): Map<Int, Int> =
         attestationSubnetIds().associateWith { subnetId -> nodesSubscribedTo(subnetId).size }
 
     fun summary(): String = buildString {
         appendLine("nodes=$nodeCount validators=$validatorCount subnets=${attestationSubnetIds().size}")
+        groupNames().forEach { groupName ->
+            val groupNodes = nodesInGroup(groupName)
+            appendLine(
+                "  group '$groupName': nodes=${groupNodes.size} " +
+                    "validators=${groupNodes.sumOf { it.validatorCount }}"
+            )
+        }
         nodesByRegion().forEach { (region, regionNodes) ->
             appendLine(
                 "  $region: nodes=${regionNodes.size} " +

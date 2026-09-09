@@ -139,17 +139,20 @@ data class DcBlockReport(
     val publishOffset: Duration,
     val publishTimes: Map<Int, Duration>,
     val proposers: Map<Int, SimNodeId>,
-    val warmupWaves: Int = 0
+    val warmupWaves: Int = 0,
+    /** Groups the proposers were drawn from; null means every group. */
+    val proposerGroups: Set<String>? = null
 ) {
     /** Wave indices behind [overall], i.e. every wave except the warm-up ones. */
     val measuredWaves: List<Int> get() = perWave.keys.filter { it >= warmupWaves }.sorted()
 
     override fun toString(): String = buildString {
         appendLine(
-            "blocks: size=%d B (%.0f KiB) publishOffset=%s".format(
+            "blocks: size=%d B (%.0f KiB) publishOffset=%s proposers=%s".format(
                 sizeBytes,
                 sizeBytes / 1024.0,
-                publishOffset
+                publishOffset,
+                proposerGroups?.joinToString(prefix = "groups ") ?: "all groups"
             )
         )
         append("blocks overall: $overall")
@@ -168,7 +171,8 @@ data class DcBlockReport(
             expectedDeliveriesPerBlock: Int,
             sizeBytes: Int,
             publishOffset: Duration,
-            warmupWaves: Int = 0
+            warmupWaves: Int = 0,
+            proposerGroups: Set<String>? = null
         ): DcBlockReport {
             val deliveriesByWave = deliveries.groupBy { it.waveIndex }
             val measuredPublished = published.filter { it.block.waveIndex >= warmupWaves }
@@ -193,7 +197,8 @@ data class DcBlockReport(
                 publishOffset = publishOffset,
                 publishTimes = published.associate { it.block.waveIndex to it.publishedAt },
                 proposers = published.associate { it.block.waveIndex to it.block.proposerNodeId },
-                warmupWaves = warmupWaves
+                warmupWaves = warmupWaves,
+                proposerGroups = proposerGroups
             )
         }
     }

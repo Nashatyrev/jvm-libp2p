@@ -186,6 +186,184 @@ class DcBlockScenarioTest {
             .isEqualTo(schedule.blocks.filter { it.proposerNodeId == 0 }.map { it.waveIndex })
     }
 
+    /**
+     * A population of two named groups: `pools` holds the bulk of the validators, `home` the tail.
+     * Named so a scenario can pick proposers out of one of them.
+     */
+    private fun namedGroups() = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 2)
+        .defaults {
+            spreadOverRegions()
+            bandwidth = Bandwidths.RESIDENTIAL
+            peers = 5
+            randomSubnets(count = 1, of = 2)
+        }
+        .addGroup(count = 2) {
+            name = "pools"
+            validators = 100
+        }
+        .addGroup(count = 8) {
+            name = "home"
+            validators = 1
+        }
+        .build()
+
+    @Test
+    fun `a group name lands on every node it produced`() {
+        val network = namedGroups()
+
+        assertThat(network.groupNames()).containsExactly("pools", "home")
+        assertThat(network.nodesInGroup("pools").map { it.simNodeId }).containsExactly(0, 1)
+        assertThat(network.nodesInGroup("home")).hasSize(8)
+        assertThat(network.nodesInGroups(null))
+            .describedAs("null means the whole network, which is what the default proposer draw uses")
+            .hasSize(network.nodeCount)
+        assertThat(network.nodesInGroups(setOf("home")).map { it.validatorCount }.distinct())
+            .containsExactly(1)
+        assertThat(network.summary()).contains("group 'pools': nodes=2 validators=200")
+    }
+
+    @Test
+    fun `an unnamed group leaves its nodes without a name`() {
+        val network = population(nodeCount = 4, subnetCount = 2, peers = 2)
+
+        assertThat(network.groupNames()).isEmpty()
+        assertThat(network.nodes.map { it.groupName }).containsOnlyNulls()
+    }
+
+    @Test
+    fun `a name set in defaults is shared by the groups under it`() {
+        val network = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 2)
+            .defaults {
+                name = "tier-1"
+                spreadOverRegions()
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1
+                randomSubnets(count = 1, of = 2)
+            }
+            .addGroup(count = 2)
+            .addGroup(count = 3)
+            .build()
+
+        assertThat(network.groupNames()).containsExactly("tier-1")
+        assertThat(network.nodesInGroup("tier-1"))
+            .describedAs("both groups selected together as one pool")
+            .hasSize(5)
+    }
+
+    @Test
+    fun `a blank group name is rejected`() {
+        assertThatThrownBy {
+            DcNetworkBuilder.world().addGroup(count = 1) {
+                name = "  "
+                bandwidth = Bandwidths.RESIDENTIAL
+            }
+        }.hasMessageContaining("name must not be blank")
+    }
+
+    @Test
+    fun `proposerGroups restricts the draw to the named groups`() {
+        val network = namedGroups()
+        val waveTimes = DcAttestationSchedule.waveTimes(count = 30, first = 30.seconds, interval = 12.seconds)
+
+        val homeOnly = DcBlockSchedule.validatorWeighted(
+            network = network,
+            waveTimes = waveTimes,
+            proposerGroups = setOf("home"),
+            randomSeed = 3
+        )
+
+        // Every proposer from `home`, even though `pools` holds 200 of the 208 validators and would
+        // otherwise take almost every wave.
+        assertThat(homeOnly.blocks.map { it.proposerNodeId }.distinct())
+            .allMatch { network.node(it).groupName == "home" }
+        assertThat(homeOnly.blocks.map { it.proposerNodeId }.distinct())
+            .describedAs("all 8 home nodes weigh the same, so 30 waves should reach most of them")
+            .hasSizeGreaterThan(4)
+
+        // Left alone, the same draw is dominated by the pools. Over enough waves to make the
+        // comparison meaningful: pools hold 96% of the validators, so 30 waves is short enough that
+        // an unlucky seed lands well off that share.
+        val manyWaves = DcAttestationSchedule.waveTimes(count = 200, first = 30.seconds, interval = 12.seconds)
+        val anyGroup = DcBlockSchedule.validatorWeighted(
+            network = network,
+            waveTimes = manyWaves,
+            randomSeed = 3
+        )
+        assertThat(anyGroup.blocks.count { network.node(it.proposerNodeId).groupName == "pools" })
+            .describedAs("pools hold 200 of 208 validators, so they should take ~96% of 200 waves")
+            .isGreaterThan(170)
+    }
+
+    @Test
+    fun `proposerGroups names a group that does not exist`() {
+        val network = namedGroups()
+
+        assertThatThrownBy {
+            DcBlockSchedule.validatorWeighted(
+                network = network,
+                waveTimes = listOf(30.seconds),
+                proposerGroups = setOf("home", "whales")
+            )
+        }.hasMessageContaining("names no such group: [whales]")
+            .hasMessageContaining("[pools, home]")
+    }
+
+    @Test
+    fun `proposerGroups naming only groups without validators is rejected`() {
+        val network = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 2)
+            .defaults {
+                spreadOverRegions()
+                bandwidth = Bandwidths.RESIDENTIAL
+                randomSubnets(count = 1, of = 2)
+            }
+            .addGroup(count = 2) {
+                name = "stakers"
+                validators = 4
+            }
+            .addGroup(count = 4) { name = "relays" }
+            .build()
+
+        assertThatThrownBy {
+            DcBlockSchedule.validatorWeighted(
+                network = network,
+                waveTimes = listOf(30.seconds),
+                proposerGroups = setOf("relays")
+            )
+        }.hasMessageContaining("No node in [relays] runs a validator")
+    }
+
+    @Test
+    fun `an empty proposerGroups set is rejected rather than silently meaning all`() {
+        assertThatThrownBy { DcBlockConfig(proposerGroups = emptySet()) }
+            .hasMessageContaining("must name at least one group")
+    }
+
+    @Test
+    fun `a run proposes only from the configured groups`() {
+        val network = namedGroups()
+        val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
+        val config = DcAttestationConfig(
+            waveCount = 2,
+            attestersPerWave = 4,
+            settle = 12.seconds,
+            blocks = DcBlockConfig(
+                sizeBytes = 64 * 1024,
+                publishOffset = 1.seconds,
+                proposerGroups = setOf("pools")
+            ),
+            randomSeed = 7
+        )
+
+        val report = DcAttestationScenario.run(network, graph, config)
+        println(report)
+
+        val blocks = requireNotNull(report.blocks)
+        assertThat(blocks.proposerGroups).containsExactly("pools")
+        assertThat(blocks.proposers.values.map { network.node(it).groupName }.distinct())
+            .containsExactly("pools")
+        assertThat(blocks.overall.deliveryRatio).isEqualTo(1.0)
+    }
+
     @Test
     fun `a block payload is the configured size and round-trips its header`() {
         val payload = DcMessagePayload.encode(

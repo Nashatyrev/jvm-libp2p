@@ -10,6 +10,7 @@ import kotlin.random.Random
  *
  * ```
  * builder.addGroup(count = 60) {
+ *     name = "home stakers"
  *     spreadOverRegions()
  *     bandwidth = Bandwidths.RESIDENTIAL
  *     validators = 1
@@ -34,6 +35,16 @@ class DcNodeGroup<R> internal constructor(
 
     /** Kinds of option assigned by the current block, used to reject competing options. */
     private val assignedKinds = mutableSetOf<String>()
+
+    /**
+     * Name of the group, carried onto every node it produces as [DcNode.groupName]. Optional, and
+     * only needed when something later wants to refer back to this part of the population — e.g.
+     * [DcBlockConfig.proposerGroups], which picks block proposers out of named groups.
+     *
+     * Like every other option it can be set in a [DcNetworkBuilder.defaults] block, in which case
+     * the groups underneath share the name and are selected together as one pool.
+     */
+    var name: String? = null
 
     /** Access link rate of every node in the group. Required. */
     var bandwidth: Bandwidth? = null
@@ -137,6 +148,7 @@ class DcNodeGroup<R> internal constructor(
         it.placement = placement
         it.validatorSpec = validatorSpec
         it.subnetSpec = subnetSpec
+        it.name = name
         it.bandwidth = bandwidth
         it.uploadBandwidth = uploadBandwidth
         it.peers = peers
@@ -147,6 +159,7 @@ class DcNodeGroup<R> internal constructor(
         requireSingleAssignment("validator allocation", "validators", "validatorsTotal")
         requireSingleAssignment("subnet assignment", "subnets", "subnetsByIndex", "randomSubnets", "allSubnets")
         require(bandwidth != null) { "bandwidth is required" }
+        name?.let { require(it.isNotBlank()) { "name must not be blank" } }
         uploadBandwidth?.let {
             require(it.bytesPerSecond > 0) { "uploadBandwidth must be positive" }
         }

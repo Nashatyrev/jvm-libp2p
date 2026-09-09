@@ -32,7 +32,15 @@ data class DcNode<R>(
     /** Number of gossip peers this node maintains connections to. */
     val peerCount: Int,
     /** Attestation subnets this node subscribes to. */
-    val attestationSubnetIds: Set<Int>
+    val attestationSubnetIds: Set<Int>,
+    /**
+     * Name of the [DcNodeGroup] this node came from, or null if the group was not named.
+     *
+     * Names exist so that a scenario can refer back to part of the population it built — picking
+     * block proposers out of the staking pools only, say — without having to know which node ids
+     * the builder happened to assign.
+     */
+    val groupName: String? = null
 ) {
     val bandwidth: Bandwidth get() = Bandwidth(bandwidthBytesPerSecond)
 
@@ -46,7 +54,8 @@ data class DcNode<R>(
 
     override fun toString(): String {
         val link = if (hasAsymmetricLink) "$bandwidth down/$uploadBandwidth up" else "$bandwidth"
-        return "$id[$region, $link, validators=$validatorCount, peers=$peerCount, " +
+        val group = groupName?.let { "$it, " } ?: ""
+        return "$id[$group$region, $link, validators=$validatorCount, peers=$peerCount, " +
             "subnets=${attestationSubnetIds.sorted()}]"
     }
 }
