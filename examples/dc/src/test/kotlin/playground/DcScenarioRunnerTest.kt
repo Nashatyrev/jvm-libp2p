@@ -140,7 +140,12 @@ class DcScenarioRunnerTest {
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 1024
                 peers = 30
-                randomSubnets(1)
+                // Round-robin rather than randomSubnets(1), which assigns independently and so
+                // gives multinomial subnet sizes: at 64 subnets the smallest drew 7 nodes, whose
+                // members cannot reach minPeersPerSubnet = 8, and the graph check failed. Even
+                // assignment also keeps committee size identical at every sweep point, so a node's
+                // load does not depend on which subnet it happened to land in.
+                subnetsByIndex { index -> setOf(index % subnetCount) }
             }
             .build()
 
@@ -211,21 +216,30 @@ class DcScenarioRunnerTest {
         listOf(6, 5, 4, 3).forEach { d ->
             listOf(16, 32, 64).forEach { subnets ->
                 println("======== D=$d subnets=$subnets ========")
-                val report = runRolling(d = d, subnetCount = subnets)
-                println(report)
-                summary += SWEEP_ROW.format(
-                    d,
-                    subnets,
-                    report.mesh?.meanSize ?: 0.0,
-                    report.duplicationFactor,
-                    report.overall.deliveryRatio * 100,
-                    report.overall.p50?.inWholeMilliseconds ?: -1,
-                    report.overall.p95?.inWholeMilliseconds ?: -1,
-                    report.overall.p99?.inWholeMilliseconds ?: -1,
-                    report.overall.max?.inWholeMilliseconds ?: -1,
-                    report.gossipPublishBytesReceived.toDouble() / 1e6 / 1024,
-                    report.traffic.overall.avgBytesReceivedPerNode / 1e6
-                )
+                // A point that cannot even build a valid graph should not discard the other
+                // eleven results, but it must still be visible in the summary rather than
+                // silently missing.
+                summary += try {
+                    val report = runRolling(d = d, subnetCount = subnets)
+                    println(report)
+                    SWEEP_ROW.format(
+                        d,
+                        subnets,
+                        report.mesh?.meanSize ?: 0.0,
+                        report.duplicationFactor,
+                        report.overall.deliveryRatio * 100,
+                        report.overall.p50?.inWholeMilliseconds ?: -1,
+                        report.overall.p95?.inWholeMilliseconds ?: -1,
+                        report.overall.p99?.inWholeMilliseconds ?: -1,
+                        report.overall.max?.inWholeMilliseconds ?: -1,
+                        report.gossipPublishBytesReceived.toDouble() / 1e6 / 1024,
+                        report.traffic.overall.avgBytesReceivedPerNode / 1e6
+                    )
+                } catch (e: Throwable) {
+                    println("FAILED D=$d subnets=$subnets: $e")
+                    e.printStackTrace()
+                    "%2d  %7d  FAILED: %s".format(d, subnets, e.toString().take(120))
+                }
                 // Each point holds 8.4M deliveries while running; drop them before the next.
                 System.gc()
             }
