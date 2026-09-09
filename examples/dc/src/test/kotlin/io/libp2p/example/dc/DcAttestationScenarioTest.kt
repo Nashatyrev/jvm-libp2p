@@ -228,6 +228,20 @@ class DcAttestationScenarioTest {
     }
 
     @Test
+    fun `leaving the lazy gossip params unset turns IHAVE on at its defaults`() {
+        // The sweep's lazyGossip = true branch works by *not* calling DLazy/gossipFactor/gossipSize,
+        // relying on the builder to fill them in. If that ever stopped holding, the IHAVE sweep
+        // would silently measure the mesh-only configuration again.
+        listOf(6, 5, 4, 3).forEach { d ->
+            val lazy = GossipParams.builder().D(d).DLow(d - 1).DHigh(d + 1).build()
+
+            assertThat(lazy.DLazy).describedAs("DLazy defaults to D for D=%s", d).isEqualTo(d)
+            assertThat(lazy.gossipFactor).describedAs("gossipFactor for D=%s", d).isEqualTo(0.25)
+            assertThat(lazy.gossipSize).describedAs("gossipSize for D=%s", d).isEqualTo(3)
+        }
+    }
+
+    @Test
     fun `rejects asking for more attesters than there are eligible validators`() {
         val network = population(nodeCount = 10, subnetCount = 4, subnetsPerNode = 1, peers = 4)
 

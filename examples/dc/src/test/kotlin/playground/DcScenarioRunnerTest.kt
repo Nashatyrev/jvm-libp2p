@@ -124,7 +124,7 @@ class DcScenarioRunnerTest {
      * a subnet holds 1024/[subnetCount] nodes and carries 1/[subnetCount] of the traffic, so
      * *fewer* subnets means bigger committees and more bytes per node.
      */
-    private fun runRolling(d: Int, subnetCount: Int): DcAttestationReport {
+    private fun runRolling(d: Int, subnetCount: Int, lazyGossip: Boolean = false): DcAttestationReport {
         val network = DcNetworkBuilder
             .world(
                 randomSeed = 1,
@@ -161,12 +161,17 @@ class DcScenarioRunnerTest {
             // and therefore duplication, close to D itself.
             .DLow(d - 1)
             .DHigh(d + 1)
-            // Mesh-only: disables the lazy IHAVE/IWANT gossip mechanism, leaving plain mesh push
-            // (GRAFT/PRUNE) as the only way messages travel. gossipSize = 0 means no message ids are
-            // exposed for lazy gossip, so IHAVE (and therefore IWANT) never fire.
-            .DLazy(0)
-            .gossipFactor(0.0)
-            .gossipSize(0)
+            .also { builder ->
+                if (!lazyGossip) {
+                    // Mesh-only: disables the lazy IHAVE/IWANT gossip mechanism, leaving plain mesh
+                    // push (GRAFT/PRUNE) as the only way messages travel. gossipSize = 0 means no
+                    // message ids are exposed for lazy gossip, so IHAVE (and therefore IWANT)
+                    // never fire.
+                    builder.DLazy(0).gossipFactor(0.0).gossipSize(0)
+                }
+                // Otherwise leave DLazy/gossipFactor/gossipSize unset so the defaults apply:
+                // DLazy = D, gossipFactor = 0.25, gossipSize = 3.
+            }
             .build()
 
         val attestationConfig = DcAttestationConfig(
@@ -217,16 +222,34 @@ class DcScenarioRunnerTest {
      */
     @Test
     fun `rolling attestation D x subnet sweep`() {
+        runSweep(lazyGossip = false)
+    }
+
+    /**
+     * The same sweep with gossipsub's lazy IHAVE/IWANT mechanism left at its defaults
+     * (DLazy = D, gossipFactor = 0.25, gossipSize = 3) rather than switched off.
+     *
+     * IHAVE announces the ids of everything seen over the last `gossipSize` heartbeats, so its cost
+     * scales with message rate rather than with mesh size: at one wave per second and 20-byte ids,
+     * a single IHAVE can carry thousands of ids. The control column is what to watch.
+     */
+    @Test
+    fun `rolling attestation D x subnet sweep with default IHAVE`() {
+        runSweep(lazyGossip = true)
+    }
+
+    private fun runSweep(lazyGossip: Boolean) {
         val summary = mutableListOf<String>()
         listOf(6, 5, 4, 3).forEach { d ->
             listOf(16, 32, 64).forEach { subnets ->
-                println("======== D=$d subnets=$subnets ========")
+                println("======== D=$d subnets=$subnets lazyGossip=$lazyGossip ========")
                 // A point that cannot even build a valid graph should not discard the other
                 // eleven results, but it must still be visible in the summary rather than
                 // silently missing.
                 summary += try {
-                    val report = runRolling(d = d, subnetCount = subnets)
+                    val report = runRolling(d = d, subnetCount = subnets, lazyGossip = lazyGossip)
                     println(report)
+                    val nodes = report.traffic.overall.nodeCount
                     SWEEP_ROW.format(
                         d,
                         subnets,
@@ -239,26 +262,29 @@ class DcScenarioRunnerTest {
                         report.overall.max?.inWholeMilliseconds ?: -1,
                         // Per node per wave, so the figure does not move with waveCount or
                         // warmupWaves and stays comparable across runs.
-                        report.publishBytesReceivedPerNodePerWave / 1e6
+                        report.publishBytesReceivedPerNodePerWave / 1e6,
+                        // Control is not wave-attributed (IHAVE/IWANT carry no wave index), so this
+                        // is the whole-run total per node, warm-up included.
+                        report.gossipControlBytesReceived.toDouble() / nodes / 1e6
                     )
                 } catch (e: Throwable) {
                     println("FAILED D=$d subnets=$subnets: $e")
                     e.printStackTrace()
                     "%2d  %7d  FAILED: %s".format(d, subnets, e.toString().take(120))
                 }
-                // Each point holds 8.4M deliveries while running; drop them before the next.
+                // Each point holds millions of deliveries while running; drop them before the next.
                 System.gc()
             }
         }
-        println("\n======== SWEEP SUMMARY ========")
+        println("\n======== SWEEP SUMMARY (lazyGossip=$lazyGossip) ========")
         println(SWEEP_HEADER)
         summary.forEach(::println)
     }
 
     companion object {
         private const val SWEEP_HEADER =
-            " D  subnets  meshMean  dup    deliv%   p50    p95    p99    max   MB/node/wave"
+            " D  subnets  meshMean  dup    deliv%   p50    p95    p99    max   MB/node/wave  ctrlMB/node"
         private const val SWEEP_ROW =
-            "%2d  %7d  %8.2f  %5.2fx %6.2f  %5d  %5d  %5d  %6d  %11.2f"
+            "%2d  %7d  %8.2f  %5.2fx %6.2f  %5d  %5d  %5d  %6d  %11.2f  %10.2f"
     }
 }
