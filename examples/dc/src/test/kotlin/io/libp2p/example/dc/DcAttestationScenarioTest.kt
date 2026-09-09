@@ -204,6 +204,51 @@ class DcAttestationScenarioTest {
     }
 
     @Test
+    fun `uploadBandwidth makes the access link asymmetric in the topology`() {
+        val down = Bandwidths.mbitPerSecond(50)
+        val up = Bandwidths.mbitPerSecond(25)
+        val network = DcNetworkBuilder.world(randomSeed = 1)
+            .addGroup(count = 4) {
+                spreadOverRegions()
+                bandwidth = down
+                uploadBandwidth = up
+                validators = 1
+                peers = 2
+                randomSubnets(count = 1, of = 2)
+            }
+            .build()
+
+        network.nodes.forEach { node ->
+            assertThat(node.bandwidthBytesPerSecond).isEqualTo(down.bytesPerSecond)
+            assertThat(node.uploadBandwidthBytesPerSecond).isEqualTo(up.bytesPerSecond)
+            assertThat(node.hasAsymmetricLink).isTrue()
+        }
+
+        // The two directions are separate links, so check the rate landed on the right one:
+        // host -> router carries the upload rate, router -> host the download rate. Getting these
+        // the wrong way round would still look asymmetric while throttling the wrong direction.
+        val hostIds = network.nodes.map { it.id }.toSet()
+        val uplinks = network.topology.links.filter { it.from in hostIds }
+        val downlinks = network.topology.links.filter { it.to in hostIds }
+        assertThat(uplinks).hasSize(network.nodes.size)
+        assertThat(downlinks).hasSize(network.nodes.size)
+        assertThat(uplinks.map { it.bandwidthBytesPerSecond }.distinct())
+            .containsExactly(up.bytesPerSecond)
+        assertThat(downlinks.map { it.bandwidthBytesPerSecond }.distinct())
+            .containsExactly(down.bytesPerSecond)
+    }
+
+    @Test
+    fun `omitting uploadBandwidth keeps the link symmetric`() {
+        val network = population(nodeCount = 4, subnetCount = 2, subnetsPerNode = 1, peers = 2)
+
+        network.nodes.forEach { node ->
+            assertThat(node.uploadBandwidthBytesPerSecond).isEqualTo(node.bandwidthBytesPerSecond)
+            assertThat(node.hasAsymmetricLink).isFalse()
+        }
+    }
+
+    @Test
     fun `sweep D values build valid params with a D plus-minus-one mesh band`() {
         // Guards the D x subnetCount sweep: GossipParams validates DOut < DLow and DOut <= D/2,
         // and DOut is re-derived from whatever DLow is set explicitly, so a low D could otherwise

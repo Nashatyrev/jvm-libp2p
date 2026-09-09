@@ -17,8 +17,16 @@ data class DcNode<R>(
     val id: String,
     /** Geographical region the node is attached to. */
     val region: R,
-    /** Access link rate, applied in both directions. */
+    /** Download rate (network -> host), and the default for the upload direction too. */
     val bandwidthBytesPerSecond: Long,
+    /**
+     * Upload rate (host -> network). Defaults to [bandwidthBytesPerSecond], i.e. a symmetric link.
+     *
+     * Worth setting below the download rate for consumer connections, which are typically
+     * asymmetric — and in gossip the upload direction is the scarce one, since a node forwards each
+     * message to every mesh peer but receives it once per peer that has it.
+     */
+    val uploadBandwidthBytesPerSecond: Long = bandwidthBytesPerSecond,
     /** Number of validators hosted by this node. Zero means a non-validating (full) node. */
     val validatorCount: Int,
     /** Number of gossip peers this node maintains connections to. */
@@ -28,13 +36,19 @@ data class DcNode<R>(
 ) {
     val bandwidth: Bandwidth get() = Bandwidth(bandwidthBytesPerSecond)
 
+    val uploadBandwidth: Bandwidth get() = Bandwidth(uploadBandwidthBytesPerSecond)
+
+    val hasAsymmetricLink: Boolean get() = uploadBandwidthBytesPerSecond != bandwidthBytesPerSecond
+
     val isValidator: Boolean get() = validatorCount > 0
 
     fun subscribesTo(subnetId: Int): Boolean = subnetId in attestationSubnetIds
 
-    override fun toString(): String =
-        "$id[$region, $bandwidth, validators=$validatorCount, peers=$peerCount, " +
+    override fun toString(): String {
+        val link = if (hasAsymmetricLink) "$bandwidth down/$uploadBandwidth up" else "$bandwidth"
+        return "$id[$region, $link, validators=$validatorCount, peers=$peerCount, " +
             "subnets=${attestationSubnetIds.sorted()}]"
+    }
 }
 
 /** Convenience constructors for [Bandwidth] in the units people actually quote links in. */

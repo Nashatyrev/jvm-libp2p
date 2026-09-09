@@ -138,6 +138,10 @@ class DcScenarioRunnerTest {
                     ContinentRegion.US_WEST to 0.2,
                 )
                 bandwidth = Bandwidths.RESIDENTIAL
+                // Asymmetric, as consumer links are: 50 Mbit/s down, 25 up. Upload is the
+                // direction that matters for gossip, since a node forwards each message to every
+                // mesh peer but only receives it once per peer that already has it.
+                uploadBandwidth = Bandwidths.mbitPerSecond(25)
                 validators = 1024
                 peers = 30
                 // Round-robin rather than randomSubnets(1), which assigns independently and so

@@ -38,6 +38,14 @@ class DcNodeGroup<R> internal constructor(
     /** Access link rate of every node in the group. Required. */
     var bandwidth: Bandwidth? = null
 
+    /**
+     * Upload rate of every node in the group. Leave null for a symmetric link at [bandwidth].
+     *
+     * Set it below [bandwidth] to model a consumer connection, where the upload direction is both
+     * narrower and, for gossip, the busier one.
+     */
+    var uploadBandwidth: Bandwidth? = null
+
     /** Gossip peers each node of the group connects to. */
     var peers: Int = DEFAULT_PEER_COUNT
 
@@ -130,6 +138,7 @@ class DcNodeGroup<R> internal constructor(
         it.validatorSpec = validatorSpec
         it.subnetSpec = subnetSpec
         it.bandwidth = bandwidth
+        it.uploadBandwidth = uploadBandwidth
         it.peers = peers
     }
 
@@ -138,6 +147,9 @@ class DcNodeGroup<R> internal constructor(
         requireSingleAssignment("validator allocation", "validators", "validatorsTotal")
         requireSingleAssignment("subnet assignment", "subnets", "subnetsByIndex", "randomSubnets", "allSubnets")
         require(bandwidth != null) { "bandwidth is required" }
+        uploadBandwidth?.let {
+            require(it.bytesPerSecond > 0) { "uploadBandwidth must be positive" }
+        }
         require(peers >= 0) { "peers must be >= 0, got $peers" }
         when (val spec = validatorSpec) {
             is ValidatorSpec.PerNode -> require(spec.count >= 0) {

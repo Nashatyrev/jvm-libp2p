@@ -107,6 +107,8 @@ class DcNetworkBuilder<R>(
         val groupRegions = group.regionsFor(count)
         val groupValidators = group.validatorsFor(count)
         val bandwidthBytesPerSecond = requireNotNull(group.bandwidth).bytesPerSecond
+        val uploadBandwidthBytesPerSecond =
+            group.uploadBandwidth?.bytesPerSecond ?: bandwidthBytesPerSecond
 
         repeat(count) { index ->
             val simNodeId = nodes.size
@@ -115,6 +117,7 @@ class DcNetworkBuilder<R>(
                 id = hostId(simNodeId),
                 region = groupRegions[index],
                 bandwidthBytesPerSecond = bandwidthBytesPerSecond,
+                uploadBandwidthBytesPerSecond = uploadBandwidthBytesPerSecond,
                 validatorCount = groupValidators[index],
                 peerCount = group.peers,
                 attestationSubnetIds = group.subnetsFor(index, simNodeId, randomSeed)
@@ -137,7 +140,12 @@ class DcNetworkBuilder<R>(
         }
         val topologyBuilder = RegionalNetworkTopologyBuilder(descriptor, maxQueueWaitTime)
         builtNodes.forEach { node ->
-            topologyBuilder.addHost(node.id, node.region, node.bandwidthBytesPerSecond)
+            topologyBuilder.addHost(
+                node.id,
+                node.region,
+                node.bandwidthBytesPerSecond,
+                node.uploadBandwidthBytesPerSecond
+            )
         }
         return DcNetwork(builtNodes, topologyBuilder.build())
     }

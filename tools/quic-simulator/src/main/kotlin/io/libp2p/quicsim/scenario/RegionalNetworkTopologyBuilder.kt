@@ -7,8 +7,10 @@ import kotlin.time.Duration
  * Builds a regional router topology.
  *
  * Each host has a single bidirectional connection to its region's router. That access connection
- * has the descriptor's access latency in each direction. Regional routers have a complete directed
- * mesh using the descriptor's router latency and bandwidth.
+ * has the descriptor's access latency in each direction, and may be asymmetric in bandwidth — the
+ * two directions are separate links, so an upload rate below the download rate is expressible.
+ * Regional routers have a complete directed mesh using the descriptor's router latency and
+ * bandwidth.
  */
 class RegionalNetworkTopologyBuilder<R>(
     private val descriptor: RegionalNetworkDescriptor<R>,
@@ -17,28 +19,40 @@ class RegionalNetworkTopologyBuilder<R>(
     private data class RegionalHost<R>(
         val id: String,
         val region: R,
-        val bandwidthBytesPerSecond: Long
+        val bandwidthBytesPerSecond: Long,
+        val uploadBandwidthBytesPerSecond: Long
     )
 
     private val hosts = mutableListOf<RegionalHost<R>>()
 
+    /**
+     * [uploadBandwidthBytesPerSecond] applies to the host -> router direction and
+     * [bandwidthBytesPerSecond] to router -> host, so an asymmetric access link (as most consumer
+     * connections are) can be described. It defaults to the download rate, keeping the link
+     * symmetric.
+     */
     fun addHost(
         id: String,
         region: R,
-        bandwidthBytesPerSecond: Long
+        bandwidthBytesPerSecond: Long,
+        uploadBandwidthBytesPerSecond: Long = bandwidthBytesPerSecond
     ): RegionalNetworkTopologyBuilder<R> = apply {
         require(region in descriptor.regions) { "Unknown region for host $id: $region" }
         require(hosts.none { it.id == id }) { "Host id must be unique: $id" }
         require(bandwidthBytesPerSecond > 0) { "bandwidthBytesPerSecond must be positive" }
-        hosts += RegionalHost(id, region, bandwidthBytesPerSecond)
+        require(uploadBandwidthBytesPerSecond > 0) {
+            "uploadBandwidthBytesPerSecond must be positive"
+        }
+        hosts += RegionalHost(id, region, bandwidthBytesPerSecond, uploadBandwidthBytesPerSecond)
     }
 
     fun addHosts(
         region: R,
         hostIds: Iterable<String>,
-        bandwidthBytesPerSecond: Long
+        bandwidthBytesPerSecond: Long,
+        uploadBandwidthBytesPerSecond: Long = bandwidthBytesPerSecond
     ): RegionalNetworkTopologyBuilder<R> = apply {
-        hostIds.forEach { addHost(it, region, bandwidthBytesPerSecond) }
+        hostIds.forEach { addHost(it, region, bandwidthBytesPerSecond, uploadBandwidthBytesPerSecond) }
     }
 
     fun build(): QuicNetworkTopology {
@@ -54,7 +68,8 @@ class RegionalNetworkTopologyBuilder<R>(
                     from = host.id,
                     to = routerId,
                     latency = descriptor.accessLatency(host.region),
-                    bandwidthBytesPerSecond = host.bandwidthBytesPerSecond,
+                    // Uplink: what the host itself can push out.
+                    bandwidthBytesPerSecond = host.uploadBandwidthBytesPerSecond,
                     maxQueueWaitTime = maxQueueWaitTime
                 ),
                 QuicNetworkLink(
