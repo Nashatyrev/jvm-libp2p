@@ -188,8 +188,14 @@ class DcAttestationNodeProgramFactory<R>(
     fun expectedDeliveriesOf(attestation: DcAttestation): Int =
         network.nodesSubscribedTo(attestation.subnetId).count { it.simNodeId != attestation.attesterNodeId }
 
-    /** Every node but the publisher: slot-message topics are global. */
-    val expectedMessageDeliveries: Int get() = network.nodeCount - 1
+    /** Subscribers to this message's global or subnet topic, excluding its publisher. */
+    fun expectedDeliveriesOf(message: DcSlotMessage): Int =
+        if (message.subnetId == null) {
+            network.nodeCount - 1
+        } else {
+            network.nodesSubscribedTo(message.subnetId)
+                .count { it.simNodeId != message.publisherNodeId }
+        }
 
     fun report(traffic: DcTrafficReport): DcAttestationReport =
         DcAttestationReport.of(
@@ -214,7 +220,7 @@ class DcAttestationNodeProgramFactory<R>(
                 messageSchedule.config.type to DcSlotMessageReport.of(
                     published = recorder.published(),
                     deliveries = recorder.deliveries(),
-                    expectedDeliveriesPerMessage = expectedMessageDeliveries,
+                    expectedDeliveriesOf = ::expectedDeliveriesOf,
                     config = messageSchedule.config,
                     warmupWaves = config.warmupWaves
                 )
@@ -254,7 +260,11 @@ object DcAttestationScenario {
         messageSchedules: List<DcSlotMessageSchedule> = defaultMessageSchedules(network, config)
     ): QuicScenario<DcAttestationNodeProgramFactory<R>> {
         val messageSuffix = config.allMessageConfigs.joinToString(separator = "") {
-            "-${it.type.id}${it.messagesPerSlot}x${it.sizeBytes}B@${it.publishOffset}"
+            val topics = when (val topicConfig = it.topics) {
+                DcSlotMessageTopics.Global -> "global"
+                is DcSlotMessageTopics.Subnets -> "${topicConfig.subnetCount}subnets"
+            }
+            "-${it.type.id}${it.messagesPerSlot}x${it.sizeBytes}B@${it.publishOffset}-$topics"
         }
         return QuicScenario(
             name = "dc-attestations-${network.nodeCount}n-" +

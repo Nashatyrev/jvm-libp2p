@@ -109,10 +109,13 @@ class DcAttestationNodeProgram(
             )
         }
         messageSchedules.forEach { schedule ->
-            messageApi.subscribe(
-                Consumer { msg -> onSlotMessage(schedule.config.type, msg, simContext) },
-                schedule.config.topic
-            )
+            val topics = schedule.subscriptionsOf(subnetIds)
+            if (topics.isNotEmpty()) {
+                messageApi.subscribe(
+                    Consumer { msg -> onSlotMessage(schedule.config.type, msg, simContext) },
+                    *topics.toTypedArray()
+                )
+            }
         }
     }
 
@@ -188,11 +191,11 @@ class DcAttestationNodeProgram(
                         kind = DcMessageKind.SLOT_MESSAGE,
                         id = message.id,
                         waveIndex = message.slotIndex,
-                        subnetId = DcMessagePayload.NO_SUBNET,
+                        subnetId = message.subnetId ?: DcMessagePayload.NO_SUBNET,
                         publishedAt = publishedAt,
                         sizeBytes = messageSchedule.config.sizeBytes
                     ),
-                    messageSchedule.config.topic
+                    messageSchedule.topicOf(message)
                 )
             }
         }

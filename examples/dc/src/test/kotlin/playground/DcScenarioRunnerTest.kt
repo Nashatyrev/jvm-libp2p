@@ -8,6 +8,7 @@ import io.libp2p.example.dc.DcAttestationSchedule
 import io.libp2p.example.dc.DcNetworkBuilder
 import io.libp2p.example.dc.DcPublisherSelection
 import io.libp2p.example.dc.DcSlotMessageConfig
+import io.libp2p.example.dc.DcSlotMessageTopics
 import io.libp2p.example.dc.DcSlotMessageType
 import io.libp2p.example.dc.peerGraph
 import io.libp2p.pubsub.gossip.GossipParams
@@ -110,7 +111,8 @@ class DcScenarioRunnerTest {
                     sizeBytes = 128 * 1024,
                     publishOffset = 2.seconds,
                     publisherGroups = setOf("validator-pools"),
-                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                    topics = DcSlotMessageTopics.Global
                 )
             ),
             gossipParams = gossipParams,

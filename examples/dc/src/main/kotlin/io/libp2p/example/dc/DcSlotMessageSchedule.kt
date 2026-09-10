@@ -32,6 +32,45 @@ data class DcSlotMessageType(val id: String) {
     }
 }
 
+/** Gossip topic topology used to disseminate one message type. */
+sealed class DcSlotMessageTopics {
+    /** One topic subscribed to by every node. */
+    object Global : DcSlotMessageTopics() {
+        override fun toString(): String = "global"
+    }
+
+    /**
+     * One topic per subnet. Nodes join the topic ids in their existing
+     * [DcNode.attestationSubnetIds] assignment that fall within `0 until subnetCount`.
+     */
+    data class Subnets(val subnetCount: Int) : DcSlotMessageTopics() {
+        init {
+            require(subnetCount > 0) { "subnetCount must be > 0, got $subnetCount" }
+        }
+
+        override fun toString(): String = "$subnetCount subnets"
+    }
+
+    internal fun topic(type: DcSlotMessageType, subnetId: Int?): Topic = when (this) {
+        Global -> {
+            require(subnetId == null) { "global $type message must not have a subnet, got $subnetId" }
+            Topic("/dc/${type.id}")
+        }
+        is Subnets -> {
+            require(subnetId != null && subnetId in 0 until subnetCount) {
+                "$type subnet must be in 0 until $subnetCount, got $subnetId"
+            }
+            Topic("/dc/${type.id}/$subnetId")
+        }
+    }
+
+    internal fun subscriptions(type: DcSlotMessageType, nodeSubnetIds: Set<Int>): List<Topic> =
+        when (this) {
+            Global -> listOf(topic(type, null))
+            is Subnets -> nodeSubnetIds.filter { it in 0 until subnetCount }.map { topic(type, it) }
+        }
+}
+
 /** How a publisher is drawn from the nodes selected by [DcSlotMessageConfig.publisherGroups]. */
 enum class DcPublisherSelection {
     /** Every node has the same probability, whether or not it hosts validators. */
@@ -44,10 +83,9 @@ enum class DcPublisherSelection {
 /**
  * One kind of message issued in every slot.
  *
- * [type] identifies the message in reports and gives it a separate `/dc/<type>` gossip topic.
- * Every node subscribes to that topic. A publisher is drawn once per slot and emits
- * [messagesPerSlot] messages, which models both singular objects (a block or payload) and batches
- * (payload chunks or data-availability columns).
+ * [type] identifies the message in reports and namespaces its gossip [topics]. A publisher is drawn
+ * once per slot and emits [messagesPerSlot] messages, which models both singular objects (a block
+ * or payload) and batches (payload chunks or data-availability columns).
  */
 data class DcSlotMessageConfig(
     val type: DcSlotMessageType,
@@ -55,7 +93,8 @@ data class DcSlotMessageConfig(
     val publishOffset: Duration = Duration.ZERO,
     val publisherGroups: Set<String>? = null,
     val messagesPerSlot: Int = 1,
-    val publisherSelection: DcPublisherSelection = DcPublisherSelection.RANDOM_NODE
+    val publisherSelection: DcPublisherSelection = DcPublisherSelection.RANDOM_NODE,
+    val topics: DcSlotMessageTopics = DcSlotMessageTopics.Global
 ) {
     init {
         require(sizeBytes >= DcMessagePayload.HEADER_BYTES) {
@@ -72,8 +111,6 @@ data class DcSlotMessageConfig(
         }
     }
 
-    val topic: Topic get() = Topic("/dc/${type.id}")
-
     companion object {
         /** Largest application payload that fits in one gossipsub frame under [params]. */
         fun maxSizeBytes(params: io.libp2p.pubsub.gossip.GossipParams): Int {
@@ -88,7 +125,9 @@ data class DcSlotMessage(
     val id: Int,
     val slotIndex: Int,
     val indexInSlot: Int,
-    val publisherNodeId: SimNodeId
+    val publisherNodeId: SimNodeId,
+    /** Null for a global topic; otherwise the subnet topic carrying this message. */
+    val subnetId: Int? = null
 ) {
     /** Compatibility vocabulary for code that treats slots as attestation waves. */
     val waveIndex: Int get() = slotIndex
@@ -138,6 +177,11 @@ class DcSlotMessageSchedule(
 
     fun timeOf(message: DcSlotMessage): Duration = slotTimes[message.slotIndex] + config.publishOffset
 
+    fun topicOf(message: DcSlotMessage): Topic = config.topics.topic(config.type, message.subnetId)
+
+    fun subscriptionsOf(nodeSubnetIds: Set<Int>): List<Topic> =
+        config.topics.subscriptions(config.type, nodeSubnetIds)
+
     fun lastPublishTime(): Duration =
         (slotTimes.maxOrNull() ?: Duration.ZERO) + config.publishOffset
 
@@ -153,6 +197,13 @@ class DcSlotMessageSchedule(
                 require(unknown.isEmpty()) {
                     "publisherGroups names no such group: $unknown; the network has " +
                         if (network.groupNames().isEmpty()) "no named groups" else "${network.groupNames()}"
+                }
+            }
+            if (config.topics is DcSlotMessageTopics.Subnets) {
+                val missing = (0 until config.topics.subnetCount)
+                    .filter { network.nodesSubscribedTo(it).isEmpty() }
+                require(missing.isEmpty()) {
+                    "${config.type} subnet topics have no subscribers: $missing"
                 }
             }
             val candidates = network.nodesInGroups(config.publisherGroups).let { nodes ->
@@ -193,7 +244,10 @@ class DcSlotMessageSchedule(
                     candidates[cumulative.indexOfFirst { it > draw }]
                 }
                 List(config.messagesPerSlot) { indexInSlot ->
-                    DcSlotMessage(nextId++, slotIndex, indexInSlot, publisher.simNodeId)
+                    val subnetId = (config.topics as? DcSlotMessageTopics.Subnets)?.let {
+                        indexInSlot % it.subnetCount
+                    }
+                    DcSlotMessage(nextId++, slotIndex, indexInSlot, publisher.simNodeId, subnetId)
                 }
             }
             return DcSlotMessageSchedule(slotTimes, config, messages)

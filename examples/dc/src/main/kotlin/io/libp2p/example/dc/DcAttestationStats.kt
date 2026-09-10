@@ -138,11 +138,12 @@ data class DcSlotMessageReport(
 
     override fun toString(): String = buildString {
         appendLine(
-            "%s: %d x %d B per slot, publishOffset=%s publishers=%s selection=%s".format(
+            "%s: %d x %d B per slot, publishOffset=%s topics=%s publishers=%s selection=%s".format(
                 type.id,
                 config.messagesPerSlot,
                 config.sizeBytes,
                 config.publishOffset,
+                config.topics,
                 config.publisherGroups?.joinToString(prefix = "groups ") ?: "all groups",
                 config.publisherSelection
             )
@@ -171,7 +172,7 @@ data class DcSlotMessageReport(
         fun of(
             published: List<DcSlotMessagePublication>,
             deliveries: List<DcSlotMessageDelivery>,
-            expectedDeliveriesPerMessage: Int,
+            expectedDeliveriesOf: (DcSlotMessage) -> Int,
             config: DcSlotMessageConfig,
             warmupWaves: Int = 0
         ): DcSlotMessageReport {
@@ -184,14 +185,14 @@ data class DcSlotMessageReport(
                 overall = DcDeliveryStats.of(
                     publishedCount = measuredPublished.size,
                     latencies = measuredDeliveries.map { it.latency },
-                    expectedDeliveries = measuredPublished.size * expectedDeliveriesPerMessage,
+                    expectedDeliveries = measuredPublished.sumOf { expectedDeliveriesOf(it.message) },
                     what = config.type.id
                 ),
                 perSlot = publicationsByWave.mapValues { (wave, wavePublications) ->
                     DcDeliveryStats.of(
                         publishedCount = wavePublications.size,
                         latencies = deliveriesByWave[wave].orEmpty().map { it.latency },
-                        expectedDeliveries = wavePublications.size * expectedDeliveriesPerMessage,
+                        expectedDeliveries = wavePublications.sumOf { expectedDeliveriesOf(it.message) },
                         what = config.type.id
                     )
                 },

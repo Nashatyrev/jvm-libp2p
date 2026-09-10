@@ -95,6 +95,14 @@ class DcBlockScenarioTest {
                     publishOffset = 2.seconds,
                     publisherGroups = setOf("pools"),
                     messagesPerSlot = 3
+                ),
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.BLOB_COLUMN,
+                    sizeBytes = 4 * 1024,
+                    publishOffset = 3.seconds,
+                    publisherGroups = setOf("pools"),
+                    messagesPerSlot = 2,
+                    topics = DcSlotMessageTopics.Subnets(subnetCount = 2)
                 )
             ),
             randomSeed = 7
@@ -103,7 +111,11 @@ class DcBlockScenarioTest {
         val report = DcAttestationScenario.run(network, graph, config)
 
         assertThat(report.messages.keys)
-            .containsExactly(DcSlotMessageType.PAYLOAD, DcSlotMessageType.PAYLOAD_CHUNK)
+            .containsExactly(
+                DcSlotMessageType.PAYLOAD,
+                DcSlotMessageType.PAYLOAD_CHUNK,
+                DcSlotMessageType.BLOB_COLUMN
+            )
         val payload = report.messages.getValue(DcSlotMessageType.PAYLOAD)
         assertThat(payload.overall.publishedCount).isEqualTo(2)
         assertThat(payload.overall.deliveryRatio).isEqualTo(1.0)
@@ -114,15 +126,25 @@ class DcBlockScenarioTest {
         assertThat(chunks.perSlot.values.map { it.publishedCount }).containsOnly(3)
         assertThat(chunks.overall.deliveryRatio).isEqualTo(1.0)
         assertThat(chunks.publishTimes[1]).containsOnly(config.waveTimes[1] + 2.seconds)
-        assertThat((payload.publishers.values + chunks.publishers.values).map { network.node(it).groupName })
+        val columns = report.messages.getValue(DcSlotMessageType.BLOB_COLUMN)
+        assertThat(columns.overall.publishedCount).isEqualTo(4)
+        assertThat(columns.perSlot.values.map { it.publishedCount }).containsOnly(2)
+        assertThat(columns.overall.deliveryRatio).isEqualTo(1.0)
+
+        assertThat(
+            (payload.publishers.values + chunks.publishers.values + columns.publishers.values)
+                .map { network.node(it).groupName }
+        )
             .containsOnly("pools")
     }
 
     @Test
     fun `message types are extensible and one issuance config is allowed per type`() {
         val custom = DcSlotMessageType("custody-proof")
-        assertThat(DcSlotMessageConfig(custom, sizeBytes = 1024).topic.topic)
+        assertThat(DcSlotMessageTopics.Global.topic(custom, null).topic)
             .isEqualTo("/dc/custody-proof")
+        assertThat(DcSlotMessageTopics.Subnets(8).topic(custom, 3).topic)
+            .isEqualTo("/dc/custody-proof/3")
 
         assertThatThrownBy {
             DcAttestationConfig(
