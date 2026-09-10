@@ -57,16 +57,19 @@ data class DcSlotProfileParams(
  * — bucket 0 is `[0, bucketDuration)` measured from the start of whichever slot is in progress,
  * bucket 1 the next [bucketDuration] window, and so on up to [slotDuration]. A run of many slots
  * overlays them into one picture of where in the slot traffic actually shows up, e.g. a block
- * published at a 2s offset should show as a spike in [messageBytesPerNode] just after `t=2000ms`.
+ * published at a 2s offset should show as a spike in [uniqueMessageBytesPerNode] just after
+ * `t=2000ms`.
  *
- * Three views of the same wire traffic, side by side so they can be compared bucket for bucket:
- *  - [messageBytesPerNode]: gossip publish bytes, by message type, read directly off the wire —
- *    including every duplicate copy a mesh forwards before its receiver has deduplicated it, since
- *    that is genuine traffic the network carried, not merely what the application layer observed once.
+ * Four views of the same wire traffic, side by side so they can be compared bucket for bucket:
+ *  - [uniqueMessageBytesPerNode]: gossip publish bytes, by message type, counted on a node's first
+ *    sighting of each message — what the application layer would eventually see once, per message.
+ *  - [duplicateMessageBytesPerNode]: the same, but for every copy after a node's first sighting —
+ *    still genuine wire traffic a mesh peer forwarded before it learned the node already had this
+ *    message, just not traffic the application layer ends up doing anything with.
  *  - [controlBytesPerNode]: the rest of what gossip put on the wire for these bytes — subscriptions,
  *    GRAFT/PRUNE/IHAVE/IWANT, and RPC framing. One column, not per type, since control traffic is not
  *    about any particular message.
- *  - [transportOverheadBytesPerNode]: raw UDP bytes received minus the two gossip figures above —
+ *  - [transportOverheadBytesPerNode]: raw UDP bytes received minus the three gossip figures above —
  *    QUIC/libp2p's own framing, handshakes, ACKs and retransmits, the traffic gossip's own byte
  *    accounting never sees.
  *
@@ -81,7 +84,8 @@ data class DcSlotTrafficProfile(
     val slotsMeasured: Int,
     val nodeCount: Int,
     /** One entry per bucket, in slot order, for every message type seen on the wire. */
-    val messageBytesPerNode: Map<DcSlotMessageType, List<Long>>,
+    val uniqueMessageBytesPerNode: Map<DcSlotMessageType, List<Long>>,
+    val duplicateMessageBytesPerNode: Map<DcSlotMessageType, List<Long>>,
     val controlBytesPerNode: List<Long>,
     val transportOverheadBytesPerNode: List<Long>
 ) {
@@ -96,10 +100,17 @@ data class DcSlotTrafficProfile(
             "slot traffic profile (bytes/node/slot): bucket=$bucketDuration slotDuration=$slotDuration " +
                 "slots=$slotsMeasured nodes=$nodeCount"
         )
-        val columns = messageBytesPerNode.keys.map { it.id }.sorted() + CONTROL_COLUMN + TRANSPORT_OVERHEAD_COLUMN
-        val series = messageBytesPerNode.mapKeys { (type, _) -> type.id } +
-            (CONTROL_COLUMN to controlBytesPerNode) +
-            (TRANSPORT_OVERHEAD_COLUMN to transportOverheadBytesPerNode)
+        val types = (uniqueMessageBytesPerNode.keys + duplicateMessageBytesPerNode.keys).distinct().sortedBy { it.id }
+        val columns = types.flatMap { listOf("${it.id}$UNIQUE_SUFFIX", "${it.id}$DUPLICATE_SUFFIX") } +
+            CONTROL_COLUMN +
+            TRANSPORT_OVERHEAD_COLUMN
+        val zeros = List(bucketCount) { 0L }
+        val series = types.flatMap { type ->
+            listOf(
+                "${type.id}$UNIQUE_SUFFIX" to (uniqueMessageBytesPerNode[type] ?: zeros),
+                "${type.id}$DUPLICATE_SUFFIX" to (duplicateMessageBytesPerNode[type] ?: zeros)
+            )
+        }.toMap() + (CONTROL_COLUMN to controlBytesPerNode) + (TRANSPORT_OVERHEAD_COLUMN to transportOverheadBytesPerNode)
         val widths = columns.associateWith { maxOf(it.length, VALUE_WIDTH) }
         appendLine(
             "%${TIME_WIDTH}s".format("t(ms)") +
@@ -118,6 +129,8 @@ data class DcSlotTrafficProfile(
     companion object {
         private const val TIME_WIDTH = 8
         private const val VALUE_WIDTH = 8
+        const val UNIQUE_SUFFIX = "-uniq"
+        const val DUPLICATE_SUFFIX = "-dup"
         const val CONTROL_COLUMN = "control"
         const val TRANSPORT_OVERHEAD_COLUMN = "transport-overhead"
 
@@ -126,7 +139,9 @@ data class DcSlotTrafficProfile(
 
         /**
          * Aggregates every node's [GossipByteCounter] plus the run's raw inbound UDP datagrams into
-         * one network-wide profile.
+         * one traffic profile. Callers restrict this to a subset of nodes — [gossipCounters],
+         * [inboundEvents] and [nodeCount] all narrowed to one node group, say — to get that group's
+         * own profile rather than the whole network's; see [DcGroupStats.slotTraffic].
          *
          * [gossipCounters] and [inboundEvents] must have been built with the same [params] the
          * counters were themselves constructed with — [io.libp2p.example.dc.DcAttestationNodeProgram]
@@ -143,13 +158,12 @@ data class DcSlotTrafficProfile(
             require(slotsMeasured > 0) { "slotsMeasured must be > 0, got $slotsMeasured" }
             val bucketCount = params.bucketCount
 
-            val rawMessageBytes = mutableMapOf<DcSlotMessageType, LongArray>()
+            val rawUniqueBytes = mutableMapOf<DcSlotMessageType, LongArray>()
+            val rawDuplicateBytes = mutableMapOf<DcSlotMessageType, LongArray>()
             val rawControlBytes = LongArray(bucketCount)
             gossipCounters.forEach { counter ->
-                counter.messageBytesReadByTypeAndBucket.forEach { (type, buckets) ->
-                    val totals = rawMessageBytes.getOrPut(type) { LongArray(bucketCount) }
-                    buckets.forEachIndexed { bucket, bytes -> totals[bucket] = totals[bucket] + bytes }
-                }
+                addInto(rawUniqueBytes, counter.uniqueMessageBytesReadByTypeAndBucket, bucketCount)
+                addInto(rawDuplicateBytes, counter.duplicateMessageBytesReadByTypeAndBucket, bucketCount)
                 counter.controlBytesReadByBucket.forEachIndexed { bucket, bytes ->
                     rawControlBytes[bucket] = rawControlBytes[bucket] + bytes
                 }
@@ -168,7 +182,9 @@ data class DcSlotTrafficProfile(
             // it) can occasionally put a sliver of gossip bytes in a different bucket than the UDP
             // packet that carried them; coerced to non-negative rather than shown as a deficit.
             val rawOverheadBytes = LongArray(bucketCount) { bucket ->
-                val gossipBytes = rawControlBytes[bucket] + rawMessageBytes.values.sumOf { it[bucket] }
+                val gossipBytes = rawControlBytes[bucket] +
+                    rawUniqueBytes.values.sumOf { it[bucket] } +
+                    rawDuplicateBytes.values.sumOf { it[bucket] }
                 (rawUdpBytes[bucket] - gossipBytes).coerceAtLeast(0)
             }
 
@@ -180,10 +196,23 @@ data class DcSlotTrafficProfile(
                 slotDuration = params.slotDuration,
                 slotsMeasured = slotsMeasured,
                 nodeCount = nodeCount,
-                messageBytesPerNode = rawMessageBytes.mapValues { (_, raw) -> average(raw) },
+                uniqueMessageBytesPerNode = rawUniqueBytes.mapValues { (_, raw) -> average(raw) },
+                duplicateMessageBytesPerNode = rawDuplicateBytes.mapValues { (_, raw) -> average(raw) },
                 controlBytesPerNode = average(rawControlBytes),
                 transportOverheadBytesPerNode = average(rawOverheadBytes)
             )
+        }
+
+        /** Adds one node's per-(type,bucket) counts into the running network-wide totals. */
+        private fun addInto(
+            totals: MutableMap<DcSlotMessageType, LongArray>,
+            perNode: Map<DcSlotMessageType, List<Long>>,
+            bucketCount: Int
+        ) {
+            perNode.forEach { (type, buckets) ->
+                val arr = totals.getOrPut(type) { LongArray(bucketCount) }
+                buckets.forEachIndexed { bucket, bytes -> arr[bucket] = arr[bucket] + bytes }
+            }
         }
     }
 }

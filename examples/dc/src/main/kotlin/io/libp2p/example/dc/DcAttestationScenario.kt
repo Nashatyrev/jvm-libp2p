@@ -258,6 +258,7 @@ class DcAttestationNodeProgramFactory<R>(
             val recorder = messageRecorders.getValue(messageSchedule.config.type)
             messageSchedule.config.type to (recorder.published() to recorder.deliveries())
         }
+        val slotsMeasured = config.measuredWaves.count()
         val groups = DcGroupReport.of(
             network = network,
             trafficPerGroup = traffic.perGroup,
@@ -265,6 +266,9 @@ class DcAttestationNodeProgramFactory<R>(
             meshSizes = nodePrograms.associate { it.simNodeId to it.finalMeshSizes },
             messagesByType = messagesByType,
             subscribersOf = ::subscribersOf,
+            inboundEvents = events,
+            slotProfileParams = slotProfileParams,
+            slotsMeasured = slotsMeasured,
             warmupWaves = config.warmupWaves
         )
         val slotTraffic = DcSlotTrafficProfile.of(
@@ -272,7 +276,7 @@ class DcAttestationNodeProgramFactory<R>(
             inboundEvents = events,
             params = slotProfileParams,
             nodeCount = network.nodeCount,
-            slotsMeasured = config.measuredWaves.count()
+            slotsMeasured = slotsMeasured
         )
         return DcAttestationReport(
             overall = ffgReport.overall,

@@ -1,5 +1,6 @@
 package io.libp2p.example.dc
 
+import io.libp2p.quicsim.runner.DatagramPacketTraceEvent
 import io.libp2p.quicsim.sim.SimNodeId
 
 /**
@@ -28,7 +29,9 @@ data class DcGroupStats(
     val gossipPublishBytesSent: Long,
     val gossipPublishBytesReceived: Long,
     val messagesReceived: Map<DcSlotMessageType, DcDeliveryStats>,
-    val mesh: DcMeshStats?
+    val mesh: DcMeshStats?,
+    /** This group's own slot traffic profile — see [DcSlotTrafficProfile] — null if it could not be built. */
+    val slotTraffic: DcSlotTrafficProfile? = null
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
     val gossipControlBytesReceived: Long get() = gossipBytesReceived - gossipPublishBytesReceived
@@ -69,6 +72,7 @@ data class DcGroupStats(
             appendLine()
         }
         mesh?.let { append("  " + it.toString().trimEnd().replace("\n", "\n  ") + "\n") }
+        slotTraffic?.let { append("  " + it.toString().trimEnd().replace("\n", "\n  ") + "\n") }
     }
 
     companion object {
@@ -115,6 +119,10 @@ data class DcGroupReport(
             meshSizes: Map<SimNodeId, List<Int>>,
             messagesByType: Map<DcSlotMessageType, Pair<List<DcSlotMessagePublication>, List<DcSlotMessageDelivery>>>,
             subscribersOf: (DcSlotMessage) -> List<DcNode<R>>,
+            /** Inbound-UDP + [GossipByteCounter] material for this group's own [DcSlotTrafficProfile]. */
+            inboundEvents: List<DatagramPacketTraceEvent> = emptyList(),
+            slotProfileParams: DcSlotProfileParams? = null,
+            slotsMeasured: Int = 0,
             warmupWaves: Int = 0
         ): DcGroupReport {
             val nodesByGroup = network.nodes.groupBy { it.groupName ?: DcGroupStats.UNNAMED }
@@ -168,6 +176,7 @@ data class DcGroupReport(
 
             val groups = nodesByGroup.mapValues { (groupName, groupNodes) ->
                 val nodeIds = groupNodes.map { it.simNodeId }
+                val nodeIdSet = nodeIds.toHashSet()
                 DcGroupStats(
                     groupName = groupName,
                     nodeCount = groupNodes.size,
@@ -189,7 +198,16 @@ data class DcGroupReport(
                     },
                     mesh = nodeIds.mapNotNull { meshSizes[it] }
                         .takeIf { it.isNotEmpty() }
-                        ?.let { DcMeshStats.of(it) }
+                        ?.let { DcMeshStats.of(it) },
+                    slotTraffic = slotProfileParams?.let { params ->
+                        DcSlotTrafficProfile.of(
+                            gossipCounters = nodeIds.mapNotNull { gossipCounters[it] },
+                            inboundEvents = inboundEvents.filter { it.nodeId in nodeIdSet },
+                            params = params,
+                            nodeCount = groupNodes.size,
+                            slotsMeasured = slotsMeasured
+                        )
+                    }
                 )
             }
             return DcGroupReport(groups)

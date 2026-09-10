@@ -29,10 +29,12 @@ import kotlin.time.Duration
  *
  * When constructed with [slotProfile], inbound reads are additionally bucketed by where in the slot
  * cycle they landed — see [DcSlotTrafficProfile] — split into per-([DcSlotMessageType], bucket)
- * publish bytes ([messageBytesReadByTypeAndBucket], read straight off the wire so duplicates are
- * included) and per-bucket control bytes ([controlBytesReadByBucket]). That needs to know the
- * current simulated time, which is not available at construction, so [currentTimeSupplier] is set
- * later — see [DcAttestationNodeProgram.onAllConnected].
+ * publish bytes, further split into [uniqueMessageBytesReadByTypeAndBucket] (this node's first time
+ * seeing this exact message) and [duplicateMessageBytesReadByTypeAndBucket] (every copy after that,
+ * still genuine wire traffic even though gossip's own deduplication will discard it) — plus
+ * per-bucket control bytes ([controlBytesReadByBucket]). That needs to know the current simulated
+ * time, which is not available at construction, so [currentTimeSupplier] is set later — see
+ * [DcAttestationNodeProgram.onAllConnected].
  */
 @io.netty.channel.ChannelHandler.Sharable
 class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : ChannelDuplexHandler() {
@@ -49,10 +51,14 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
     private val _publishMessagesRead = AtomicLong(0)
     private val _publishMessagesWritten = AtomicLong(0)
 
-    private val _messageBytesReadByTypeBucket = ConcurrentHashMap<DcSlotMessageType, Array<AtomicLong>>()
+    private val _uniqueMessageBytesByTypeBucket = ConcurrentHashMap<DcSlotMessageType, Array<AtomicLong>>()
+    private val _duplicateMessageBytesByTypeBucket = ConcurrentHashMap<DcSlotMessageType, Array<AtomicLong>>()
     private val _controlBytesReadByBucket: Array<AtomicLong>? = slotProfile?.let { params ->
         Array(params.bucketCount) { AtomicLong(0) }
     }
+
+    /** (type, message id) pairs this node has already seen, so a later copy is marked a duplicate. */
+    private val _seenMessages = ConcurrentHashMap.newKeySet<Pair<DcSlotMessageType, Int>>()
 
     /**
      * Number of published messages seen, as opposed to their size. Divided by the count of
@@ -80,13 +86,20 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
         get() = _writtenByWave.mapValues { it.value.messages.get() }
 
     /**
-     * Inbound publish bytes read off the wire, by message type and [DcSlotTrafficProfile] bucket —
-     * every duplicate copy included, since a mesh peer forwarding a message it hasn't deduplicated
-     * yet is genuine wire traffic. Empty unless this counter was built with a [slotProfile] and
-     * [currentTimeSupplier] has been set.
+     * Inbound publish bytes read off the wire on this node's first sighting of each message, by
+     * message type and [DcSlotTrafficProfile] bucket. Empty unless this counter was built with a
+     * [slotProfile] and [currentTimeSupplier] has been set.
      */
-    val messageBytesReadByTypeAndBucket: Map<DcSlotMessageType, List<Long>>
-        get() = _messageBytesReadByTypeBucket.mapValues { (_, buckets) -> buckets.map { it.get() } }
+    val uniqueMessageBytesReadByTypeAndBucket: Map<DcSlotMessageType, List<Long>>
+        get() = _uniqueMessageBytesByTypeBucket.mapValues { (_, buckets) -> buckets.map { it.get() } }
+
+    /**
+     * Inbound publish bytes read off the wire for a message this node has already seen once before
+     * — a mesh peer forwarding a copy it has not yet deduplicated, still genuine wire traffic even
+     * though the application layer will discard it. By message type and bucket, as above.
+     */
+    val duplicateMessageBytesReadByTypeAndBucket: Map<DcSlotMessageType, List<Long>>
+        get() = _duplicateMessageBytesByTypeBucket.mapValues { (_, buckets) -> buckets.map { it.get() } }
 
     /** Inbound control bytes (subscriptions, GRAFT/PRUNE/IHAVE/IWANT, RPC framing) by slot bucket. */
     val controlBytesReadByBucket: List<Long>
@@ -110,8 +123,10 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
     /**
      * The [DcSlotTrafficProfile] side of the accounting: which bucket [rpc] arrived in (from the
      * current simulated time, not from any message's own publish time, so it covers control-only
-     * RPCs too), then splits its bytes the same way [count] already does — by topic into
-     * [_messageBytesReadByTypeBucket], the remainder into [_controlBytesReadByBucket].
+     * RPCs too), then splits its bytes the same way [count] already does — by topic, further split
+     * into [_uniqueMessageBytesByTypeBucket] or [_duplicateMessageBytesByTypeBucket] depending on
+     * whether [_seenMessages] already held this exact (type, id) — with the remainder into
+     * [_controlBytesReadByBucket].
      */
     private fun countSlotProfile(rpc: Rpc.RPC) {
         val params = slotProfile ?: return
@@ -123,10 +138,11 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
             val size = encodedFieldSize(message)
             publishBytes += size
             val type = message.topicIDsList.firstOrNull()?.let { DcSlotMessageTopics.typeOf(it) }
-            if (type != null) {
-                val buckets = _messageBytesReadByTypeBucket.computeIfAbsent(type) {
-                    Array(params.bucketCount) { AtomicLong(0) }
-                }
+            val id = DcMessagePayload.idOf(message.data)
+            if (type != null && id != null) {
+                val isFirstSighting = _seenMessages.add(type to id)
+                val byTypeBucket = if (isFirstSighting) _uniqueMessageBytesByTypeBucket else _duplicateMessageBytesByTypeBucket
+                val buckets = byTypeBucket.computeIfAbsent(type) { Array(params.bucketCount) { AtomicLong(0) } }
                 buckets[bucket].addAndGet(size)
             }
         }

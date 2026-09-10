@@ -206,4 +206,70 @@ class DcGroupStatsTest {
             .contains("group 'pools'")
             .contains("group 'home'")
     }
+
+    @Test
+    fun `each named group gets its own slot traffic profile, sized to that group alone`() {
+        val network = namedGroups()
+        val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
+        val config = DcAttestationConfig(
+            waveCount = 2,
+            attestersPerWave = 4,
+            waveInterval = 12.seconds,
+            settle = 12.seconds,
+            blocks = DcBlockConfig(sizeBytes = 8 * 1024, publishOffset = 2.seconds, proposerGroups = setOf("pools")),
+            randomSeed = 7
+        )
+
+        val report = DcAttestationScenario.run(network, graph, config)
+
+        val poolsProfile = requireNotNull(report.groups["pools"]?.slotTraffic)
+        val homeProfile = requireNotNull(report.groups["home"]?.slotTraffic)
+        assertThat(poolsProfile.nodeCount).isEqualTo(2)
+        assertThat(homeProfile.nodeCount).isEqualTo(8)
+        assertThat(poolsProfile.bucketCount).isEqualTo(report.slotTraffic!!.bucketCount)
+
+        // The block topic is global, so both groups -- proposer and receiver-only alike -- see it.
+        assertThat(poolsProfile.uniqueMessageBytesPerNode.getValue(DcSlotMessageType.BLOCK).sum())
+            .describedAs("pools nodes receive every block their peer proposed too")
+            .isGreaterThan(0L)
+        assertThat(homeProfile.uniqueMessageBytesPerNode.getValue(DcSlotMessageType.BLOCK).sum())
+            .describedAs("home never proposes here, but still receives blocks over gossip")
+            .isGreaterThan(0L)
+    }
+
+    @Test
+    fun `a run with no named groups has no per-group slot traffic to report`() {
+        val network = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 2)
+            .addGroup(count = 12) {
+                spreadOverRegions()
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1
+                peers = 5
+                randomSubnets(count = 1, of = 2)
+            }
+            .build()
+        val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
+        val config = DcAttestationConfig(waveCount = 1, attestersPerWave = 4, settle = 12.seconds, randomSeed = 7)
+
+        val report = DcAttestationScenario.run(network, graph, config)
+
+        assertThat(report.groups.groups).isEmpty()
+        assertThat(report.slotTraffic)
+            .describedAs("the whole-network profile still exists even with no groups named")
+            .isNotNull()
+    }
+
+    @Test
+    fun `toString prints each group's own slot traffic table underneath its other figures`() {
+        val network = namedGroups()
+        val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
+        val config = DcAttestationConfig(waveCount = 1, attestersPerWave = 4, settle = 12.seconds, randomSeed = 7)
+
+        val report = DcAttestationScenario.run(network, graph, config)
+
+        val poolsText = requireNotNull(report.groups["pools"]).toString()
+        assertThat(poolsText).contains("slot traffic profile")
+        val homeText = requireNotNull(report.groups["home"]).toString()
+        assertThat(homeText).contains("slot traffic profile")
+    }
 }

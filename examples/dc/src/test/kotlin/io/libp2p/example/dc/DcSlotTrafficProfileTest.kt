@@ -7,16 +7,19 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import pubsub.pb.Rpc
+import kotlin.random.Random
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
  * Unit-level tests of the bucketing itself: [DcSlotProfileParams.bucketOf], [GossipByteCounter]'s
- * wire-level attribution, [DcSlotMessageTopics.typeOf], and [DcSlotTrafficProfile.of]'s aggregation
- * across nodes — plus one end-to-end run confirming the whole path is wired up. [DcAttestationScenarioTest]
- * and [DcBlockScenarioTest] already exercise real runs at scale; what is worth checking in isolation
- * here is where a byte lands and how it is normalized, which a full run would only show indirectly.
+ * wire-level attribution (including unique-vs-duplicate), [DcSlotMessageTopics.typeOf], and
+ * [DcSlotTrafficProfile.of]'s aggregation across nodes — plus one end-to-end run confirming the
+ * whole path is wired up. [DcAttestationScenarioTest] and [DcBlockScenarioTest] already exercise
+ * real runs at scale; what is worth checking in isolation here is where a byte lands and how it is
+ * normalized, which a full run would only show indirectly. The per-group breakdown
+ * ([DcGroupStats.slotTraffic]) is exercised in [DcGroupStatsTest].
  */
 class DcSlotTrafficProfileTest {
 
@@ -80,38 +83,67 @@ class DcSlotTrafficProfileTest {
 
     // --- GossipByteCounter wire-level attribution -------------------------------------------------
 
-    private fun rpcWithPublish(topic: String, dataSize: Int): Rpc.RPC {
-        val message = Rpc.Message.newBuilder()
-            .addTopicIDs(topic)
-            .setData(ByteString.copyFrom(ByteArray(dataSize)))
-            .build()
+    /** A real [DcMessagePayload] header, so [DcMessagePayload.idOf] can tell messages apart by id. */
+    private fun rpcWithPublish(topic: String, id: Int, dataSize: Int = 100): Rpc.RPC {
+        val data = DcMessagePayload.encode(
+            kind = DcMessageKind.SLOT_MESSAGE,
+            id = id,
+            waveIndex = 0,
+            subnetId = DcMessagePayload.NO_SUBNET,
+            publishedAt = Duration.ZERO,
+            sizeBytes = dataSize,
+            random = Random(0)
+        )
+        val message = Rpc.Message.newBuilder().addTopicIDs(topic).setData(ByteString.copyFrom(data)).build()
         return Rpc.RPC.newBuilder().addPublish(message).build()
     }
 
     @Test
-    fun `an inbound publish is attributed to its topic's type and the current bucket`() {
+    fun `an inbound publish's first sighting is attributed to its topic's type and the current bucket, as unique`() {
         val params = DcSlotProfileParams(anchor = Duration.ZERO, slotDuration = 12.seconds, bucketDuration = 100.milliseconds)
         val counter = GossipByteCounter(params)
         counter.currentTimeSupplier = { 250.milliseconds }
 
-        counter.readForTest(rpcWithPublish("/dc/block", dataSize = 1000))
+        counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 1000))
 
-        val bytes = counter.messageBytesReadByTypeAndBucket.getValue(DcSlotMessageType.BLOCK)
-        assertThat(bytes[2]).isGreaterThan(1000L).describedAs("wire size includes protobuf framing over the raw data size")
+        val bytes = counter.uniqueMessageBytesReadByTypeAndBucket.getValue(DcSlotMessageType.BLOCK)
+        assertThat(bytes[2])
+            .describedAs("wire size includes protobuf framing over the raw data size")
+            .isGreaterThan(1000L)
         assertThat(bytes.filterIndexed { index, _ -> index != 2 }).allMatch { it == 0L }
+        assertThat(counter.duplicateMessageBytesReadByTypeAndBucket).isEmpty()
     }
 
     @Test
-    fun `every read of the same message is counted, not just the first -- this is the duplicate-inclusive count`() {
+    fun `a repeat sighting of the same message id is counted as duplicate, not unique again`() {
         val params = DcSlotProfileParams(anchor = Duration.ZERO, slotDuration = 12.seconds, bucketDuration = 100.milliseconds)
         val counter = GossipByteCounter(params)
         counter.currentTimeSupplier = { 0.milliseconds }
 
-        repeat(4) { counter.readForTest(rpcWithPublish("/dc/payload", dataSize = 100)) }
+        repeat(4) { counter.readForTest(rpcWithPublish("/dc/payload", id = 7, dataSize = 100)) }
 
-        assertThat(counter.messageBytesReadByTypeAndBucket.getValue(DcSlotMessageType.PAYLOAD)[0])
+        val oneMessageSize = counter.publishBytesRead / 4
+        val unique = counter.uniqueMessageBytesReadByTypeAndBucket.getValue(DcSlotMessageType.PAYLOAD)[0]
+        val duplicate = counter.duplicateMessageBytesReadByTypeAndBucket.getValue(DcSlotMessageType.PAYLOAD)[0]
+        assertThat(unique).describedAs("only the first of the 4 reads is unique").isEqualTo(oneMessageSize)
+        assertThat(duplicate).describedAs("the other 3 are duplicates of the same size").isEqualTo(oneMessageSize * 3)
+        assertThat(unique + duplicate)
+            .describedAs("together they are still every byte read, the same total publishBytesRead tracks")
             .isEqualTo(counter.publishBytesRead)
-            .describedAs("4 identical reads counted 4 times, the same total the existing publishBytesRead tracks")
+    }
+
+    @Test
+    fun `different message ids on the same node are each their own unique sighting`() {
+        val params = DcSlotProfileParams(anchor = Duration.ZERO, slotDuration = 12.seconds, bucketDuration = 100.milliseconds)
+        val counter = GossipByteCounter(params)
+        counter.currentTimeSupplier = { 0.milliseconds }
+
+        counter.readForTest(rpcWithPublish("/dc/payload", id = 1, dataSize = 100))
+        counter.readForTest(rpcWithPublish("/dc/payload", id = 2, dataSize = 100))
+
+        assertThat(counter.duplicateMessageBytesReadByTypeAndBucket).isEmpty()
+        assertThat(counter.uniqueMessageBytesReadByTypeAndBucket.getValue(DcSlotMessageType.PAYLOAD)[0])
+            .isEqualTo(counter.publishBytesRead)
     }
 
     @Test
@@ -120,9 +152,10 @@ class DcSlotTrafficProfileTest {
         val counter = GossipByteCounter(params)
         // currentTimeSupplier left unset.
 
-        counter.readForTest(rpcWithPublish("/dc/block", dataSize = 1000))
+        counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 1000))
 
-        assertThat(counter.messageBytesReadByTypeAndBucket).isEmpty()
+        assertThat(counter.uniqueMessageBytesReadByTypeAndBucket).isEmpty()
+        assertThat(counter.duplicateMessageBytesReadByTypeAndBucket).isEmpty()
         assertThat(counter.publishBytesRead).isGreaterThan(0L).describedAs("the existing whole-run counter is unaffected")
     }
 
@@ -131,9 +164,10 @@ class DcSlotTrafficProfileTest {
         val counter = GossipByteCounter()
         counter.currentTimeSupplier = { 250.milliseconds }
 
-        counter.readForTest(rpcWithPublish("/dc/block", dataSize = 1000))
+        counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 1000))
 
-        assertThat(counter.messageBytesReadByTypeAndBucket).isEmpty()
+        assertThat(counter.uniqueMessageBytesReadByTypeAndBucket).isEmpty()
+        assertThat(counter.duplicateMessageBytesReadByTypeAndBucket).isEmpty()
         assertThat(counter.controlBytesReadByBucket).isEmpty()
     }
 
@@ -149,7 +183,8 @@ class DcSlotTrafficProfileTest {
         counter.readForTest(subscribeOnly)
 
         assertThat(counter.controlBytesReadByBucket[3]).isGreaterThan(0L)
-        assertThat(counter.messageBytesReadByTypeAndBucket).isEmpty()
+        assertThat(counter.uniqueMessageBytesReadByTypeAndBucket).isEmpty()
+        assertThat(counter.duplicateMessageBytesReadByTypeAndBucket).isEmpty()
     }
 
     // --- DcSlotTrafficProfile.of aggregation -------------------------------------------------------
@@ -171,12 +206,13 @@ class DcSlotTrafficProfileTest {
         )
 
     @Test
-    fun `message and control bytes are summed across nodes, then averaged per node per slot`() {
+    fun `unique message bytes are summed across nodes, then averaged per node per slot`() {
         val p = params()
         val counterA = GossipByteCounter(p).also { it.currentTimeSupplier = { 50.milliseconds } }
         val counterB = GossipByteCounter(p).also { it.currentTimeSupplier = { 50.milliseconds } }
-        counterA.readForTest(rpcWithPublish("/dc/block", dataSize = 100))
-        counterB.readForTest(rpcWithPublish("/dc/block", dataSize = 100))
+        // Two different nodes, each seeing this message for the first time -- both unique.
+        counterA.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
+        counterB.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
 
         val profile = DcSlotTrafficProfile.of(
             gossipCounters = listOf(counterA, counterB),
@@ -187,15 +223,37 @@ class DcSlotTrafficProfileTest {
         )
 
         // Both nodes read the same-sized message once; total / 2 nodes / 1 slot = each node's own size.
-        assertThat(profile.messageBytesPerNode.getValue(DcSlotMessageType.BLOCK)[0])
+        assertThat(profile.uniqueMessageBytesPerNode.getValue(DcSlotMessageType.BLOCK)[0])
             .isEqualTo(counterA.publishBytesRead)
+        assertThat(profile.duplicateMessageBytesPerNode).isEmpty()
+    }
+
+    @Test
+    fun `a message forwarded twice to the same node contributes to the duplicate column, summed across nodes`() {
+        val p = params()
+        val counterA = GossipByteCounter(p).also { it.currentTimeSupplier = { 50.milliseconds } }
+        // Node A's two mesh peers both forward it the same message -- one unique sighting, one duplicate.
+        counterA.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
+        counterA.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
+
+        val profile = DcSlotTrafficProfile.of(
+            gossipCounters = listOf(counterA),
+            inboundEvents = emptyList(),
+            params = p,
+            nodeCount = 1,
+            slotsMeasured = 1
+        )
+
+        val unique = profile.uniqueMessageBytesPerNode.getValue(DcSlotMessageType.BLOCK)[0]
+        val duplicate = profile.duplicateMessageBytesPerNode.getValue(DcSlotMessageType.BLOCK)[0]
+        assertThat(duplicate).isEqualTo(unique)
     }
 
     @Test
     fun `transport overhead is inbound UDP bytes beyond what gossip itself accounts for`() {
         val p = params()
         val counter = GossipByteCounter(p).also { it.currentTimeSupplier = { 50.milliseconds } }
-        counter.readForTest(rpcWithPublish("/dc/block", dataSize = 100))
+        counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
         val gossipBytes = counter.bytesRead
 
         val profile = DcSlotTrafficProfile.of(
@@ -213,7 +271,7 @@ class DcSlotTrafficProfileTest {
     fun `overhead never reads negative when boundary effects put UDP bytes just under gossip's own count`() {
         val p = params()
         val counter = GossipByteCounter(p).also { it.currentTimeSupplier = { 50.milliseconds } }
-        counter.readForTest(rpcWithPublish("/dc/block", dataSize = 100))
+        counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
 
         val profile = DcSlotTrafficProfile.of(
             gossipCounters = listOf(counter),
@@ -267,7 +325,8 @@ class DcSlotTrafficProfileTest {
             slotsMeasured = 1
         )
 
-        assertThat(profile.messageBytesPerNode).isEmpty()
+        assertThat(profile.uniqueMessageBytesPerNode).isEmpty()
+        assertThat(profile.duplicateMessageBytesPerNode).isEmpty()
         assertThat(profile.controlBytesPerNode).allMatch { it == 0L }
         // control/transport-overhead still print -- only the per-type message columns are omitted.
         assertThat(profile.toString())
@@ -276,10 +335,10 @@ class DcSlotTrafficProfileTest {
     }
 
     @Test
-    fun `the table has one row per bucket and one column per type plus control and overhead`() {
+    fun `the table has one row per bucket and unique plus duplicate columns per type, plus control and overhead`() {
         val p = params(bucketDuration = 100.milliseconds, slotDuration = 500.milliseconds)
         val counter = GossipByteCounter(p).also { it.currentTimeSupplier = { 200.milliseconds } }
-        counter.readForTest(rpcWithPublish("/dc/block", dataSize = 1000))
+        counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 1000))
 
         val profile = DcSlotTrafficProfile.of(
             gossipCounters = listOf(counter),
@@ -290,7 +349,10 @@ class DcSlotTrafficProfileTest {
         )
 
         val text = profile.toString()
-        assertThat(text).contains("block").contains(DcSlotTrafficProfile.CONTROL_COLUMN)
+        assertThat(text)
+            .contains("block${DcSlotTrafficProfile.UNIQUE_SUFFIX}")
+            .contains("block${DcSlotTrafficProfile.DUPLICATE_SUFFIX}")
+            .contains(DcSlotTrafficProfile.CONTROL_COLUMN)
             .contains(DcSlotTrafficProfile.TRANSPORT_OVERHEAD_COLUMN)
         assertThat(text.lines().filter { it.isNotBlank() }).hasSize(2 + profile.bucketCount)
     }
@@ -298,7 +360,7 @@ class DcSlotTrafficProfileTest {
     // --- end to end ---------------------------------------------------------------------------------
 
     @Test
-    fun `a full run reports message, control and transport-overhead columns`() {
+    fun `a full run reports unique, duplicate, control and transport-overhead columns`() {
         val network = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 2)
             .addGroup(count = 12) {
                 spreadOverRegions()
@@ -322,10 +384,13 @@ class DcSlotTrafficProfileTest {
 
         val profile = requireNotNull(report.slotTraffic)
         assertThat(profile.bucketCount).isEqualTo(120)
-        assertThat(profile.messageBytesPerNode.keys)
+        assertThat(profile.uniqueMessageBytesPerNode.keys)
             .containsExactlyInAnyOrder(DcSlotMessageType.FFG_ATTESTATION, DcSlotMessageType.BLOCK)
-        assertThat(profile.messageBytesPerNode.getValue(DcSlotMessageType.BLOCK).sum())
-            .describedAs("blocks were actually published and received, so their bucketed total is nonzero")
+        assertThat(profile.uniqueMessageBytesPerNode.getValue(DcSlotMessageType.BLOCK).sum())
+            .describedAs("blocks were actually published and received, so their bucketed unique total is nonzero")
+            .isGreaterThan(0L)
+        assertThat(profile.duplicateMessageBytesPerNode.getValue(DcSlotMessageType.BLOCK).sum())
+            .describedAs("gossip pushes a block to every mesh peer, so most nodes see more than one copy")
             .isGreaterThan(0L)
         assertThat(profile.controlBytesPerNode.sum())
             .describedAs("gossip mesh maintenance produces control traffic over the run")

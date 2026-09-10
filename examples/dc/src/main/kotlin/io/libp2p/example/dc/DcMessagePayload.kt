@@ -50,6 +50,9 @@ object DcMessagePayload {
     /** magic + id + wave + subnet + timestamp */
     const val HEADER_BYTES: Int = 4 + 4 + 4 + 4 + 8
 
+    /** Byte offset of the id, for readers that only need that. */
+    private const val ID_OFFSET: Int = 4
+
     /** Byte offset of the wave index, for readers that only need that. */
     private const val WAVE_INDEX_OFFSET: Int = 4 + 4
 
@@ -105,6 +108,18 @@ object DcMessagePayload {
         if (data.size() < HEADER_BYTES) return null
         if (DcMessageKind.ofMagic(intAt(data, 0)) == null) return null
         return intAt(data, WAVE_INDEX_OFFSET)
+    }
+
+    /**
+     * The message's own id, or null if [data] is not one of ours. Combined with the message type
+     * (recovered separately, from its topic) this identifies one specific published message, which
+     * is what [GossipByteCounter] uses to tell a message's first arrival at a node from a mesh peer
+     * forwarding a copy it already has — "unique" vs. "duplicate" traffic.
+     */
+    fun idOf(data: ByteString): Int? {
+        if (data.size() < HEADER_BYTES) return null
+        if (DcMessageKind.ofMagic(intAt(data, 0)) == null) return null
+        return intAt(data, ID_OFFSET)
     }
 
     /** Big-endian int, matching the [ByteBuffer] the payload is written with. */
