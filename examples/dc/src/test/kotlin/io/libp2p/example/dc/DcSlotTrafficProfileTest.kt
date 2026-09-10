@@ -33,8 +33,8 @@ class DcSlotTrafficProfileTest {
         // offset 2000ms + latency 300ms = 2300ms -> bucket 23 of [2300, 2400)
         assertThat(profile.bucketCount).isEqualTo(120)
         val bytes = profile.averageBytesPerNode.getValue(DcSlotMessageType.BLOCK)
-        assertThat(bytes[23]).isEqualTo(1000.0)
-        assertThat(bytes.filterIndexed { index, _ -> index != 23 }).allMatch { it == 0.0 }
+        assertThat(bytes[23]).isEqualTo(1000L)
+        assertThat(bytes.filterIndexed { index, _ -> index != 23 }).allMatch { it == 0L }
     }
 
     @Test
@@ -56,7 +56,24 @@ class DcSlotTrafficProfileTest {
         )
 
         // 300 bytes total / 2 nodes / 2 slots = 75 bytes/node/slot, all landing in bucket 0.
-        assertThat(profile.averageBytesPerNode.getValue(DcSlotMessageType.PAYLOAD)[0]).isEqualTo(75.0)
+        assertThat(profile.averageBytesPerNode.getValue(DcSlotMessageType.PAYLOAD)[0]).isEqualTo(75L)
+    }
+
+    @Test
+    fun `a fractional average rounds up rather than truncating`() {
+        // sizeBytes must be at least DcMessagePayload.HEADER_BYTES (24), so use that as the minimum
+        // and spread it thin: 24 bytes over 100 nodes and 1 slot = 0.24 bytes/node/slot, which must
+        // read as 1, not 0.
+        val config = DcSlotMessageConfig(DcSlotMessageType.PAYLOAD, sizeBytes = DcMessagePayload.HEADER_BYTES)
+        val profile = DcSlotTrafficProfile.of(
+            deliveriesByType = mapOf(DcSlotMessageType.PAYLOAD to listOf(delivery(latencyMs = 0))),
+            configsByType = mapOf(DcSlotMessageType.PAYLOAD to config),
+            slotDuration = 12.seconds,
+            nodeCount = 100,
+            slotsMeasured = 1
+        )
+
+        assertThat(profile.averageBytesPerNode.getValue(DcSlotMessageType.PAYLOAD)[0]).isEqualTo(1L)
     }
 
     @Test
@@ -73,7 +90,7 @@ class DcSlotTrafficProfileTest {
         )
 
         assertThat(profile.overflowDeliveries.getValue(DcSlotMessageType.BLOCK)).isEqualTo(1)
-        assertThat(profile.averageBytesPerNode.getValue(DcSlotMessageType.BLOCK)).allMatch { it == 0.0 }
+        assertThat(profile.averageBytesPerNode.getValue(DcSlotMessageType.BLOCK)).allMatch { it == 0L }
     }
 
     @Test
@@ -94,7 +111,7 @@ class DcSlotTrafficProfileTest {
         )
 
         // Only slot 1's delivery counts; slot 0 is warm-up.
-        assertThat(profile.averageBytesPerNode.getValue(DcSlotMessageType.BLOCK)[0]).isEqualTo(1000.0)
+        assertThat(profile.averageBytesPerNode.getValue(DcSlotMessageType.BLOCK)[0]).isEqualTo(1000L)
     }
 
     @Test
@@ -109,7 +126,7 @@ class DcSlotTrafficProfileTest {
         )
 
         assertThat(profile.bucketCount).isEqualTo(10)
-        assertThat(profile.averageBytesPerNode.getValue(DcSlotMessageType.BLOCK)).allMatch { it == 0.0 }
+        assertThat(profile.averageBytesPerNode.getValue(DcSlotMessageType.BLOCK)).allMatch { it == 0L }
         assertThat(profile.overflowDeliveries.getValue(DcSlotMessageType.BLOCK)).isZero()
     }
 
@@ -144,7 +161,7 @@ class DcSlotTrafficProfileTest {
         assertThat(text).contains("block")
         assertThat(text.lines().filter { it.isNotBlank() }).hasSize(2 + profile.bucketCount)
         assertThat(text).contains("200")
-        assertThat(text).contains("1000.0")
+        assertThat(text).contains("1000")
     }
 
     @Test
@@ -193,7 +210,7 @@ class DcSlotTrafficProfileTest {
             .containsExactlyInAnyOrder(DcSlotMessageType.FFG_ATTESTATION, DcSlotMessageType.BLOCK)
         assertThat(profile.averageBytesPerNode.getValue(DcSlotMessageType.BLOCK).sum())
             .describedAs("total bytes/node/slot should be in the right ballpark of one block's size")
-            .isGreaterThan(0.0)
+            .isGreaterThan(0L)
         assertThat(profile.overflowDeliveries.values).allMatch { it == 0 }
     }
 

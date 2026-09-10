@@ -24,6 +24,10 @@ import kotlin.time.Duration.Companion.milliseconds
  * to it. Bytes are the message's configured payload size ([DcSlotMessageConfig.sizeBytes]), not
  * gossip's own wire framing — the same distinction drawn everywhere else in this report.
  *
+ * The average is rounded up to a whole byte rather than truncated or rounded to nearest, so a
+ * bucket that saw any traffic at all — even 0.1 bytes/node/slot — reads as at least 1 rather than
+ * rounding away to 0 and looking indistinguishable from a bucket that saw none.
+ *
  * A delivery whose `publishOffset + latency` reaches or exceeds [slotDuration] belongs to no bucket
  * and is counted in [overflowDeliveries] instead of silently being dropped from the picture.
  */
@@ -33,7 +37,7 @@ data class DcSlotTrafficProfile(
     val slotsMeasured: Int,
     val nodeCount: Int,
     /** One entry per bucket, in slot order, for every message type present in the run. */
-    val averageBytesPerNode: Map<DcSlotMessageType, List<Double>>,
+    val averageBytesPerNode: Map<DcSlotMessageType, List<Long>>,
     /** Deliveries that arrived at or after [slotDuration] into their own slot, by message type. */
     val overflowDeliveries: Map<DcSlotMessageType, Int>
 ) {
@@ -58,7 +62,7 @@ data class DcSlotTrafficProfile(
             appendLine(
                 "%${TIME_WIDTH}d".format(bucketStart(bucket).inWholeMilliseconds) +
                     types.joinToString("") { type ->
-                        "  %${widths.getValue(type)}.1f".format(averageBytesPerNode.getValue(type)[bucket])
+                        "  %${widths.getValue(type)}d".format(averageBytesPerNode.getValue(type)[bucket])
                     }
             )
         }
@@ -102,7 +106,7 @@ data class DcSlotTrafficProfile(
             ).toInt()
             val denom = nodeCount.toDouble() * slotsMeasured
 
-            val averages = mutableMapOf<DcSlotMessageType, List<Double>>()
+            val averages = mutableMapOf<DcSlotMessageType, List<Long>>()
             val overflow = mutableMapOf<DcSlotMessageType, Int>()
             configsByType.forEach { (type, config) ->
                 val bytes = DoubleArray(bucketCount)
@@ -118,7 +122,7 @@ data class DcSlotTrafficProfile(
                             over++
                         }
                     }
-                averages[type] = bytes.map { it / denom }
+                averages[type] = bytes.map { kotlin.math.ceil(it / denom).toLong() }
                 overflow[type] = over
             }
             return DcSlotTrafficProfile(
