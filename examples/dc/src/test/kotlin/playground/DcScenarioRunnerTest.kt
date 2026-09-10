@@ -6,6 +6,9 @@ import io.libp2p.example.dc.DcAttestationReport
 import io.libp2p.example.dc.DcAttestationScenario
 import io.libp2p.example.dc.DcAttestationSchedule
 import io.libp2p.example.dc.DcNetworkBuilder
+import io.libp2p.example.dc.DcPublisherSelection
+import io.libp2p.example.dc.DcSlotMessageConfig
+import io.libp2p.example.dc.DcSlotMessageType
 import io.libp2p.example.dc.peerGraph
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.ContinentRegion
@@ -40,6 +43,7 @@ class DcScenarioRunnerTest {
             )
             .addGroup(count = 6) {
                 // validator pools
+                name = "validator-pools"
                 regionWeights = mapOf(
                     ContinentRegion.EUROPE to 0.4,
                     ContinentRegion.US_EAST to 0.4,
@@ -52,6 +56,7 @@ class DcScenarioRunnerTest {
             }
             .addGroup(count = 200) {
                 // business
+                name = "business"
                 regionWeights = mapOf(
                     ContinentRegion.EUROPE to 0.4,
                     ContinentRegion.US_EAST to 0.4,
@@ -99,6 +104,15 @@ class DcScenarioRunnerTest {
             // thirds of it and report the shortfall as undelivered; 150s leaves room for the
             // transfer plus queueing so the latency figures mean something.
             settle = 150.seconds,
+            messages = listOf(
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.BLOCK,
+                    sizeBytes = 128 * 1024,
+                    publishOffset = 2.seconds,
+                    publisherGroups = setOf("validator-pools"),
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED
+                )
+            ),
             gossipParams = gossipParams,
             randomSeed = 1
         )

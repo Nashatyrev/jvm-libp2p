@@ -14,7 +14,8 @@ import kotlin.time.Duration.Companion.nanoseconds
  */
 enum class DcMessageKind(val magic: Int) {
     ATTESTATION(0x0DCA7757),
-    BLOCK(0x0DCB10CC);
+    BLOCK(0x0DCB10CC),
+    SLOT_MESSAGE(0x0DC51077);
 
     companion object {
         fun ofMagic(magic: Int): DcMessageKind? = values().firstOrNull { it.magic == magic }

@@ -61,19 +61,23 @@ data class DcBlockConfig(
          * the RPC and topic bytes wrapped around the payload.
          */
         fun maxSizeBytes(params: GossipParams): Int {
-            val margin = maxOf(64, params.maxGossipMessageSize / 100)
-            return params.maxGossipMessageSize - margin - FRAMING_BYTES
+            return DcSlotMessageConfig.maxSizeBytes(params)
         }
-
-        /** Headroom for the publish/RPC protobuf framing and the topic string around a payload. */
-        private const val FRAMING_BYTES: Int = 256
     }
+
+    internal fun asSlotMessageConfig() = DcSlotMessageConfig(
+        type = DcSlotMessageType.BLOCK,
+        sizeBytes = sizeBytes,
+        publishOffset = publishOffset,
+        publisherGroups = proposerGroups,
+        publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED
+    )
 }
 
 /**
  * A run in which, at each of several moments, a given number of randomly chosen validators publish
- * an attestation on one of their own subnets. When [DcAttestationConfig.blocks] is set, each of
- * those moments also has one proposer publish a block.
+ * an attestation on one of their own subnets. [DcAttestationConfig.messages] can add independently
+ * typed block, payload, column, or other message issuance to each of those slots.
  *
  * [warmup] exists because gossipsub needs time to form its meshes; attesting before that measures
  * mesh construction rather than dissemination. [settle] is how long the run keeps going after the
@@ -98,6 +102,8 @@ data class DcAttestationConfig(
     val warmupWaves: Int = 0,
     /** Block issuance, or null for a run that publishes attestations only. */
     val blocks: DcBlockConfig? = null,
+    /** Arbitrary global-topic messages issued in every slot. */
+    val messages: List<DcSlotMessageConfig> = emptyList(),
     val gossipParams: GossipParams = GossipParams(),
     val randomSeed: Long = 0
 ) {
@@ -105,18 +111,20 @@ data class DcAttestationConfig(
         require(warmupWaves in 0 until waveCount) {
             "warmupWaves must leave at least one measured wave, got $warmupWaves of $waveCount"
         }
-        blocks?.let { block ->
-            // A block published later than one slot in would arrive after the next slot's block,
-            // which is not a slot schedule any more.
-            require(block.publishOffset < waveInterval) {
-                "block publishOffset must be less than the $waveInterval waveInterval, " +
-                    "got ${block.publishOffset}"
+        val configs = messages + listOfNotNull(blocks?.asSlotMessageConfig())
+        require(configs.map { it.type }.distinct().size == configs.size) {
+            "message types must be unique, got ${configs.map { it.type }}"
+        }
+        configs.forEach { message ->
+            require(message.publishOffset < waveInterval) {
+                "${message.type} publishOffset must be less than the $waveInterval waveInterval, " +
+                    "got ${message.publishOffset}"
             }
-            val maxSize = DcBlockConfig.maxSizeBytes(gossipParams)
-            require(block.sizeBytes <= maxSize) {
-                "block sizeBytes ${block.sizeBytes} exceeds what gossipsub will carry ($maxSize) at " +
-                    "maxGossipMessageSize=${gossipParams.maxGossipMessageSize}; raise " +
-                    "maxGossipMessageSize on gossipParams to publish blocks this large"
+            val maxSize = DcSlotMessageConfig.maxSizeBytes(gossipParams)
+            require(message.sizeBytes <= maxSize) {
+                "${message.type} sizeBytes ${message.sizeBytes} exceeds what gossipsub will carry " +
+                    "($maxSize) at maxGossipMessageSize=${gossipParams.maxGossipMessageSize}; raise " +
+                    "maxGossipMessageSize on gossipParams to publish messages this large"
             }
         }
     }
@@ -133,7 +141,11 @@ data class DcAttestationConfig(
      * published part way into the final slot still gets the full [settle] window to arrive.
      */
     val completeAt: Duration
-        get() = waveTimes.last() + (blocks?.publishOffset ?: Duration.ZERO) + settle
+        get() = waveTimes.last() +
+            (allMessageConfigs.maxOfOrNull { it.publishOffset } ?: Duration.ZERO) + settle
+
+    internal val allMessageConfigs: List<DcSlotMessageConfig>
+        get() = messages + listOfNotNull(blocks?.asSlotMessageConfig())
 
     /** Given to the simulator; slightly beyond [completeAt] so the run is not cut short. */
     val maxRunDuration: Duration get() = completeAt + 10.seconds
@@ -145,11 +157,11 @@ class DcAttestationNodeProgramFactory<R>(
     private val graph: DcPeerGraph<R>,
     private val schedule: DcAttestationSchedule,
     private val config: DcAttestationConfig,
-    private val blockSchedule: DcBlockSchedule? = null
+    private val messageSchedules: List<DcSlotMessageSchedule> = emptyList()
 ) : NodeProgramFactory {
 
     val recorder = DcAttestationRecorder()
-    val blockRecorder = DcBlockRecorder()
+    val messageRecorders = messageSchedules.associate { it.config.type to DcSlotMessageRecorder() }
 
     private val dialTargets = graph.dialTargets()
     private val nodePrograms = mutableListOf<DcAttestationNodeProgram>()
@@ -163,9 +175,8 @@ class DcAttestationNodeProgramFactory<R>(
             recorder = recorder,
             attestationSizeBytes = config.attestationSizeBytes,
             completeAt = config.completeAt,
-            blockSchedule = blockSchedule,
-            blockRecorder = blockRecorder,
-            blockSizeBytes = config.blocks?.sizeBytes ?: 0,
+            messageSchedules = messageSchedules,
+            messageRecorders = messageRecorders,
             params = config.gossipParams,
             randomSeed = config.randomSeed + id
         ).also { nodePrograms += it }
@@ -177,8 +188,8 @@ class DcAttestationNodeProgramFactory<R>(
     fun expectedDeliveriesOf(attestation: DcAttestation): Int =
         network.nodesSubscribedTo(attestation.subnetId).count { it.simNodeId != attestation.attesterNodeId }
 
-    /** Every node but the proposer: the block topic is global, so the whole network expects it. */
-    val expectedBlockDeliveries: Int get() = network.nodeCount - 1
+    /** Every node but the publisher: slot-message topics are global. */
+    val expectedMessageDeliveries: Int get() = network.nodeCount - 1
 
     fun report(traffic: DcTrafficReport): DcAttestationReport =
         DcAttestationReport.of(
@@ -198,15 +209,14 @@ class DcAttestationNodeProgramFactory<R>(
             gossipPublishMessagesReceivedByWave = nodePrograms.sumByWave { it.publishMessagesReadByWave },
             warmupWaves = config.warmupWaves,
             mesh = DcMeshStats.of(nodePrograms.map { it.finalMeshSizes }),
-            blocks = blockSchedule?.let {
-                DcBlockReport.of(
-                    published = blockRecorder.published(),
-                    deliveries = blockRecorder.deliveries(),
-                    expectedDeliveriesPerBlock = expectedBlockDeliveries,
-                    sizeBytes = config.blocks?.sizeBytes ?: 0,
-                    publishOffset = it.publishOffset,
-                    warmupWaves = config.warmupWaves,
-                    proposerGroups = config.blocks?.proposerGroups
+            messages = messageSchedules.associate { messageSchedule ->
+                val recorder = messageRecorders.getValue(messageSchedule.config.type)
+                messageSchedule.config.type to DcSlotMessageReport.of(
+                    published = recorder.published(),
+                    deliveries = recorder.deliveries(),
+                    expectedDeliveriesPerMessage = expectedMessageDeliveries,
+                    config = messageSchedule.config,
+                    warmupWaves = config.warmupWaves
                 )
             }
         )
@@ -241,17 +251,32 @@ object DcAttestationScenario {
             attestersPerWave = config.attestersPerWave,
             randomSeed = config.randomSeed
         ),
-        blockSchedule: DcBlockSchedule? = defaultBlockSchedule(network, config)
+        messageSchedules: List<DcSlotMessageSchedule> = defaultMessageSchedules(network, config)
     ): QuicScenario<DcAttestationNodeProgramFactory<R>> {
-        val blockSuffix = config.blocks?.let { "-block${it.sizeBytes}B@${it.publishOffset}" } ?: ""
+        val messageSuffix = config.allMessageConfigs.joinToString(separator = "") {
+            "-${it.type.id}${it.messagesPerSlot}x${it.sizeBytes}B@${it.publishOffset}"
+        }
         return QuicScenario(
             name = "dc-attestations-${network.nodeCount}n-" +
-                "${config.attestersPerWave}x${config.waveCount}-${config.attestationSizeBytes}B$blockSuffix",
+                "${config.attestersPerWave}x${config.waveCount}-${config.attestationSizeBytes}B$messageSuffix",
             network = network.topology,
             maxRunDuration = config.maxRunDuration,
             createNodeProgramFactory = {
-                DcAttestationNodeProgramFactory(network, graph, schedule, config, blockSchedule)
+                DcAttestationNodeProgramFactory(network, graph, schedule, config, messageSchedules)
             }
+        )
+    }
+
+    /** Builds one deterministic schedule for every configured slot-message kind. */
+    fun <R> defaultMessageSchedules(
+        network: DcNetwork<R>,
+        config: DcAttestationConfig
+    ): List<DcSlotMessageSchedule> = config.allMessageConfigs.mapIndexed { index, message ->
+        DcSlotMessageSchedule.create(
+            network = network,
+            slotTimes = config.waveTimes,
+            config = message,
+            randomSeed = config.randomSeed + index
         )
     }
 
@@ -290,13 +315,13 @@ object DcAttestationScenario {
             attestersPerWave = config.attestersPerWave,
             randomSeed = config.randomSeed
         ),
-        blockSchedule: DcBlockSchedule? = defaultBlockSchedule(network, config)
+        messageSchedules: List<DcSlotMessageSchedule> = defaultMessageSchedules(network, config)
     ): DcAttestationReport {
         val traceRecorder = RecordingDatagramPacketTraceRecorder()
         val result = SimulatedQuicScenarioRunner(
             latencyWindowParallelism = latencyWindowParallelism,
             datagramPacketTraceRecorder = traceRecorder
-        ).run(of(network, graph, config, schedule, blockSchedule))
+        ).run(of(network, graph, config, schedule, messageSchedules))
         val traffic = DcTrafficReport.of(
             events = traceRecorder.events(),
             waveTimes = config.waveTimes,

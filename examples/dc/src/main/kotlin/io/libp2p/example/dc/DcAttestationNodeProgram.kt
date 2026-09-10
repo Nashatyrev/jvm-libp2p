@@ -2,7 +2,6 @@ package io.libp2p.example.dc
 
 import io.libp2p.core.crypto.sha256
 import io.libp2p.core.pubsub.MessageApi
-import io.libp2p.core.pubsub.Topic
 import io.libp2p.etc.types.toWBytes
 import io.libp2p.pubsub.AbstractPubsubMessage
 import io.libp2p.pubsub.DEFAULT_PUBSUB_MESSAGE_ID_LENGTH
@@ -22,8 +21,8 @@ import kotlin.random.Random
 import kotlin.time.Duration
 
 /**
- * A node that subscribes to its assigned attestation subnets — plus the global block topic when the
- * run issues blocks — and publishes on them when the schedules say so.
+ * A node that subscribes to its assigned attestation subnets and every configured global message
+ * topic, and publishes on them when the schedules say so.
  *
  * Delivery latency is measured by putting the publisher's timestamp in the payload. Every node's
  * scheduler starts at zero and they are advanced in lockstep, so `timer.elapsedTime()` is a clock
@@ -37,10 +36,8 @@ class DcAttestationNodeProgram(
     private val recorder: DcAttestationRecorder,
     private val attestationSizeBytes: Int,
     private val completeAt: Duration,
-    /** Null when the run issues no blocks, in which case the block topic is not joined either. */
-    private val blockSchedule: DcBlockSchedule? = null,
-    private val blockRecorder: DcBlockRecorder? = null,
-    private val blockSizeBytes: Int = 0,
+    private val messageSchedules: List<DcSlotMessageSchedule> = emptyList(),
+    private val messageRecorders: Map<DcSlotMessageType, DcSlotMessageRecorder> = emptyMap(),
     params: GossipParams = GossipParams(),
     scoreParams: GossipScoreParams = GossipScoreParams(),
     randomSeed: Long = 0
@@ -48,8 +45,6 @@ class DcAttestationNodeProgram(
 
     private val random = Random(randomSeed)
     val gossipByteCounter = GossipByteCounter()
-
-    private val issuesBlocks: Boolean get() = blockSchedule != null
 
     /**
      * Mesh peer counts per topic, sampled at [completeAt] on this node's own event thread — the
@@ -81,11 +76,8 @@ class DcAttestationNodeProgram(
         require(attestationSizeBytes >= DcMessagePayload.HEADER_BYTES) {
             "attestationSizeBytes must be at least ${DcMessagePayload.HEADER_BYTES}, got $attestationSizeBytes"
         }
-        require(!issuesBlocks || blockSizeBytes >= DcMessagePayload.HEADER_BYTES) {
-            "blockSizeBytes must be at least ${DcMessagePayload.HEADER_BYTES}, got $blockSizeBytes"
-        }
-        require(!issuesBlocks || blockRecorder != null) {
-            "A block schedule needs a block recorder to report into"
+        require(messageSchedules.all { it.config.type in messageRecorders }) {
+            "Every message schedule needs a recorder to report into"
         }
     }
 
@@ -105,44 +97,51 @@ class DcAttestationNodeProgram(
     }
 
     /**
-     * One subscription covering every topic this node follows, with a single callback that dispatches
-     * on the payload's kind. The block topic is global — every node joins it, whatever subnets it
-     * takes part in — which is how `beacon_block` works on mainnet.
+     * Attestation topics are subnet-scoped. Each configured slot message has its own global topic,
+     * joined by every node regardless of its attestation subnets.
      */
     private fun subscribe(simContext: SimContext) {
-        val topics = mutableListOf<Topic>()
-        if (issuesBlocks) topics += DcBlockTopic.TOPIC
-        subnetIds.forEach { topics += DcAttestationTopics.of(it) }
-        if (topics.isEmpty()) return
-        messageApi.subscribe(
-            Consumer { msg -> onMessage(msg, simContext) },
-            *topics.toTypedArray()
+        val attestationTopics = subnetIds.map { DcAttestationTopics.of(it) }
+        if (attestationTopics.isNotEmpty()) {
+            messageApi.subscribe(
+                Consumer { msg -> onAttestation(msg, simContext) },
+                *attestationTopics.toTypedArray()
+            )
+        }
+        messageSchedules.forEach { schedule ->
+            messageApi.subscribe(
+                Consumer { msg -> onSlotMessage(schedule.config.type, msg, simContext) },
+                schedule.config.topic
+            )
+        }
+    }
+
+    private fun onAttestation(msg: MessageApi, simContext: SimContext) {
+        val header = headerOf(msg) ?: return
+        if (header.kind != DcMessageKind.ATTESTATION) return
+        val latency = simContext.timer.elapsedTime() - header.publishedAt
+        recorder.recordDelivered(
+            DcDelivery(
+                attestationId = header.id,
+                waveIndex = header.waveIndex,
+                receiverNodeId = simNodeId,
+                subnetId = header.subnetId,
+                latency = latency
+            )
         )
     }
 
-    private fun onMessage(msg: MessageApi, simContext: SimContext) {
+    private fun onSlotMessage(type: DcSlotMessageType, msg: MessageApi, simContext: SimContext) {
         val header = headerOf(msg) ?: return
-        val latency = simContext.timer.elapsedTime() - header.publishedAt
-        when (header.kind) {
-            DcMessageKind.ATTESTATION -> recorder.recordDelivered(
-                DcDelivery(
-                    attestationId = header.id,
-                    waveIndex = header.waveIndex,
-                    receiverNodeId = simNodeId,
-                    subnetId = header.subnetId,
-                    latency = latency
-                )
+        if (header.kind != DcMessageKind.SLOT_MESSAGE && header.kind != DcMessageKind.BLOCK) return
+        messageRecorders.getValue(type).recordDelivered(
+            DcSlotMessageDelivery(
+                messageId = header.id,
+                slotIndex = header.waveIndex,
+                receiverNodeId = simNodeId,
+                latency = simContext.timer.elapsedTime() - header.publishedAt
             )
-
-            DcMessageKind.BLOCK -> blockRecorder?.recordDelivered(
-                DcBlockDelivery(
-                    blockId = header.id,
-                    waveIndex = header.waveIndex,
-                    receiverNodeId = simNodeId,
-                    latency = latency
-                )
-            )
-        }
+        )
     }
 
     /**
@@ -159,8 +158,10 @@ class DcAttestationNodeProgram(
 
     private fun schedulePublications(simContext: SimContext) {
         val myAttestations = schedule.attestationsOf(simNodeId)
-        val myBlocks = blockSchedule?.blocksOf(simNodeId).orEmpty()
-        if (myAttestations.isEmpty() && myBlocks.isEmpty()) return
+        val myMessages = messageSchedules.flatMap { messageSchedule ->
+            messageSchedule.messagesOf(simNodeId).map { messageSchedule to it }
+        }
+        if (myAttestations.isEmpty() && myMessages.isEmpty()) return
         val publisher = messageApi.createPublisher(privKey = null, seqIdGenerator = { null })
         myAttestations.forEach { attestation ->
             publishAt(simContext, schedule.timeOf(attestation)) { publishedAt ->
@@ -178,19 +179,20 @@ class DcAttestationNodeProgram(
                 )
             }
         }
-        myBlocks.forEach { block ->
-            publishAt(simContext, blockSchedule!!.timeOf(block)) { publishedAt ->
-                blockRecorder?.recordPublished(block, publishedAt)
+        myMessages.forEach { (messageSchedule, message) ->
+            publishAt(simContext, messageSchedule.timeOf(message)) { publishedAt ->
+                messageRecorders.getValue(messageSchedule.config.type)
+                    .recordPublished(message, publishedAt)
                 publisher.publish(
                     payload(
-                        kind = DcMessageKind.BLOCK,
-                        id = block.id,
-                        waveIndex = block.waveIndex,
+                        kind = DcMessageKind.SLOT_MESSAGE,
+                        id = message.id,
+                        waveIndex = message.slotIndex,
                         subnetId = DcMessagePayload.NO_SUBNET,
                         publishedAt = publishedAt,
-                        sizeBytes = blockSizeBytes
+                        sizeBytes = messageSchedule.config.sizeBytes
                     ),
-                    DcBlockTopic.TOPIC
+                    messageSchedule.config.topic
                 )
             }
         }

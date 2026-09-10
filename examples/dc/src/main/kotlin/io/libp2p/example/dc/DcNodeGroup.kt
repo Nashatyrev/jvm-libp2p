@@ -39,7 +39,7 @@ class DcNodeGroup<R> internal constructor(
     /**
      * Name of the group, carried onto every node it produces as [DcNode.groupName]. Optional, and
      * only needed when something later wants to refer back to this part of the population — e.g.
-     * [DcBlockConfig.proposerGroups], which picks block proposers out of named groups.
+     * [DcSlotMessageConfig.publisherGroups], which picks message publishers out of named groups.
      *
      * Like every other option it can be set in a [DcNetworkBuilder.defaults] block, in which case
      * the groups underneath share the name and are selected together as one pool.

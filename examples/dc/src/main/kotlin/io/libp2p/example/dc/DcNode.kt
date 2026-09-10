@@ -37,8 +37,8 @@ data class DcNode<R>(
      * Name of the [DcNodeGroup] this node came from, or null if the group was not named.
      *
      * Names exist so that a scenario can refer back to part of the population it built — picking
-     * block proposers out of the staking pools only, say — without having to know which node ids
-     * the builder happened to assign.
+     * block or payload publishers out of the staking pools only, say — without having to know which
+     * node ids the builder happened to assign.
      */
     val groupName: String? = null
 ) {

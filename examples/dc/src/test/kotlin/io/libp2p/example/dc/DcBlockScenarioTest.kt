@@ -75,6 +75,66 @@ class DcBlockScenarioTest {
     }
 
     @Test
+    fun `each slot message type has separate issuance and statistics`() {
+        val network = namedGroups()
+        val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
+        val config = DcAttestationConfig(
+            waveCount = 2,
+            attestersPerWave = 4,
+            settle = 12.seconds,
+            messages = listOf(
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.PAYLOAD,
+                    sizeBytes = 32 * 1024,
+                    publishOffset = 1.seconds,
+                    publisherGroups = setOf("pools")
+                ),
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.PAYLOAD_CHUNK,
+                    sizeBytes = 8 * 1024,
+                    publishOffset = 2.seconds,
+                    publisherGroups = setOf("pools"),
+                    messagesPerSlot = 3
+                )
+            ),
+            randomSeed = 7
+        )
+
+        val report = DcAttestationScenario.run(network, graph, config)
+
+        assertThat(report.messages.keys)
+            .containsExactly(DcSlotMessageType.PAYLOAD, DcSlotMessageType.PAYLOAD_CHUNK)
+        val payload = report.messages.getValue(DcSlotMessageType.PAYLOAD)
+        assertThat(payload.overall.publishedCount).isEqualTo(2)
+        assertThat(payload.overall.deliveryRatio).isEqualTo(1.0)
+        assertThat(payload.publishTimes[0]).containsExactly(config.waveTimes[0] + 1.seconds)
+
+        val chunks = report.messages.getValue(DcSlotMessageType.PAYLOAD_CHUNK)
+        assertThat(chunks.overall.publishedCount).isEqualTo(6)
+        assertThat(chunks.perSlot.values.map { it.publishedCount }).containsOnly(3)
+        assertThat(chunks.overall.deliveryRatio).isEqualTo(1.0)
+        assertThat(chunks.publishTimes[1]).containsOnly(config.waveTimes[1] + 2.seconds)
+        assertThat((payload.publishers.values + chunks.publishers.values).map { network.node(it).groupName })
+            .containsOnly("pools")
+    }
+
+    @Test
+    fun `message types are extensible and one issuance config is allowed per type`() {
+        val custom = DcSlotMessageType("custody-proof")
+        assertThat(DcSlotMessageConfig(custom, sizeBytes = 1024).topic.topic)
+            .isEqualTo("/dc/custody-proof")
+
+        assertThatThrownBy {
+            DcAttestationConfig(
+                messages = listOf(
+                    DcSlotMessageConfig(DcSlotMessageType.BLOB_COLUMN, sizeBytes = 1024),
+                    DcSlotMessageConfig(DcSlotMessageType.BLOB_COLUMN, sizeBytes = 2048)
+                )
+            )
+        }.hasMessageContaining("message types must be unique")
+    }
+
+    @Test
     fun `a zero offset publishes the block on the slot boundary`() {
         val network = population(nodeCount = 16, subnetCount = 4, peers = 6)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)

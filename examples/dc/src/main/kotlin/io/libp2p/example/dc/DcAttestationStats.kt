@@ -124,6 +124,90 @@ data class DcDeliveryStats(
     }
 }
 
+/** Delivery statistics for one configured kind of slot message. */
+data class DcSlotMessageReport(
+    val type: DcSlotMessageType,
+    val overall: DcDeliveryStats,
+    val perSlot: Map<Int, DcDeliveryStats>,
+    val config: DcSlotMessageConfig,
+    val publishTimes: Map<Int, List<Duration>>,
+    val publishers: Map<Int, SimNodeId>,
+    val warmupWaves: Int = 0
+) {
+    val measuredSlots: List<Int> get() = perSlot.keys.filter { it >= warmupWaves }.sorted()
+
+    override fun toString(): String = buildString {
+        appendLine(
+            "%s: %d x %d B per slot, publishOffset=%s publishers=%s selection=%s".format(
+                type.id,
+                config.messagesPerSlot,
+                config.sizeBytes,
+                config.publishOffset,
+                config.publisherGroups?.joinToString(prefix = "groups ") ?: "all groups",
+                config.publisherSelection
+            )
+        )
+        append("$type overall: $overall")
+        perSlot.toSortedMap().forEach { (slot, stats) ->
+            val tag = if (slot < warmupWaves) " [warmup, excluded from overall]" else ""
+            val publisher = publishers[slot]?.let { " publisher=node-$it" }.orEmpty()
+            val at = publishTimes[slot]?.firstOrNull()?.let { " publishedAt=$it" }.orEmpty()
+            append("$type slot $slot$tag$publisher$at: $stats")
+        }
+    }
+
+    internal fun asBlockReport(): DcBlockReport = DcBlockReport(
+        overall = overall,
+        perWave = perSlot,
+        sizeBytes = config.sizeBytes,
+        publishOffset = config.publishOffset,
+        publishTimes = publishTimes.mapValues { it.value.first() },
+        proposers = publishers,
+        warmupWaves = warmupWaves,
+        proposerGroups = config.publisherGroups
+    )
+
+    companion object {
+        fun of(
+            published: List<DcSlotMessagePublication>,
+            deliveries: List<DcSlotMessageDelivery>,
+            expectedDeliveriesPerMessage: Int,
+            config: DcSlotMessageConfig,
+            warmupWaves: Int = 0
+        ): DcSlotMessageReport {
+            val deliveriesByWave = deliveries.groupBy { it.slotIndex }
+            val publicationsByWave = published.groupBy { it.message.slotIndex }
+            val measuredPublished = published.filter { it.message.slotIndex >= warmupWaves }
+            val measuredDeliveries = deliveries.filter { it.slotIndex >= warmupWaves }
+            return DcSlotMessageReport(
+                type = config.type,
+                overall = DcDeliveryStats.of(
+                    publishedCount = measuredPublished.size,
+                    latencies = measuredDeliveries.map { it.latency },
+                    expectedDeliveries = measuredPublished.size * expectedDeliveriesPerMessage,
+                    what = config.type.id
+                ),
+                perSlot = publicationsByWave.mapValues { (wave, wavePublications) ->
+                    DcDeliveryStats.of(
+                        publishedCount = wavePublications.size,
+                        latencies = deliveriesByWave[wave].orEmpty().map { it.latency },
+                        expectedDeliveries = wavePublications.size * expectedDeliveriesPerMessage,
+                        what = config.type.id
+                    )
+                },
+                config = config,
+                publishTimes = publicationsByWave.mapValues { (_, values) ->
+                    values.map { it.publishedAt }
+                },
+                publishers = publicationsByWave.mapValues { (_, values) ->
+                    values.first().message.publisherNodeId
+                },
+                warmupWaves = warmupWaves
+            )
+        }
+    }
+}
+
 /**
  * Delivery of blocks, alongside the two configured quantities worth checking against what the run
  * actually did: [sizeBytes] and [publishOffset].
@@ -222,7 +306,9 @@ data class DcAttestationReport(
     /** Leading waves excluded from [overall]; see [DcAttestationConfig.warmupWaves]. */
     val warmupWaves: Int = 0,
     val mesh: DcMeshStats? = null,
-    /** Null when the run issued no blocks; see [DcAttestationConfig.blocks]. */
+    /** Separate reports keyed by [DcSlotMessageConfig.type]. */
+    val messages: Map<DcSlotMessageType, DcSlotMessageReport> = emptyMap(),
+    /** Compatibility view of a legacy [DcAttestationConfig.blocks] message. */
     val blocks: DcBlockReport? = null
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
@@ -346,7 +432,8 @@ data class DcAttestationReport(
                 )
             }
         mesh?.let { append(it) }
-        blocks?.let { append(it) }
+        messages.values.forEach { append(it) }
+        if (DcSlotMessageType.BLOCK !in messages) blocks?.let { append(it) }
     }
 
     companion object {
@@ -367,6 +454,7 @@ data class DcAttestationReport(
             gossipPublishMessagesReceivedByWave: Map<Int, Long> = emptyMap(),
             warmupWaves: Int = 0,
             mesh: DcMeshStats? = null,
+            messages: Map<DcSlotMessageType, DcSlotMessageReport> = emptyMap(),
             blocks: DcBlockReport? = null
         ): DcAttestationReport {
             val deliveriesByWave = deliveries.groupBy { it.waveIndex }
@@ -401,7 +489,8 @@ data class DcAttestationReport(
                 gossipPublishMessagesReceivedByWave = gossipPublishMessagesReceivedByWave,
                 warmupWaves = warmupWaves,
                 mesh = mesh,
-                blocks = blocks
+                messages = messages,
+                blocks = blocks ?: messages[DcSlotMessageType.BLOCK]?.asBlockReport()
             )
         }
     }
