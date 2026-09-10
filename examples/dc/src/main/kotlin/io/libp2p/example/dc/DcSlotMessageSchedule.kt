@@ -26,7 +26,7 @@ data class DcSlotMessageType(val id: String) {
         val BLOCK = DcSlotMessageType("block")
         val BLOB_COLUMN = DcSlotMessageType("blob")
         val PAYLOAD = DcSlotMessageType("payload")
-        val PAYLOAD_CHUNK = DcSlotMessageType("payload")
+        val PAYLOAD_CHUNK = DcSlotMessageType("chunk")
         val GOLDFISH_ATTESTATION = DcSlotMessageType("ac-vote")
         val FFG_ATTESTATION = DcSlotMessageType("ffg-vote")
 

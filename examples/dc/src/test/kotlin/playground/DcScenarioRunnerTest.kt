@@ -130,17 +130,15 @@ class DcScenarioRunnerTest {
             gossipParams = gossipParams,
             randomSeed = 1
         )
-        val schedule = DcAttestationSchedule.allValidators(
-            network = network,
-            waveTimes = attestationConfig.waveTimes,
-            randomSeed = 1
-        )
-
+        // No explicit `schedule` here: FFG attestation is configured as an ordinary message in
+        // `messages` above (ALL_VALIDATORS selection), and DcAttestationScenario.run's default
+        // schedule is null whenever `messages` already covers FFG attestation -- passing the legacy
+        // DcAttestationSchedule.allValidators(...) here as well would create a second FFG schedule
+        // and the factory rejects having more than one.
         val report = DcAttestationScenario.run(
             network = network,
             graph = graph,
-            config = attestationConfig,
-            schedule = schedule
+            config = attestationConfig
         )
         println(report)
     }

@@ -170,7 +170,7 @@ class DcBlockScenarioTest {
 
         assertThatThrownBy {
             DcSlotMessageSchedule.create(network, listOf(30.seconds), config)
-        }.hasMessageContaining("payload-chunk subnet topics have no subscribers: [0, 1, 2, 3]")
+        }.hasMessageContaining("chunk subnet topics have no subscribers: [0, 1, 2, 3]")
     }
 
     @Test

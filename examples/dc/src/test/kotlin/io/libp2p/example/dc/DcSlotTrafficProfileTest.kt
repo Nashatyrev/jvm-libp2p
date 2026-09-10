@@ -65,7 +65,8 @@ class DcSlotTrafficProfileTest {
     @Test
     fun `typeOf recovers the type from a global or subnet topic, the inverse of topic()`() {
         assertThat(DcSlotMessageTopics.typeOf("/dc/block")).isEqualTo(DcSlotMessageType.BLOCK)
-        assertThat(DcSlotMessageTopics.typeOf("/dc/ffg-attestation/12")).isEqualTo(DcSlotMessageType.FFG_ATTESTATION)
+        val ffgSubnetTopic = DcSlotMessageTopics.Subnets(64).topic(DcSlotMessageType.FFG_ATTESTATION, 12).topic
+        assertThat(DcSlotMessageTopics.typeOf(ffgSubnetTopic)).isEqualTo(DcSlotMessageType.FFG_ATTESTATION)
 
         val globalTopic = DcSlotMessageTopics.Global.topic(DcSlotMessageType.BLOCK, null).topic
         assertThat(DcSlotMessageTopics.typeOf(globalTopic)).isEqualTo(DcSlotMessageType.BLOCK)
@@ -331,7 +332,11 @@ class DcSlotTrafficProfileTest {
         // control/transport-overhead still print -- only the per-type message columns are omitted.
         assertThat(profile.toString())
             .contains(DcSlotTrafficProfile.CONTROL_COLUMN)
-            .doesNotContain("block", "payload", "ffg-attestation")
+            .doesNotContain(
+                DcSlotMessageType.BLOCK.id,
+                DcSlotMessageType.PAYLOAD.id,
+                DcSlotMessageType.FFG_ATTESTATION.id
+            )
     }
 
     @Test
