@@ -36,12 +36,128 @@ import kotlin.time.Duration.Companion.seconds
 class DcScenarioRunnerTest {
 
     @Test
+    fun `small network`() {
+        val network = DcNetworkBuilder
+            .world(
+                randomSeed = 1,
+                subnetCount = 64
+            )
+            .defaults {
+                // Spread payload chunks across their own 64 meshes.
+                allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK, 64)
+            }
+            .addGroup(count = 10) {
+                // validator pools
+                name = "validator-pools"
+                regionWeights = mapOf(
+                    ContinentRegion.EUROPE to 0.4,
+                    ContinentRegion.US_EAST to 0.4,
+                    ContinentRegion.US_WEST to 0.2,
+                )
+                bandwidth = Bandwidths.DATACENTER
+                validators = 100
+                peers = 60
+
+                allMessageSubnets(DcSlotMessageType.BLOB_COLUMN, 128)
+                allSubnets()
+            }
+            .addGroup(count = 90) {
+                // business
+                name = "home"
+                spreadOverRegions()
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 10
+                peers = 30
+
+                // Model the current validator custody requirement: eight of 128 DA columns per node.
+                randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, 8, 128)
+                randomSubnets(1)
+            }
+            .build()
+
+        val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 1)
+        Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
+
+        val gossipParams = GossipParams.builder()
+            // Mesh-only: disables the lazy IHAVE/IWANT gossip mechanism, leaving plain mesh push
+            // (GRAFT/PRUNE) as the only way messages travel. gossipSize = 0 means no message ids are
+            // exposed for lazy gossip, so IHAVE (and therefore IWANT) never fire.
+//            .DLazy(0)
+//            .gossipFactor(0.0)
+//            .gossipSize(0)
+            .build()
+
+        val attestationConfig = DcAttestationConfig(
+            waveCount = 1,
+            attestationSizeBytes = 240,
+            settle = 30.seconds,
+            messages = listOf(
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.BLOCK,
+                    sizeBytes = 8 * 1024,
+                    publishOffset = 0.seconds,
+                    publisherGroups = setOf("validator-pools"),
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                    topics = DcSlotMessageTopics.Global
+                ),
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.PAYLOAD_CHUNK,
+                    sizeBytes = 128 * 1024 / 64,
+                    publishOffset = 1.seconds,
+                    publisherGroups = setOf("validator-pools"),
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                    messagesPerSlot = 64,
+                    topics = DcSlotMessageTopics.Subnets(64)
+                ),
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.BLOB_COLUMN,
+                    // Scenario assumption: one 8 KiB sidecar per DA column.
+                    sizeBytes = 8 * 1024,
+                    publishOffset = 1.seconds,
+                    publisherGroups = setOf("validator-pools"),
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                    messagesPerSlot = 128,
+                    topics = DcSlotMessageTopics.Subnets(128)
+                )
+            ),
+            gossipParams = gossipParams,
+            randomSeed = 1
+        )
+        val schedule = DcAttestationSchedule.allValidators(
+            network = network,
+            waveTimes = attestationConfig.waveTimes,
+            randomSeed = 1
+        )
+
+        val report = DcAttestationScenario.run(
+            network = network,
+            graph = graph,
+            config = attestationConfig,
+            schedule = schedule
+        )
+        println(report)
+    }
+
+
+    @Test
     fun `attestation 1000 residential`() {
         val network = DcNetworkBuilder
             .world(
                 randomSeed = 1,
                 subnetCount = 64
             )
+            .defaults {
+                // Spread payload chunks across their own 64 meshes.
+                messageSubnetsByIndex(DcSlotMessageType.PAYLOAD_CHUNK) { index ->
+                    setOf(index % 64)
+                }
+                // Model the current validator custody requirement: eight of 128 DA columns per node.
+                messageSubnetsByIndex(DcSlotMessageType.BLOB_COLUMN) { index ->
+                    (0 until 8).mapTo(mutableSetOf()) { offset ->
+                        (index * 8 + offset) % 128
+                    }
+                }
+            }
             .addGroup(count = 6) {
                 // validator pools
                 name = "validator-pools"
@@ -50,7 +166,7 @@ class DcScenarioRunnerTest {
                     ContinentRegion.US_EAST to 0.4,
                     ContinentRegion.US_WEST to 0.2,
                 )
-                bandwidth = Bandwidths.RESIDENTIAL
+                bandwidth = Bandwidths.DATACENTER
                 validators = 10000
                 peers = 200
                 allSubnets()
@@ -63,7 +179,7 @@ class DcScenarioRunnerTest {
                     ContinentRegion.US_EAST to 0.4,
                     ContinentRegion.US_WEST to 0.2,
                 )
-                bandwidth = Bandwidths.RESIDENTIAL
+                bandwidth = Bandwidths.DATACENTER
                 validators = 200
                 peers = 100
                 allSubnets()
@@ -108,11 +224,30 @@ class DcScenarioRunnerTest {
             messages = listOf(
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.BLOCK,
-                    sizeBytes = 128 * 1024,
-                    publishOffset = 2.seconds,
+                    sizeBytes = 8 * 1024,
+                    publishOffset = 0.seconds,
                     publisherGroups = setOf("validator-pools"),
                     publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
                     topics = DcSlotMessageTopics.Global
+                ),
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.PAYLOAD_CHUNK,
+                    sizeBytes = 512 * 1024 / 64,
+                    publishOffset = 1.seconds,
+                    publisherGroups = setOf("validator-pools"),
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                    messagesPerSlot = 64,
+                    topics = DcSlotMessageTopics.Subnets(64)
+                ),
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.BLOB_COLUMN,
+                    // Scenario assumption: one 8 KiB sidecar per DA column.
+                    sizeBytes = 8 * 1024,
+                    publishOffset = 1.seconds,
+                    publisherGroups = setOf("validator-pools"),
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                    messagesPerSlot = 128,
+                    topics = DcSlotMessageTopics.Subnets(128)
                 )
             ),
             gossipParams = gossipParams,
