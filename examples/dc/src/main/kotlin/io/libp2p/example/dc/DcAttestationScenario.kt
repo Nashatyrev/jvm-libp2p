@@ -8,6 +8,7 @@ import io.libp2p.quicsim.runner.SimulatedQuicScenarioRunner
 import io.libp2p.quicsim.scenario.QuicScenario
 import io.libp2p.quicsim.sim.SimNodeId
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -106,12 +107,17 @@ data class DcAttestationConfig(
     val blocks: DcBlockConfig? = null,
     /** Global or subnet-scoped message kinds issued in every wave. */
     val messages: List<DcSlotMessageConfig> = emptyList(),
+    /** Bucket width of [DcAttestationReport.slotTraffic], the per-message-type intra-slot profile. */
+    val slotTrafficBucketDuration: Duration = 100.milliseconds,
     val gossipParams: GossipParams = GossipParams(),
     val randomSeed: Long = 0
 ) {
     init {
         require(warmupWaves in 0 until waveCount) {
             "warmupWaves must leave at least one measured wave, got $warmupWaves of $waveCount"
+        }
+        require(slotTrafficBucketDuration.isPositive()) {
+            "slotTrafficBucketDuration must be > 0, got $slotTrafficBucketDuration"
         }
         val configs = messages + listOfNotNull(blocks?.asSlotMessageConfig())
         require(configs.map { it.type }.distinct().size == configs.size) {
@@ -238,16 +244,26 @@ class DcAttestationNodeProgramFactory<R>(
             )
         }
         val ffgReport = reports.getValue(DcSlotMessageType.FFG_ATTESTATION)
+        val messagesByType = allMessageSchedules.associate { messageSchedule ->
+            val recorder = messageRecorders.getValue(messageSchedule.config.type)
+            messageSchedule.config.type to (recorder.published() to recorder.deliveries())
+        }
         val groups = DcGroupReport.of(
             network = network,
             trafficPerGroup = traffic.perGroup,
             gossipCounters = nodePrograms.associate { it.simNodeId to it.gossipByteCounter },
             meshSizes = nodePrograms.associate { it.simNodeId to it.finalMeshSizes },
-            messagesByType = allMessageSchedules.associate { messageSchedule ->
-                val recorder = messageRecorders.getValue(messageSchedule.config.type)
-                messageSchedule.config.type to (recorder.published() to recorder.deliveries())
-            },
+            messagesByType = messagesByType,
             subscribersOf = ::subscribersOf,
+            warmupWaves = config.warmupWaves
+        )
+        val slotTraffic = DcSlotTrafficProfile.of(
+            deliveriesByType = messagesByType.mapValues { (_, publishedAndDelivered) -> publishedAndDelivered.second },
+            configsByType = allMessageSchedules.associate { it.config.type to it.config },
+            slotDuration = config.waveInterval,
+            nodeCount = network.nodeCount,
+            slotsMeasured = config.measuredWaves.count(),
+            bucketDuration = config.slotTrafficBucketDuration,
             warmupWaves = config.warmupWaves
         )
         return DcAttestationReport(
@@ -268,7 +284,8 @@ class DcAttestationNodeProgramFactory<R>(
             mesh = DcMeshStats.of(nodePrograms.map { it.finalMeshSizes }),
             messages = reports,
             blocks = reports[DcSlotMessageType.BLOCK]?.asBlockReport(),
-            groups = groups
+            groups = groups,
+            slotTraffic = slotTraffic
         )
     }
 }

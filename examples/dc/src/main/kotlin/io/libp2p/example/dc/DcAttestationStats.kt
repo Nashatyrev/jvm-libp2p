@@ -318,7 +318,9 @@ data class DcAttestationReport(
     /** Compatibility view of a legacy [DcAttestationConfig.blocks] message. */
     val blocks: DcBlockReport? = null,
     /** Per-group breakdown; empty unless a group in the network was named. See [DcNodeGroup.name]. */
-    val groups: DcGroupReport = DcGroupReport(emptyMap())
+    val groups: DcGroupReport = DcGroupReport(emptyMap()),
+    /** Where in the slot each message type's bytes land; see [DcAttestationConfig.slotTrafficBucketDuration]. */
+    val slotTraffic: DcSlotTrafficProfile? = null
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
     val gossipControlBytesReceived: Long get() = gossipBytesReceived - gossipPublishBytesReceived
@@ -443,6 +445,7 @@ data class DcAttestationReport(
         mesh?.let { append(it) }
         messages.values.forEach { append(it) }
         if (DcSlotMessageType.BLOCK !in messages) blocks?.let { append(it) }
+        slotTraffic?.let { append(it) }
         append(groups)
     }
 
