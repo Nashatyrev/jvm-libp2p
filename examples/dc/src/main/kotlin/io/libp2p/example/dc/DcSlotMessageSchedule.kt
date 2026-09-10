@@ -73,13 +73,13 @@ sealed class DcSlotMessageTopics {
     internal fun topic(type: DcSlotMessageType, subnetId: Int?): Topic = when (this) {
         Global -> {
             require(subnetId == null) { "global $type message must not have a subnet, got $subnetId" }
-            Topic("/dc/${type.id}")
+            Topic("$TOPIC_PREFIX${type.id}")
         }
         is Subnets -> {
             require(subnetId != null && subnetId in 0 until subnetCount) {
                 "$type subnet must be in 0 until $subnetCount, got $subnetId"
             }
-            Topic("/dc/${type.id}/$subnetId")
+            Topic("$TOPIC_PREFIX${type.id}/$subnetId")
         }
     }
 
@@ -88,6 +88,24 @@ sealed class DcSlotMessageTopics {
             Global -> listOf(topic(type, null))
             is Subnets -> nodeSubnetIds.filter { it in 0 until subnetCount }.map { topic(type, it) }
         }
+
+    companion object {
+        private const val TOPIC_PREFIX = "/dc/"
+
+        /**
+         * Recovers the [DcSlotMessageType] a wire topic string belongs to — the inverse of [topic],
+         * for code that only has the topic (e.g. [GossipByteCounter], reading a topic ID off an
+         * inbound RPC with no other context on what published it). Null for anything not shaped like
+         * one of our own topics, including a subnet suffix that fails [DcSlotMessageType]'s own id
+         * validation.
+         */
+        fun typeOf(topic: String): DcSlotMessageType? {
+            if (!topic.startsWith(TOPIC_PREFIX)) return null
+            val rest = topic.removePrefix(TOPIC_PREFIX)
+            val typeId = rest.substringBefore('/')
+            return runCatching { DcSlotMessageType(typeId) }.getOrNull()
+        }
+    }
 }
 
 /** How a publisher is drawn from the nodes selected by [DcSlotMessageConfig.publisherGroups]. */

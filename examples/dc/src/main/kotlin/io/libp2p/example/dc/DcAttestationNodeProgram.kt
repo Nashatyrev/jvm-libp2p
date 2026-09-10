@@ -35,13 +35,15 @@ class DcAttestationNodeProgram(
     private val completeAt: Duration,
     private val messageSchedules: List<DcSlotMessageSchedule> = emptyList(),
     private val messageRecorders: Map<DcSlotMessageType, DcSlotMessageRecorder> = emptyMap(),
+    /** Shared by every node so their [GossipByteCounter]s all bucket wire bytes the same way. */
+    private val slotProfile: DcSlotProfileParams? = null,
     params: GossipParams = GossipParams(),
     scoreParams: GossipScoreParams = GossipScoreParams(),
     randomSeed: Long = 0
 ) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed) {
 
     private val random = Random(randomSeed)
-    val gossipByteCounter = GossipByteCounter()
+    val gossipByteCounter = GossipByteCounter(slotProfile)
 
     /**
      * Mesh peer counts per topic, sampled at [completeAt] on this node's own event thread — the
@@ -79,6 +81,8 @@ class DcAttestationNodeProgram(
         super.start(simContext, networkContext)
 
     override fun onAllConnected(simContext: SimContext, networkContext: NetworkContext) {
+        // Set before subscribing, so no publish this node's mesh peers send it can arrive un-bucketed.
+        gossipByteCounter.currentTimeSupplier = { simContext.timer.elapsedTime() }
         subscribe(simContext)
         schedulePublications(simContext)
         // Every node stops at the same simulated moment, whether or not it published, so the run ends

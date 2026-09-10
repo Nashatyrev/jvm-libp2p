@@ -3,6 +3,7 @@ package io.libp2p.example.dc
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
+import io.libp2p.quicsim.runner.DatagramPacketTraceEvent
 import io.libp2p.quicsim.runner.RecordingDatagramPacketTraceRecorder
 import io.libp2p.quicsim.runner.SimulatedQuicScenarioRunner
 import io.libp2p.quicsim.scenario.QuicScenario
@@ -205,9 +206,18 @@ class DcAttestationNodeProgramFactory<R>(
             completeAt = config.completeAt,
             messageSchedules = allMessageSchedules,
             messageRecorders = messageRecorders,
+            slotProfile = slotProfileParams,
             params = config.gossipParams,
             randomSeed = config.randomSeed + id
         ).also { nodePrograms += it }
+
+    /** Shared by every node's [GossipByteCounter], so they all bucket wire bytes the same way. */
+    private val slotProfileParams = DcSlotProfileParams(
+        anchor = config.waveTimes.first(),
+        slotDuration = config.waveInterval,
+        bucketDuration = config.slotTrafficBucketDuration,
+        warmupWaves = config.warmupWaves
+    )
 
     /**
      * Everyone subscribed to this message's global or subnet topic, publisher included — the
@@ -232,7 +242,7 @@ class DcAttestationNodeProgramFactory<R>(
     fun expectedDeliveriesOf(message: DcSlotMessage): Int =
         subscribersOf(message).count { it.simNodeId != message.publisherNodeId }
 
-    fun report(traffic: DcTrafficReport): DcAttestationReport {
+    fun report(traffic: DcTrafficReport, events: List<DatagramPacketTraceEvent>): DcAttestationReport {
         val reports = allMessageSchedules.associate { messageSchedule ->
             val recorder = messageRecorders.getValue(messageSchedule.config.type)
             messageSchedule.config.type to DcSlotMessageReport.of(
@@ -258,13 +268,11 @@ class DcAttestationNodeProgramFactory<R>(
             warmupWaves = config.warmupWaves
         )
         val slotTraffic = DcSlotTrafficProfile.of(
-            deliveriesByType = messagesByType.mapValues { (_, publishedAndDelivered) -> publishedAndDelivered.second },
-            configsByType = allMessageSchedules.associate { it.config.type to it.config },
-            slotDuration = config.waveInterval,
+            gossipCounters = nodePrograms.map { it.gossipByteCounter },
+            inboundEvents = events,
+            params = slotProfileParams,
             nodeCount = network.nodeCount,
-            slotsMeasured = config.measuredWaves.count(),
-            bucketDuration = config.slotTrafficBucketDuration,
-            warmupWaves = config.warmupWaves
+            slotsMeasured = config.measuredWaves.count()
         )
         return DcAttestationReport(
             overall = ffgReport.overall,
@@ -421,6 +429,6 @@ object DcAttestationScenario {
             nodeCount = network.nodeCount,
             groupNodes = groupNodesOf(network)
         )
-        return result.nodeProgramFactory.report(traffic)
+        return result.nodeProgramFactory.report(traffic, traceRecorder.events())
     }
 }
