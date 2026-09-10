@@ -196,7 +196,7 @@ class DcNetworkBuilderTest {
                 messageSubnetsByIndex(DcSlotMessageType.BLOB_COLUMN) { index ->
                     setOf(index % 16)
                 }
-                messageSubnetsByIndex(DcSlotMessageType.FINALITY_ATTESTATION) { index ->
+                messageSubnetsByIndex(DcSlotMessageType.FFG_ATTESTATION) { index ->
                     setOf(index % 2)
                 }
             }
@@ -207,13 +207,13 @@ class DcNetworkBuilderTest {
             .containsExactlyElementsOf(0 until 8)
         assertThat(network.messageSubnetIds(DcSlotMessageType.BLOB_COLUMN))
             .containsExactlyElementsOf(0 until 16)
-        assertThat(network.messageSubnetIds(DcSlotMessageType.FINALITY_ATTESTATION))
+        assertThat(network.messageSubnetIds(DcSlotMessageType.FFG_ATTESTATION))
             .containsExactly(0, 1)
         assertThat(network.node(5).subnetIdsFor(DcSlotMessageType.PAYLOAD_CHUNK))
             .containsExactly(5)
         assertThat(network.node(5).subnetIdsFor(DcSlotMessageType.BLOB_COLUMN))
             .containsExactly(5)
-        assertThat(network.node(5).subnetIdsFor(DcSlotMessageType.FINALITY_ATTESTATION))
+        assertThat(network.node(5).subnetIdsFor(DcSlotMessageType.FFG_ATTESTATION))
             .containsExactly(1)
         assertThat(network.node(5).attestationSubnetIds).containsExactly(1)
     }
@@ -368,7 +368,10 @@ class DcNetworkBuilderTest {
     @Test
     fun `defaults calls layer on top of each other`() {
         val network = DcNetworkBuilder.world()
-            .defaults { bandwidth = Bandwidths.VPS; peers = 7 }
+            .defaults {
+                bandwidth = Bandwidths.VPS
+                peers = 7
+            }
             .defaults { validators = 3 }
             .addGroup(count = 20)
             .build()
@@ -382,8 +385,14 @@ class DcNetworkBuilderTest {
     @Test
     fun `withDefaults scopes to its block and nests`() {
         val network = DcNetworkBuilder.world()
-            .defaults { bandwidth = Bandwidths.RESIDENTIAL; peers = 1 }
-            .withDefaults({ peers = 2; region = EUROPE }) {
+            .defaults {
+                bandwidth = Bandwidths.RESIDENTIAL
+                peers = 1
+            }
+            .withDefaults({
+                peers = 2
+                region = EUROPE
+            }) {
                 addGroup(count = 1) { validators = 1 }
                 withDefaults({ peers = 3 }) {
                     addGroup(count = 1) { validators = 2 }

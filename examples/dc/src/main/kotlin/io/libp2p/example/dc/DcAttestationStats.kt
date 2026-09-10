@@ -131,7 +131,7 @@ data class DcSlotMessageReport(
     val perSlot: Map<Int, DcDeliveryStats>,
     val config: DcSlotMessageConfig,
     val publishTimes: Map<Int, List<Duration>>,
-    val publishers: Map<Int, SimNodeId>,
+    val publishers: Map<Int, Set<SimNodeId>>,
     val warmupWaves: Int = 0
 ) {
     val measuredSlots: List<Int> get() = perSlot.keys.filter { it >= warmupWaves }.sorted()
@@ -151,7 +151,13 @@ data class DcSlotMessageReport(
         append("$type overall: $overall")
         perSlot.toSortedMap().forEach { (slot, stats) ->
             val tag = if (slot < warmupWaves) " [warmup, excluded from overall]" else ""
-            val publisher = publishers[slot]?.let { " publisher=node-$it" }.orEmpty()
+            val publisher = publishers[slot]?.let { ids ->
+                if (ids.size == 1) {
+                    " publisher=node-${ids.single()}"
+                } else {
+                    " publishers=${ids.size} nodes"
+                }
+            }.orEmpty()
             val at = publishTimes[slot]?.firstOrNull()?.let { " publishedAt=$it" }.orEmpty()
             append("$type slot $slot$tag$publisher$at: $stats")
         }
@@ -163,7 +169,7 @@ data class DcSlotMessageReport(
         sizeBytes = config.sizeBytes,
         publishOffset = config.publishOffset,
         publishTimes = publishTimes.mapValues { it.value.first() },
-        proposers = publishers,
+        proposers = publishers.mapValues { (_, ids) -> ids.single() },
         warmupWaves = warmupWaves,
         proposerGroups = config.publisherGroups
     )
@@ -201,7 +207,7 @@ data class DcSlotMessageReport(
                     values.map { it.publishedAt }
                 },
                 publishers = publicationsByWave.mapValues { (_, values) ->
-                    values.first().message.publisherNodeId
+                    values.mapTo(linkedSetOf()) { it.message.publisherNodeId }
                 },
                 warmupWaves = warmupWaves
             )
@@ -310,7 +316,9 @@ data class DcAttestationReport(
     /** Separate reports keyed by [DcSlotMessageConfig.type]. */
     val messages: Map<DcSlotMessageType, DcSlotMessageReport> = emptyMap(),
     /** Compatibility view of a legacy [DcAttestationConfig.blocks] message. */
-    val blocks: DcBlockReport? = null
+    val blocks: DcBlockReport? = null,
+    /** Per-group breakdown; empty unless a group in the network was named. See [DcNodeGroup.name]. */
+    val groups: DcGroupReport = DcGroupReport(emptyMap())
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
     val gossipControlBytesReceived: Long get() = gossipBytesReceived - gossipPublishBytesReceived
@@ -435,6 +443,7 @@ data class DcAttestationReport(
         mesh?.let { append(it) }
         messages.values.forEach { append(it) }
         if (DcSlotMessageType.BLOCK !in messages) blocks?.let { append(it) }
+        append(groups)
     }
 
     companion object {
@@ -572,7 +581,13 @@ data class DcTrafficStats(
  */
 data class DcTrafficReport(
     val overall: DcTrafficStats,
-    val perWave: Map<Int, DcTrafficStats>
+    val perWave: Map<Int, DcTrafficStats>,
+    /**
+     * Whole-run traffic of each node group, keyed by [DcNode.groupName] (or [DcGroupStats.UNNAMED]
+     * for nodes whose group was not named, whenever at least one group was). Empty when no group in
+     * the network was named at all. Groups partition the network, so these add up to [overall].
+     */
+    val perGroup: Map<String, DcTrafficStats> = emptyMap()
 ) {
     override fun toString(): String = buildString {
         appendLine("traffic overall: $overall")
@@ -586,12 +601,16 @@ data class DcTrafficReport(
          * Buckets [events] by wave using [waveTimes]: wave `i` spans from its own publish time up to
          * the next wave's (or [completeAt] for the last wave). Events before the first wave time
          * (mesh formation during warmup) fall into no wave and are only reflected in [overall].
+         *
+         * [groupNodes] maps each group name to the node ids in it, for the [perGroup] breakdown;
+         * leave it empty for no breakdown at all.
          */
         fun of(
             events: List<DatagramPacketTraceEvent>,
             waveTimes: List<Duration>,
             completeAt: Duration,
-            nodeCount: Int
+            nodeCount: Int,
+            groupNodes: Map<String, Set<SimNodeId>> = emptyMap()
         ): DcTrafficReport {
             val boundaries = waveTimes + completeAt
             val perWave = waveTimes.indices.associateWith { wave ->
@@ -599,9 +618,17 @@ data class DcTrafficReport(
                 val end = boundaries[wave + 1]
                 DcTrafficStats.of(events.filter { it.at >= start && it.at < end }, nodeCount)
             }
+            // One pass over the events rather than one per group: a heavy run records millions.
+            val groupOfNode = groupNodes.entries
+                .flatMap { (name, ids) -> ids.map { it to name } }
+                .toMap()
+            val eventsByGroup = events.groupBy { groupOfNode[it.nodeId] }
             return DcTrafficReport(
                 overall = DcTrafficStats.of(events, nodeCount),
-                perWave = perWave
+                perWave = perWave,
+                perGroup = groupNodes.mapValues { (name, ids) ->
+                    DcTrafficStats.of(eventsByGroup[name].orEmpty(), ids.size)
+                }
             )
         }
     }

@@ -48,6 +48,9 @@ class DcAttestationScenarioTest {
         val report = DcAttestationScenario.run(network, graph, config)
         println(report)
 
+        assertThat(report.messages).containsKey(DcSlotMessageType.FFG_ATTESTATION)
+        assertThat(report.messages.getValue(DcSlotMessageType.FFG_ATTESTATION).overall)
+            .isEqualTo(report.overall)
         assertThat(report.overall.publishedCount).isEqualTo(config.waveCount * config.attestersPerWave)
         assertThat(report.overall.deliveryRatio)
             .describedAs("delivery ratio; percentiles are meaningless if attestations went missing")

@@ -75,9 +75,9 @@ data class DcBlockConfig(
 }
 
 /**
- * A run in which, at each of several moments, a given number of randomly chosen validators publish
- * an attestation on one of their own subnets. [DcAttestationConfig.messages] can add independently
- * typed block, payload, column, or other message issuance to each of those slots.
+ * A repeated-wave run of independently typed block, payload, column, FFG-attestation, or custom
+ * messages. Every entry in [DcAttestationConfig.messages] is expanded over the compact wave
+ * definition, so callers configure a message once rather than describing each wave separately.
  *
  * [warmup] exists because gossipsub needs time to form its meshes; attesting before that measures
  * mesh construction rather than dissemination. [settle] is how long the run keeps going after the
@@ -86,7 +86,9 @@ data class DcBlockConfig(
  */
 data class DcAttestationConfig(
     val waveCount: Int = 3,
+    /** Compatibility input used only when [messages] has no explicit FFG-attestation entry. */
     val attestersPerWave: Int = 32,
+    /** Compatibility input used only when [messages] has no explicit FFG-attestation entry. */
     val attestationSizeBytes: Int = 240,
     val warmup: Duration = 30.seconds,
     val waveInterval: Duration = 12.seconds,
@@ -102,7 +104,7 @@ data class DcAttestationConfig(
     val warmupWaves: Int = 0,
     /** Block issuance, or null for a run that publishes attestations only. */
     val blocks: DcBlockConfig? = null,
-    /** Arbitrary global-topic messages issued in every slot. */
+    /** Global or subnet-scoped message kinds issued in every wave. */
     val messages: List<DcSlotMessageConfig> = emptyList(),
     val gossipParams: GossipParams = GossipParams(),
     val randomSeed: Long = 0
@@ -131,8 +133,11 @@ data class DcAttestationConfig(
 
     /** Wave indices whose deliveries count toward the headline figures. */
     val measuredWaves: IntRange get() = warmupWaves until waveCount
+
+    /** Compact repetition shared by all message configs; callers never list individual waves. */
+    val waves: DcSlotMessageWaves get() = DcSlotMessageWaves(waveCount, warmup, waveInterval)
     val waveTimes: List<Duration>
-        get() = DcAttestationSchedule.waveTimes(waveCount, warmup, waveInterval)
+        get() = waves.times
 
     /**
      * Moment every node stops, and the cut-off beyond which a delivery is counted as missing.
@@ -155,13 +160,26 @@ data class DcAttestationConfig(
 class DcAttestationNodeProgramFactory<R>(
     private val network: DcNetwork<R>,
     private val graph: DcPeerGraph<R>,
-    private val schedule: DcAttestationSchedule,
+    private val schedule: DcAttestationSchedule?,
     private val config: DcAttestationConfig,
     private val messageSchedules: List<DcSlotMessageSchedule> = emptyList()
 ) : NodeProgramFactory {
 
-    val recorder = DcAttestationRecorder()
-    val messageRecorders = messageSchedules.associate { it.config.type to DcSlotMessageRecorder() }
+    private val legacyFfgSchedule = schedule?.asSlotMessageSchedule(
+        sizeBytes = config.attestationSizeBytes,
+        subnetCount = (network.attestationSubnetIds().maxOrNull() ?: -1) + 1
+    )
+    private val allMessageSchedules = listOfNotNull(legacyFfgSchedule) + messageSchedules
+    val messageRecorders = allMessageSchedules.associate { it.config.type to DcSlotMessageRecorder() }
+
+    init {
+        require(allMessageSchedules.count { it.config.type == DcSlotMessageType.FFG_ATTESTATION } == 1) {
+            "A scenario must contain exactly one FFG attestation schedule"
+        }
+        require(messageRecorders.size == allMessageSchedules.size) {
+            "Every slot-message schedule must have a distinct type"
+        }
+    }
 
     private val dialTargets = graph.dialTargets()
     private val nodePrograms = mutableListOf<DcAttestationNodeProgram>()
@@ -170,39 +188,71 @@ class DcAttestationNodeProgramFactory<R>(
         DcAttestationNodeProgram(
             simNodeId = id,
             connectToNodeIds = dialTargets.getValue(id),
-            attestationSubnetIds = network.node(id).attestationSubnetIds,
-            slotMessageSubnetIds = network.node(id).slotMessageSubnetIds,
-            schedule = schedule,
-            recorder = recorder,
-            attestationSizeBytes = config.attestationSizeBytes,
+            slotMessageSubnetIds = network.node(id).slotMessageSubnetIds.let { subscriptions ->
+                if (DcSlotMessageType.FFG_ATTESTATION in subscriptions) {
+                    subscriptions
+                } else {
+                    subscriptions +
+                        (DcSlotMessageType.FFG_ATTESTATION to network.node(id).attestationSubnetIds)
+                }
+            },
             completeAt = config.completeAt,
-            messageSchedules = messageSchedules,
+            messageSchedules = allMessageSchedules,
             messageRecorders = messageRecorders,
             params = config.gossipParams,
             randomSeed = config.randomSeed + id
         ).also { nodePrograms += it }
 
     /**
-     * Everyone subscribed to the subnet except the publisher. This is the denominator for the
-     * delivery ratio, so it has to come from the population rather than from what arrived.
+     * Everyone subscribed to this message's global or subnet topic, publisher included — the
+     * denominator [expectedDeliveriesOf] and the per-group breakdown are both built from, so the
+     * two stay consistent by construction rather than by two copies of the same branching.
      */
-    fun expectedDeliveriesOf(attestation: DcAttestation): Int =
-        network.nodesSubscribedTo(attestation.subnetId).count { it.simNodeId != attestation.attesterNodeId }
+    fun subscribersOf(message: DcSlotMessage): List<DcNode<R>> =
+        if (message.subnetId == null) {
+            network.nodes
+        } else if (message.type == DcSlotMessageType.FFG_ATTESTATION) {
+            val explicitFfgSubnets = network.messageSubnetIds(DcSlotMessageType.FFG_ATTESTATION)
+            if (explicitFfgSubnets.isEmpty()) {
+                network.nodesSubscribedTo(message.subnetId)
+            } else {
+                network.nodesSubscribedTo(DcSlotMessageType.FFG_ATTESTATION, message.subnetId)
+            }
+        } else {
+            network.nodesSubscribedTo(message.type, message.subnetId)
+        }
 
     /** Subscribers to this message's global or subnet topic, excluding its publisher. */
     fun expectedDeliveriesOf(message: DcSlotMessage): Int =
-        if (message.subnetId == null) {
-            network.nodeCount - 1
-        } else {
-            network.nodesSubscribedTo(message.type, message.subnetId)
-                .count { it.simNodeId != message.publisherNodeId }
-        }
+        subscribersOf(message).count { it.simNodeId != message.publisherNodeId }
 
-    fun report(traffic: DcTrafficReport): DcAttestationReport =
-        DcAttestationReport.of(
-            published = recorder.published(),
-            deliveries = recorder.deliveries(),
-            expectedDeliveriesOf = ::expectedDeliveriesOf,
+    fun report(traffic: DcTrafficReport): DcAttestationReport {
+        val reports = allMessageSchedules.associate { messageSchedule ->
+            val recorder = messageRecorders.getValue(messageSchedule.config.type)
+            messageSchedule.config.type to DcSlotMessageReport.of(
+                published = recorder.published(),
+                deliveries = recorder.deliveries(),
+                expectedDeliveriesOf = ::expectedDeliveriesOf,
+                config = messageSchedule.config,
+                warmupWaves = config.warmupWaves
+            )
+        }
+        val ffgReport = reports.getValue(DcSlotMessageType.FFG_ATTESTATION)
+        val groups = DcGroupReport.of(
+            network = network,
+            trafficPerGroup = traffic.perGroup,
+            gossipCounters = nodePrograms.associate { it.simNodeId to it.gossipByteCounter },
+            meshSizes = nodePrograms.associate { it.simNodeId to it.finalMeshSizes },
+            messagesByType = allMessageSchedules.associate { messageSchedule ->
+                val recorder = messageRecorders.getValue(messageSchedule.config.type)
+                messageSchedule.config.type to (recorder.published() to recorder.deliveries())
+            },
+            subscribersOf = ::subscribersOf,
+            warmupWaves = config.warmupWaves
+        )
+        return DcAttestationReport(
+            overall = ffgReport.overall,
+            perWave = ffgReport.perSlot,
             traffic = traffic,
             gossipBytesSent = nodePrograms.sumOf { it.gossipByteCounter.bytesWritten },
             gossipBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.bytesRead },
@@ -216,17 +266,11 @@ class DcAttestationNodeProgramFactory<R>(
             gossipPublishMessagesReceivedByWave = nodePrograms.sumByWave { it.publishMessagesReadByWave },
             warmupWaves = config.warmupWaves,
             mesh = DcMeshStats.of(nodePrograms.map { it.finalMeshSizes }),
-            messages = messageSchedules.associate { messageSchedule ->
-                val recorder = messageRecorders.getValue(messageSchedule.config.type)
-                messageSchedule.config.type to DcSlotMessageReport.of(
-                    published = recorder.published(),
-                    deliveries = recorder.deliveries(),
-                    expectedDeliveriesOf = ::expectedDeliveriesOf,
-                    config = messageSchedule.config,
-                    warmupWaves = config.warmupWaves
-                )
-            }
+            messages = reports,
+            blocks = reports[DcSlotMessageType.BLOCK]?.asBlockReport(),
+            groups = groups
         )
+    }
 }
 
 /** Totals each node's per-wave byte counts into one map keyed by wave index. */
@@ -245,6 +289,20 @@ private fun List<DcAttestationNodeProgram>.sumByWave(
 object DcAttestationScenario {
 
     /**
+     * Node ids by group name, for [DcTrafficReport]'s per-group traffic breakdown. Empty when
+     * nothing in the network was named — see [DcNodeGroup.name] — since there is then nothing to
+     * break down; otherwise every node is bucketed, unnamed ones under [DcGroupStats.UNNAMED], so
+     * the groups still partition the network and their traffic sums to the whole-run total.
+     */
+    private fun <R> groupNodesOf(network: DcNetwork<R>): Map<String, Set<SimNodeId>> =
+        if (network.groupNames().isEmpty()) {
+            emptyMap()
+        } else {
+            network.nodes.groupBy { it.groupName ?: DcGroupStats.UNNAMED }
+                .mapValues { (_, nodes) -> nodes.mapTo(hashSetOf()) { it.simNodeId } }
+        }
+
+    /**
      * Builds the scenario. Connections come from [DcPeerGraph.dialTargets] so each edge is dialled
      * once, and the subnet coverage guarantee of the graph carries into the run.
      */
@@ -252,12 +310,7 @@ object DcAttestationScenario {
         network: DcNetwork<R>,
         graph: DcPeerGraph<R>,
         config: DcAttestationConfig = DcAttestationConfig(),
-        schedule: DcAttestationSchedule = DcAttestationSchedule.random(
-            network = network,
-            waveTimes = config.waveTimes,
-            attestersPerWave = config.attestersPerWave,
-            randomSeed = config.randomSeed
-        ),
+        schedule: DcAttestationSchedule? = defaultAttestationSchedule(network, config),
         messageSchedules: List<DcSlotMessageSchedule> = defaultMessageSchedules(network, config)
     ): QuicScenario<DcAttestationNodeProgramFactory<R>> {
         val messageSuffix = config.allMessageConfigs.joinToString(separator = "") {
@@ -285,11 +338,27 @@ object DcAttestationScenario {
     ): List<DcSlotMessageSchedule> = config.allMessageConfigs.mapIndexed { index, message ->
         DcSlotMessageSchedule.create(
             network = network,
-            slotTimes = config.waveTimes,
+            waves = config.waves,
             config = message,
             randomSeed = config.randomSeed + index
         )
     }
+
+    /** Legacy attestation selection, omitted when FFG is configured as an ordinary message type. */
+    fun <R> defaultAttestationSchedule(
+        network: DcNetwork<R>,
+        config: DcAttestationConfig
+    ): DcAttestationSchedule? =
+        if (config.allMessageConfigs.any { it.type == DcSlotMessageType.FFG_ATTESTATION }) {
+            null
+        } else {
+            DcAttestationSchedule.random(
+                network = network,
+                waveTimes = config.waveTimes,
+                attestersPerWave = config.attestersPerWave,
+                randomSeed = config.randomSeed
+            )
+        }
 
     /**
      * One validator-weighted proposer per wave when [DcAttestationConfig.blocks] asks for blocks,
@@ -320,12 +389,7 @@ object DcAttestationScenario {
         graph: DcPeerGraph<R>,
         config: DcAttestationConfig = DcAttestationConfig(),
         latencyWindowParallelism: Int = Runtime.getRuntime().availableProcessors(),
-        schedule: DcAttestationSchedule = DcAttestationSchedule.random(
-            network = network,
-            waveTimes = config.waveTimes,
-            attestersPerWave = config.attestersPerWave,
-            randomSeed = config.randomSeed
-        ),
+        schedule: DcAttestationSchedule? = defaultAttestationSchedule(network, config),
         messageSchedules: List<DcSlotMessageSchedule> = defaultMessageSchedules(network, config)
     ): DcAttestationReport {
         val traceRecorder = RecordingDatagramPacketTraceRecorder()
@@ -337,7 +401,8 @@ object DcAttestationScenario {
             events = traceRecorder.events(),
             waveTimes = config.waveTimes,
             completeAt = config.completeAt,
-            nodeCount = network.nodeCount
+            nodeCount = network.nodeCount,
+            groupNodes = groupNodesOf(network)
         )
         return result.nodeProgramFactory.report(traffic)
     }

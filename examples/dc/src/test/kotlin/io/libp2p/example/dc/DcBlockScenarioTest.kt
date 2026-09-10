@@ -112,6 +112,7 @@ class DcBlockScenarioTest {
 
         assertThat(report.messages.keys)
             .containsExactly(
+                DcSlotMessageType.FFG_ATTESTATION,
                 DcSlotMessageType.PAYLOAD,
                 DcSlotMessageType.PAYLOAD_CHUNK,
                 DcSlotMessageType.BLOB_COLUMN
@@ -133,6 +134,7 @@ class DcBlockScenarioTest {
 
         assertThat(
             (payload.publishers.values + chunks.publishers.values + columns.publishers.values)
+                .flatten()
                 .map { network.node(it).groupName }
         )
             .containsOnly("pools")
@@ -182,7 +184,7 @@ class DcBlockScenarioTest {
                 subnetsByIndex { index -> setOf(index % 4) }
                 allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK, subnetCount = 4)
                 allMessageSubnets(DcSlotMessageType.BLOB_COLUMN, subnetCount = 8)
-                allMessageSubnets(DcSlotMessageType.FINALITY_ATTESTATION, subnetCount = 2)
+                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, subnetCount = 2)
             }
             .build()
         val graph = network.peerGraph(minPeersPerSubnet = 1, randomSeed = 5)
@@ -204,7 +206,7 @@ class DcBlockScenarioTest {
                     topics = DcSlotMessageTopics.Subnets(8)
                 ),
                 DcSlotMessageConfig(
-                    DcSlotMessageType.FINALITY_ATTESTATION,
+                    DcSlotMessageType.FFG_ATTESTATION,
                     sizeBytes = 240,
                     messagesPerSlot = 2,
                     topics = DcSlotMessageTopics.Subnets(2)
@@ -343,6 +345,39 @@ class DcBlockScenarioTest {
             .isGreaterThan(10)
         assertThat(schedule.blocksOf(0).map { it.waveIndex })
             .isEqualTo(schedule.blocks.filter { it.proposerNodeId == 0 }.map { it.waveIndex })
+    }
+
+    @Test
+    fun `FFG attestations expand one compact wave definition for every validator`() {
+        val network = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 4)
+            .addGroup(count = 3) {
+                spreadOverRegions()
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 2
+                peers = 2
+                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, subnetCount = 4)
+            }
+            .build()
+        val waves = DcSlotMessageWaves(count = 3, first = 30.seconds, interval = 12.seconds)
+        val config = DcSlotMessageConfig(
+            type = DcSlotMessageType.FFG_ATTESTATION,
+            sizeBytes = 240,
+            publishOffset = 4.seconds,
+            publisherSelection = DcPublisherSelection.ALL_VALIDATORS,
+            topics = DcSlotMessageTopics.Subnets(4)
+        )
+
+        val schedule = DcSlotMessageSchedule.create(network, waves, config, randomSeed = 7)
+
+        assertThat(schedule.slotTimes).isEqualTo(listOf(30.seconds, 42.seconds, 54.seconds))
+        assertThat(schedule.messages).hasSize(3 * network.validatorCount)
+        assertThat(schedule.messages.groupBy { it.slotIndex }.values.map { it.size }).containsOnly(6)
+        assertThat(schedule.messages.groupBy { it.publisherNodeId }.values.map { it.size }).containsOnly(6)
+        schedule.messages.forEach { message ->
+            assertThat(network.node(message.publisherNodeId).subnetIdsFor(DcSlotMessageType.FFG_ATTESTATION))
+                .contains(message.subnetId)
+            assertThat(schedule.timeOf(message)).isEqualTo(waves.times[message.slotIndex] + 4.seconds)
+        }
     }
 
     /**

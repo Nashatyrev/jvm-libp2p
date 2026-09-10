@@ -138,7 +138,6 @@ class DcScenarioRunnerTest {
         println(report)
     }
 
-
     @Test
     fun `attestation 1000 residential`() {
         val network = DcNetworkBuilder
@@ -147,10 +146,8 @@ class DcScenarioRunnerTest {
                 subnetCount = 64
             )
             .defaults {
-                // Spread payload chunks across their own 64 meshes.
-                messageSubnetsByIndex(DcSlotMessageType.PAYLOAD_CHUNK) { index ->
-                    setOf(index % 64)
-                }
+                allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK, subnetCount = 64)
+                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, subnetCount = 64)
                 // Model the current validator custody requirement: eight of 128 DA columns per node.
                 messageSubnetsByIndex(DcSlotMessageType.BLOB_COLUMN) { index ->
                     (0 until 8).mapTo(mutableSetOf()) { offset ->
@@ -215,7 +212,6 @@ class DcScenarioRunnerTest {
 
         val attestationConfig = DcAttestationConfig(
             waveCount = 1,
-            attestationSizeBytes = 240,
             // ~223MB reaches each node, and a 50 Mbit/s residential link carries 6.25MB/s, so the
             // wave needs ~36s of link time alone. The default 12s settle would cut off around two
             // thirds of it and report the shortfall as undelivered; 150s leaves room for the
@@ -248,22 +244,22 @@ class DcScenarioRunnerTest {
                     publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
                     messagesPerSlot = 128,
                     topics = DcSlotMessageTopics.Subnets(128)
+                ),
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.FFG_ATTESTATION,
+                    sizeBytes = 240,
+                    publishOffset = 0.seconds,
+                    publisherSelection = DcPublisherSelection.ALL_VALIDATORS,
+                    topics = DcSlotMessageTopics.Subnets(64)
                 )
             ),
             gossipParams = gossipParams,
             randomSeed = 1
         )
-        val schedule = DcAttestationSchedule.allValidators(
-            network = network,
-            waveTimes = attestationConfig.waveTimes,
-            randomSeed = 1
-        )
-
         val report = DcAttestationScenario.run(
             network = network,
             graph = graph,
-            config = attestationConfig,
-            schedule = schedule
+            config = attestationConfig
         )
         println(report)
     }

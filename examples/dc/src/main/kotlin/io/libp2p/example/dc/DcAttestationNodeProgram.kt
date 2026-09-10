@@ -21,8 +21,8 @@ import kotlin.random.Random
 import kotlin.time.Duration
 
 /**
- * A node that subscribes to its assigned attestation subnets and every configured global message
- * topic, and publishes on them when the schedules say so.
+ * A node that subscribes to every configured global or subnet message topic and publishes on them
+ * when the schedules say so. FFG attestations use this same path as every other message type.
  *
  * Delivery latency is measured by putting the publisher's timestamp in the payload. Every node's
  * scheduler starts at zero and they are advanced in lockstep, so `timer.elapsedTime()` is a clock
@@ -31,11 +31,7 @@ import kotlin.time.Duration
 class DcAttestationNodeProgram(
     simNodeId: SimNodeId,
     connectToNodeIds: List<SimNodeId>,
-    private val attestationSubnetIds: Set<Int>,
     private val slotMessageSubnetIds: Map<DcSlotMessageType, Set<Int>>,
-    private val schedule: DcAttestationSchedule,
-    private val recorder: DcAttestationRecorder,
-    private val attestationSizeBytes: Int,
     private val completeAt: Duration,
     private val messageSchedules: List<DcSlotMessageSchedule> = emptyList(),
     private val messageRecorders: Map<DcSlotMessageType, DcSlotMessageRecorder> = emptyMap(),
@@ -74,9 +70,6 @@ class DcAttestationNodeProgram(
     }
 
     init {
-        require(attestationSizeBytes >= DcMessagePayload.HEADER_BYTES) {
-            "attestationSizeBytes must be at least ${DcMessagePayload.HEADER_BYTES}, got $attestationSizeBytes"
-        }
         require(messageSchedules.all { it.config.type in messageRecorders }) {
             "Every message schedule needs a recorder to report into"
         }
@@ -97,18 +90,8 @@ class DcAttestationNodeProgram(
         }
     }
 
-    /**
-     * Attestation topics and each subnet-scoped slot-message family use independent assignments.
-     * Global slot-message topics are still joined by every node.
-     */
+    /** Every message family owns its topics; global topics are joined by every node. */
     private fun subscribe(simContext: SimContext) {
-        val attestationTopics = attestationSubnetIds.map { DcAttestationTopics.of(it) }
-        if (attestationTopics.isNotEmpty()) {
-            messageApi.subscribe(
-                Consumer { msg -> onAttestation(msg, simContext) },
-                *attestationTopics.toTypedArray()
-            )
-        }
         messageSchedules.forEach { schedule ->
             val topics = schedule.subscriptionsOf(slotMessageSubnetIds[schedule.config.type].orEmpty())
             if (topics.isNotEmpty()) {
@@ -118,21 +101,6 @@ class DcAttestationNodeProgram(
                 )
             }
         }
-    }
-
-    private fun onAttestation(msg: MessageApi, simContext: SimContext) {
-        val header = headerOf(msg) ?: return
-        if (header.kind != DcMessageKind.ATTESTATION) return
-        val latency = simContext.timer.elapsedTime() - header.publishedAt
-        recorder.recordDelivered(
-            DcDelivery(
-                attestationId = header.id,
-                waveIndex = header.waveIndex,
-                receiverNodeId = simNodeId,
-                subnetId = header.subnetId,
-                latency = latency
-            )
-        )
     }
 
     private fun onSlotMessage(type: DcSlotMessageType, msg: MessageApi, simContext: SimContext) {
@@ -161,28 +129,11 @@ class DcAttestationNodeProgram(
     }
 
     private fun schedulePublications(simContext: SimContext) {
-        val myAttestations = schedule.attestationsOf(simNodeId)
         val myMessages = messageSchedules.flatMap { messageSchedule ->
             messageSchedule.messagesOf(simNodeId).map { messageSchedule to it }
         }
-        if (myAttestations.isEmpty() && myMessages.isEmpty()) return
+        if (myMessages.isEmpty()) return
         val publisher = messageApi.createPublisher(privKey = null, seqIdGenerator = { null })
-        myAttestations.forEach { attestation ->
-            publishAt(simContext, schedule.timeOf(attestation)) { publishedAt ->
-                recorder.recordPublished(attestation)
-                publisher.publish(
-                    payload(
-                        kind = DcMessageKind.ATTESTATION,
-                        id = attestation.id,
-                        waveIndex = attestation.waveIndex,
-                        subnetId = attestation.subnetId,
-                        publishedAt = publishedAt,
-                        sizeBytes = attestationSizeBytes
-                    ),
-                    DcAttestationTopics.of(attestation.subnetId)
-                )
-            }
-        }
         myMessages.forEach { (messageSchedule, message) ->
             publishAt(simContext, messageSchedule.timeOf(message)) { publishedAt ->
                 messageRecorders.getValue(messageSchedule.config.type)

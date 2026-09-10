@@ -26,6 +26,33 @@ class DcAttestationSchedule(
     /** Last moment anything is published. */
     fun lastWaveTime(): Duration = waveTimes.maxOrNull() ?: Duration.ZERO
 
+    /**
+     * Adapts the validator-oriented selection helpers to the generic slot-message pipeline.
+     * Selection remains convenient and deterministic; dissemination no longer has a separate
+     * attestation implementation.
+     */
+    internal fun asSlotMessageSchedule(sizeBytes: Int, subnetCount: Int): DcSlotMessageSchedule {
+        val config = DcSlotMessageConfig(
+            type = DcSlotMessageType.FFG_ATTESTATION,
+            sizeBytes = sizeBytes,
+            topics = DcSlotMessageTopics.Subnets(subnetCount)
+        )
+        return DcSlotMessageSchedule(
+            slotTimes = waveTimes,
+            config = config,
+            messages = attestations.map { attestation ->
+                DcSlotMessage(
+                    id = attestation.id,
+                    slotIndex = attestation.waveIndex,
+                    indexInSlot = attestation.id,
+                    publisherNodeId = attestation.attesterNodeId,
+                    subnetId = attestation.subnetId,
+                    type = DcSlotMessageType.FFG_ATTESTATION
+                )
+            }
+        )
+    }
+
     companion object {
         /**
          * At every time in [waveTimes], picks [attestersPerWave] nodes at random among those running
@@ -143,8 +170,7 @@ class DcAttestationSchedule(
 
         /** Evenly spaced wave times, the usual case: one attestation round per slot. */
         fun waveTimes(count: Int, first: Duration, interval: Duration): List<Duration> {
-            require(count > 0) { "count must be > 0, got $count" }
-            return List(count) { first + interval * it }
+            return DcSlotMessageWaves(count, first, interval).times
         }
     }
 }

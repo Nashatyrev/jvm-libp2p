@@ -28,8 +28,27 @@ data class DcSlotMessageType(val id: String) {
         val PAYLOAD = DcSlotMessageType("payload")
         val PAYLOAD_CHUNK = DcSlotMessageType("payload-chunk")
         val GOLDFISH_ATTESTATION = DcSlotMessageType("goldfish-attestation")
-        val FINALITY_ATTESTATION = DcSlotMessageType("finality-attestation")
+        val FFG_ATTESTATION = DcSlotMessageType("ffg-attestation")
+
+        /** Compatibility alias; FFG attestation is the precise name used by new scenarios. */
+        @Deprecated("Use FFG_ATTESTATION")
+        val FINALITY_ATTESTATION = FFG_ATTESTATION
     }
+}
+
+/** A compact repeated-wave definition shared by every configured slot-message type. */
+data class DcSlotMessageWaves(
+    val count: Int,
+    val first: Duration,
+    val interval: Duration
+) {
+    init {
+        require(count > 0) { "count must be > 0, got $count" }
+        require(!first.isNegative()) { "first must be >= 0, got $first" }
+        require(interval.isPositive()) { "interval must be > 0, got $interval" }
+    }
+
+    val times: List<Duration> get() = List(count) { first + interval * it }
 }
 
 /** Gossip topic topology used to disseminate one message type. */
@@ -77,7 +96,10 @@ enum class DcPublisherSelection {
     RANDOM_NODE,
 
     /** Probability is proportional to validator count; nodes without validators are excluded. */
-    VALIDATOR_WEIGHTED
+    VALIDATOR_WEIGHTED,
+
+    /** Every validator publishes one message in every wave; a node publishes once per validator. */
+    ALL_VALIDATORS
 }
 
 /**
@@ -85,7 +107,9 @@ enum class DcPublisherSelection {
  *
  * [type] identifies the message in reports and namespaces its gossip [topics]. A publisher is drawn
  * once per slot and emits [messagesPerSlot] messages, which models both singular objects (a block
- * or payload) and batches (payload chunks or data-availability columns).
+ * or payload) and batches (payload chunks or data-availability columns). With
+ * [DcPublisherSelection.ALL_VALIDATORS], every validator emits one message and
+ * [messagesPerSlot] must remain one.
  */
 data class DcSlotMessageConfig(
     val type: DcSlotMessageType,
@@ -104,6 +128,9 @@ data class DcSlotMessageConfig(
             "$type publishOffset must be >= 0, got $publishOffset"
         }
         require(messagesPerSlot > 0) { "$type messagesPerSlot must be > 0, got $messagesPerSlot" }
+        require(publisherSelection != DcPublisherSelection.ALL_VALIDATORS || messagesPerSlot == 1) {
+            "$type ALL_VALIDATORS already emits one message per validator; messagesPerSlot must be 1"
+        }
         publisherGroups?.let {
             require(it.isNotEmpty()) {
                 "publisherGroups must name at least one group; leave it null to allow every group"
@@ -188,6 +215,14 @@ class DcSlotMessageSchedule(
         (slotTimes.maxOrNull() ?: Duration.ZERO) + config.publishOffset
 
     companion object {
+        /** Creates the same configured issuance in every wave without listing wave times. */
+        fun <R> create(
+            network: DcNetwork<R>,
+            waves: DcSlotMessageWaves,
+            config: DcSlotMessageConfig,
+            randomSeed: Long = 0
+        ): DcSlotMessageSchedule = create(network, waves.times, config, randomSeed)
+
         fun <R> create(
             network: DcNetwork<R>,
             slotTimes: List<Duration>,
@@ -211,7 +246,8 @@ class DcSlotMessageSchedule(
             val candidates = network.nodesInGroups(config.publisherGroups).let { nodes ->
                 when (config.publisherSelection) {
                     DcPublisherSelection.RANDOM_NODE -> nodes
-                    DcPublisherSelection.VALIDATOR_WEIGHTED -> nodes.filter { it.isValidator }
+                    DcPublisherSelection.VALIDATOR_WEIGHTED,
+                    DcPublisherSelection.ALL_VALIDATORS -> nodes.filter { it.isValidator }
                 }
             }
             require(candidates.isNotEmpty()) {
@@ -219,6 +255,8 @@ class DcSlotMessageSchedule(
                 when (config.publisherSelection) {
                     DcPublisherSelection.RANDOM_NODE -> "No node$where can publish ${config.type}"
                     DcPublisherSelection.VALIDATOR_WEIGHTED ->
+                        "No node$where runs a validator, so nothing can publish ${config.type}"
+                    DcPublisherSelection.ALL_VALIDATORS ->
                         "No node$where runs a validator, so nothing can publish ${config.type}"
                 }
             }
@@ -238,6 +276,29 @@ class DcSlotMessageSchedule(
 
             var nextId = 0
             val messages = slotTimes.indices.flatMap { slotIndex ->
+                if (config.publisherSelection == DcPublisherSelection.ALL_VALIDATORS) {
+                    var indexInSlot = 0
+                    return@flatMap candidates.flatMap { publisher ->
+                        List(publisher.validatorCount) {
+                            val subnetId = (config.topics as? DcSlotMessageTopics.Subnets)?.let { topics ->
+                                val subscribed = publisher.subnetIdsFor(config.type)
+                                    .filter { it in 0 until topics.subnetCount }
+                                require(subscribed.isNotEmpty()) {
+                                    "${config.type} publisher node-${publisher.simNodeId} has no subscribed subnet"
+                                }
+                                subscribed.random(random)
+                            }
+                            DcSlotMessage(
+                                nextId++,
+                                slotIndex,
+                                indexInSlot++,
+                                publisher.simNodeId,
+                                subnetId,
+                                config.type
+                            )
+                        }
+                    }
+                }
                 // Chunks belonging to one slot come from the same selected producer.
                 val publisher = if (cumulative == null) {
                     candidates[random.nextInt(candidates.size)]

@@ -60,7 +60,7 @@ class DcPeerGraphTest {
                 messageSubnetsByIndex(DcSlotMessageType.BLOB_COLUMN) { index ->
                     setOf(index % 16)
                 }
-                messageSubnetsByIndex(DcSlotMessageType.FINALITY_ATTESTATION) { index ->
+                messageSubnetsByIndex(DcSlotMessageType.FFG_ATTESTATION) { index ->
                     setOf(index % 4)
                 }
             }
