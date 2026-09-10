@@ -184,6 +184,41 @@ class DcNetworkBuilderTest {
     }
 
     @Test
+    fun `assigns independent subnet sets to each slot message family`() {
+        val network = DcNetworkBuilder.world(randomSeed = 7, subnetCount = 4)
+            .addGroup(count = 16) {
+                bandwidth = Bandwidths.VPS
+                validators = 1
+                subnetsByIndex { index -> setOf(index % 4) }
+                messageSubnetsByIndex(DcSlotMessageType.PAYLOAD_CHUNK) { index ->
+                    setOf(index % 8)
+                }
+                messageSubnetsByIndex(DcSlotMessageType.BLOB_COLUMN) { index ->
+                    setOf(index % 16)
+                }
+                messageSubnetsByIndex(DcSlotMessageType.FINALITY_ATTESTATION) { index ->
+                    setOf(index % 2)
+                }
+            }
+            .build()
+
+        assertThat(network.attestationSubnetIds()).containsExactlyElementsOf(0 until 4)
+        assertThat(network.messageSubnetIds(DcSlotMessageType.PAYLOAD_CHUNK))
+            .containsExactlyElementsOf(0 until 8)
+        assertThat(network.messageSubnetIds(DcSlotMessageType.BLOB_COLUMN))
+            .containsExactlyElementsOf(0 until 16)
+        assertThat(network.messageSubnetIds(DcSlotMessageType.FINALITY_ATTESTATION))
+            .containsExactly(0, 1)
+        assertThat(network.node(5).subnetIdsFor(DcSlotMessageType.PAYLOAD_CHUNK))
+            .containsExactly(5)
+        assertThat(network.node(5).subnetIdsFor(DcSlotMessageType.BLOB_COLUMN))
+            .containsExactly(5)
+        assertThat(network.node(5).subnetIdsFor(DcSlotMessageType.FINALITY_ATTESTATION))
+            .containsExactly(1)
+        assertThat(network.node(5).attestationSubnetIds).containsExactly(1)
+    }
+
+    @Test
     fun `clamps peer count to the number of other nodes`() {
         val network = DcNetworkBuilder.world()
             .addGroup(count = 3) {

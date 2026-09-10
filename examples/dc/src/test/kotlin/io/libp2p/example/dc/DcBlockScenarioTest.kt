@@ -157,6 +157,83 @@ class DcBlockScenarioTest {
     }
 
     @Test
+    fun `subnet messages do not fall back to beacon attestation subscriptions`() {
+        val network = population(nodeCount = 16, subnetCount = 4, peers = 6)
+        val config = DcSlotMessageConfig(
+            type = DcSlotMessageType.PAYLOAD_CHUNK,
+            sizeBytes = 1024,
+            messagesPerSlot = 4,
+            topics = DcSlotMessageTopics.Subnets(4)
+        )
+
+        assertThatThrownBy {
+            DcSlotMessageSchedule.create(network, listOf(30.seconds), config)
+        }.hasMessageContaining("payload-chunk subnet topics have no subscribers: [0, 1, 2, 3]")
+    }
+
+    @Test
+    fun `distinct message subnet families deliver only to their own subscribers`() {
+        val network = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 4)
+            .addGroup(count = 24) {
+                spreadOverRegions()
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1
+                peers = 10
+                subnetsByIndex { index -> setOf(index % 4) }
+                allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK, subnetCount = 4)
+                allMessageSubnets(DcSlotMessageType.BLOB_COLUMN, subnetCount = 8)
+                allMessageSubnets(DcSlotMessageType.FINALITY_ATTESTATION, subnetCount = 2)
+            }
+            .build()
+        val graph = network.peerGraph(minPeersPerSubnet = 1, randomSeed = 5)
+        val config = DcAttestationConfig(
+            waveCount = 1,
+            attestersPerWave = 4,
+            settle = 12.seconds,
+            messages = listOf(
+                DcSlotMessageConfig(
+                    DcSlotMessageType.PAYLOAD_CHUNK,
+                    sizeBytes = 1024,
+                    messagesPerSlot = 4,
+                    topics = DcSlotMessageTopics.Subnets(4)
+                ),
+                DcSlotMessageConfig(
+                    DcSlotMessageType.BLOB_COLUMN,
+                    sizeBytes = 1024,
+                    messagesPerSlot = 8,
+                    topics = DcSlotMessageTopics.Subnets(8)
+                ),
+                DcSlotMessageConfig(
+                    DcSlotMessageType.FINALITY_ATTESTATION,
+                    sizeBytes = 240,
+                    messagesPerSlot = 2,
+                    topics = DcSlotMessageTopics.Subnets(2)
+                )
+            ),
+            randomSeed = 7
+        )
+        val schedules = DcAttestationScenario.defaultMessageSchedules(network, config)
+
+        val report = DcAttestationScenario.run(
+            network = network,
+            graph = graph,
+            config = config,
+            messageSchedules = schedules
+        )
+
+        schedules.forEach { messageSchedule ->
+            val type = messageSchedule.config.type
+            val expected = messageSchedule.messages.sumOf { message ->
+                network.nodesSubscribedTo(type, requireNotNull(message.subnetId))
+                    .count { it.simNodeId != message.publisherNodeId }
+            }
+            val messageReport = report.messages.getValue(type)
+            assertThat(messageReport.overall.expectedDeliveries).isEqualTo(expected)
+            assertThat(messageReport.overall.deliveryRatio).isEqualTo(1.0)
+        }
+    }
+
+    @Test
     fun `a zero offset publishes the block on the slot boundary`() {
         val network = population(nodeCount = 16, subnetCount = 4, peers = 6)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
@@ -278,6 +355,8 @@ class DcBlockScenarioTest {
             bandwidth = Bandwidths.RESIDENTIAL
             peers = 5
             randomSubnets(count = 1, of = 2)
+            // Blob-column meshes are distinct from beacon-attestation meshes.
+            allMessageSubnets(DcSlotMessageType.BLOB_COLUMN, subnetCount = 2)
         }
         .addGroup(count = 2) {
             name = "pools"

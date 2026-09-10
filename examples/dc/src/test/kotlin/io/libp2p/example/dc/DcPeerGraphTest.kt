@@ -47,6 +47,39 @@ class DcPeerGraphTest {
     }
 
     @Test
+    fun `covers equal numeric subnet ids independently for every message family`() {
+        val network = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 4)
+            .addGroup(count = 32) {
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1
+                peers = 12
+                subnetsByIndex { index -> setOf(index % 4) }
+                messageSubnetsByIndex(DcSlotMessageType.PAYLOAD_CHUNK) { index ->
+                    setOf(index % 8)
+                }
+                messageSubnetsByIndex(DcSlotMessageType.BLOB_COLUMN) { index ->
+                    setOf(index % 16)
+                }
+                messageSubnetsByIndex(DcSlotMessageType.FINALITY_ATTESTATION) { index ->
+                    setOf(index % 4)
+                }
+            }
+            .build()
+        val graph = network.peerGraph(minPeersPerSubnet = 1, randomSeed = 3)
+
+        assertThat(graph.subnetDeficiencies()).isEmpty()
+        network.nodes.forEach { node ->
+            node.slotMessageSubnetIds.forEach { (type, subnetIds) ->
+                subnetIds.forEach { subnetId ->
+                    assertThat(graph.subnetPeersOf(node.simNodeId, type, subnetId))
+                        .describedAs("%s subnet %s peers of node %s", type, subnetId, node.simNodeId)
+                        .isNotEmpty()
+                }
+            }
+        }
+    }
+
+    @Test
     fun `edges are symmetric and free of self loops`() {
         val graph = population(nodeCount = 60, peers = 10, subnetsPerNode = 2, subnetCount = 8)
             .peerGraph(randomSeed = 3)

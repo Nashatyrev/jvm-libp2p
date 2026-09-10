@@ -31,7 +31,8 @@ import kotlin.time.Duration
 class DcAttestationNodeProgram(
     simNodeId: SimNodeId,
     connectToNodeIds: List<SimNodeId>,
-    private val subnetIds: Set<Int>,
+    private val attestationSubnetIds: Set<Int>,
+    private val slotMessageSubnetIds: Map<DcSlotMessageType, Set<Int>>,
     private val schedule: DcAttestationSchedule,
     private val recorder: DcAttestationRecorder,
     private val attestationSizeBytes: Int,
@@ -97,11 +98,11 @@ class DcAttestationNodeProgram(
     }
 
     /**
-     * Attestation topics are subnet-scoped. Each configured slot message has its own global topic,
-     * joined by every node regardless of its attestation subnets.
+     * Attestation topics and each subnet-scoped slot-message family use independent assignments.
+     * Global slot-message topics are still joined by every node.
      */
     private fun subscribe(simContext: SimContext) {
-        val attestationTopics = subnetIds.map { DcAttestationTopics.of(it) }
+        val attestationTopics = attestationSubnetIds.map { DcAttestationTopics.of(it) }
         if (attestationTopics.isNotEmpty()) {
             messageApi.subscribe(
                 Consumer { msg -> onAttestation(msg, simContext) },
@@ -109,7 +110,7 @@ class DcAttestationNodeProgram(
             )
         }
         messageSchedules.forEach { schedule ->
-            val topics = schedule.subscriptionsOf(subnetIds)
+            val topics = schedule.subscriptionsOf(slotMessageSubnetIds[schedule.config.type].orEmpty())
             if (topics.isNotEmpty()) {
                 messageApi.subscribe(
                     Consumer { msg -> onSlotMessage(schedule.config.type, msg, simContext) },

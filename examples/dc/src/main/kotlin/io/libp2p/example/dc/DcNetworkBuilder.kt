@@ -121,6 +121,7 @@ class DcNetworkBuilder<R>(
                 validatorCount = groupValidators[index],
                 peerCount = group.peers,
                 attestationSubnetIds = group.subnetsFor(index, simNodeId, randomSeed),
+                slotMessageSubnetIds = group.messageSubnetsFor(index, simNodeId, randomSeed),
                 groupName = group.name
             )
         }
@@ -189,6 +190,17 @@ data class DcNetwork<R>(
 
     fun nodesSubscribedTo(subnetId: Int): List<DcNode<R>> = nodes.filter { it.subscribesTo(subnetId) }
 
+    /** All subnet ids used by one independently routed slot-message family. */
+    fun messageSubnetIds(type: DcSlotMessageType): Set<Int> =
+        nodes.flatMapTo(sortedSetOf()) { it.subnetIdsFor(type) }
+
+    fun nodesSubscribedTo(type: DcSlotMessageType, subnetId: Int): List<DcNode<R>> =
+        nodes.filter { it.subscribesTo(type, subnetId) }
+
+    /** All logical subnet subscriptions; equal numeric ids in different families stay distinct. */
+    fun subnetSubscriptions(): Set<DcSubnetSubscription> =
+        nodes.flatMapTo(linkedSetOf()) { it.subnetSubscriptions() }
+
     /** Names of the groups that were given one, in the order they were added. */
     fun groupNames(): Set<String> = nodes.mapNotNullTo(LinkedHashSet()) { it.groupName }
 
@@ -203,8 +215,15 @@ data class DcNetwork<R>(
     fun subscribersPerSubnet(): Map<Int, Int> =
         attestationSubnetIds().associateWith { subnetId -> nodesSubscribedTo(subnetId).size }
 
+    fun subscribersPerSubnet(type: DcSlotMessageType): Map<Int, Int> =
+        messageSubnetIds(type).associateWith { subnetId -> nodesSubscribedTo(type, subnetId).size }
+
     fun summary(): String = buildString {
-        appendLine("nodes=$nodeCount validators=$validatorCount subnets=${attestationSubnetIds().size}")
+        appendLine(
+            "nodes=$nodeCount validators=$validatorCount " +
+                "attestationSubnets=${attestationSubnetIds().size} " +
+                "messageSubnets=${subnetSubscriptions().count { it.messageType != null }}"
+        )
         groupNames().forEach { groupName ->
             val groupNodes = nodesInGroup(groupName)
             appendLine(

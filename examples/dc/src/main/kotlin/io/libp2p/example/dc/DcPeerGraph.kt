@@ -25,6 +25,23 @@ data class DcPeerGraph<R>(
     fun subnetPeersOf(simNodeId: SimNodeId, subnetId: Int): Set<SimNodeId> =
         adjacency[simNodeId].filterTo(mutableSetOf()) { network.node(it).subscribesTo(subnetId) }
 
+    /** Peers sharing [subnetId] in the independently namespaced [type] family. */
+    fun subnetPeersOf(
+        simNodeId: SimNodeId,
+        type: DcSlotMessageType,
+        subnetId: Int
+    ): Set<SimNodeId> =
+        adjacency[simNodeId].filterTo(mutableSetOf()) {
+            network.node(it).subscribesTo(type, subnetId)
+        }
+
+    private fun subnetPeersOf(
+        simNodeId: SimNodeId,
+        subscription: DcSubnetSubscription
+    ): Set<SimNodeId> = subscription.messageType?.let { type ->
+        subnetPeersOf(simNodeId, type, subscription.subnetId)
+    } ?: subnetPeersOf(simNodeId, subscription.subnetId)
+
     /**
      * Full adjacency, both directions. Suitable when every node should know all of its peers.
      */
@@ -41,12 +58,18 @@ data class DcPeerGraph<R>(
     /** Subscriptions that ended up with fewer subnet peers than [minPeersPerSubnet]. */
     fun subnetDeficiencies(): List<SubnetDeficiency> =
         network.nodes.flatMap { node ->
-            node.attestationSubnetIds.mapNotNull { subnetId ->
-                val actual = subnetPeersOf(node.simNodeId, subnetId).size
+            node.subnetSubscriptions().mapNotNull { subscription ->
+                val actual = subnetPeersOf(node.simNodeId, subscription).size
                 if (actual >= minPeersPerSubnet) {
                     null
                 } else {
-                    SubnetDeficiency(node.simNodeId, subnetId, actual, minPeersPerSubnet)
+                    SubnetDeficiency(
+                        node.simNodeId,
+                        subscription.subnetId,
+                        actual,
+                        minPeersPerSubnet,
+                        subscription.messageType
+                    )
                 }
             }
         }
@@ -100,8 +123,14 @@ data class DcPeerGraph<R>(
         val simNodeId: SimNodeId,
         val subnetId: Int,
         val actualPeers: Int,
-        val requiredPeers: Int
-    )
+        val requiredPeers: Int,
+        /** Null denotes the ordinary beacon-attestation subnet family. */
+        val messageType: DcSlotMessageType? = null
+    ) {
+        override fun toString(): String =
+            "SubnetDeficiency(node=$simNodeId, subnet=${messageType?.id ?: "beacon-attestation"}/$subnetId, " +
+                "actual=$actualPeers, required=$requiredPeers)"
+    }
 }
 
 /**
@@ -156,17 +185,21 @@ fun <R> DcNetwork<R>.peerGraph(
 
     // 1. subnet coverage
     if (minPeersPerSubnet > 0) {
-        attestationSubnetIds().forEach { subnetId ->
-            val subscribers = nodesSubscribedTo(subnetId).map { it.simNodeId }.shuffled(random)
-            if (subscribers.size < 2) return@forEach
+        subnetSubscriptions().forEach { subscription ->
+            val subscribers = subscription.messageType?.let { type ->
+                nodesSubscribedTo(type, subscription.subnetId)
+            } ?: nodesSubscribedTo(subscription.subnetId)
+            val shuffledSubscribers = subscribers.map { it.simNodeId }.shuffled(random)
+            if (shuffledSubscribers.size < 2) return@forEach
             // Connecting each subscriber to the next `span` around the ring gives it 2*span subnet
             // peers, capped by how many subscribers there are.
-            val span = ((minPeersPerSubnet + 1) / 2).coerceIn(1, (subscribers.size - 1).coerceAtLeast(1))
-            subscribers.indices.forEach { index ->
+            val span = ((minPeersPerSubnet + 1) / 2)
+                .coerceIn(1, (shuffledSubscribers.size - 1).coerceAtLeast(1))
+            shuffledSubscribers.indices.forEach { index ->
                 (1..span).forEach { step ->
-                    val peer = subscribers[(index + step) % subscribers.size]
-                    connect(subscribers[index], peer)
-                    protect(subscribers[index], peer)
+                    val peer = shuffledSubscribers[(index + step) % shuffledSubscribers.size]
+                    connect(shuffledSubscribers[index], peer)
+                    protect(shuffledSubscribers[index], peer)
                 }
             }
         }

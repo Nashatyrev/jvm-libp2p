@@ -34,6 +34,13 @@ data class DcNode<R>(
     /** Attestation subnets this node subscribes to. */
     val attestationSubnetIds: Set<Int>,
     /**
+     * Subnet subscriptions for independently routed slot-message families.
+     *
+     * The numeric ids are local to each [DcSlotMessageType]: payload subnet 7, blob-column subnet
+     * 7, and finality-attestation subnet 7 are three different gossip meshes.
+     */
+    val slotMessageSubnetIds: Map<DcSlotMessageType, Set<Int>> = emptyMap(),
+    /**
      * Name of the [DcNodeGroup] this node came from, or null if the group was not named.
      *
      * Names exist so that a scenario can refer back to part of the population it built — picking
@@ -52,11 +59,49 @@ data class DcNode<R>(
 
     fun subscribesTo(subnetId: Int): Boolean = subnetId in attestationSubnetIds
 
+    fun subscribesTo(type: DcSlotMessageType, subnetId: Int): Boolean =
+        subnetId in subnetIdsFor(type)
+
+    fun subnetIdsFor(type: DcSlotMessageType): Set<Int> =
+        slotMessageSubnetIds[type].orEmpty()
+
+    internal fun subnetSubscriptions(): Set<DcSubnetSubscription> = buildSet {
+        attestationSubnetIds.forEach { add(DcSubnetSubscription.attestation(it)) }
+        slotMessageSubnetIds.forEach { (type, subnetIds) ->
+            subnetIds.forEach { add(DcSubnetSubscription.slotMessage(type, it)) }
+        }
+    }
+
     override fun toString(): String {
         val link = if (hasAsymmetricLink) "$bandwidth down/$uploadBandwidth up" else "$bandwidth"
         val group = groupName?.let { "$it, " } ?: ""
+        val messageSubnets = slotMessageSubnetIds.entries
+            .sortedBy { it.key.id }
+            .joinToString { (type, ids) -> "${type.id}=${ids.sorted()}" }
+        val extra = if (messageSubnets.isEmpty()) "" else ", messageSubnets={$messageSubnets}"
         return "$id[$group$region, $link, validators=$validatorCount, peers=$peerCount, " +
-            "subnets=${attestationSubnetIds.sorted()}]"
+            "attestationSubnets=${attestationSubnetIds.sorted()}$extra]"
+    }
+}
+
+/** One logical subnet. Numeric ids are namespaced by the traffic family. */
+data class DcSubnetSubscription(
+    /** Null denotes the ordinary beacon-attestation family. */
+    val messageType: DcSlotMessageType?,
+    val subnetId: Int
+) {
+    init {
+        require(subnetId >= 0) { "subnetId must be >= 0, got $subnetId" }
+    }
+
+    override fun toString(): String =
+        "${messageType?.id ?: "beacon-attestation"}/$subnetId"
+
+    companion object {
+        fun attestation(subnetId: Int) = DcSubnetSubscription(null, subnetId)
+
+        fun slotMessage(type: DcSlotMessageType, subnetId: Int) =
+            DcSubnetSubscription(type, subnetId)
     }
 }
 

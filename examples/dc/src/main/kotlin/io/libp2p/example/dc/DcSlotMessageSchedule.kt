@@ -40,8 +40,8 @@ sealed class DcSlotMessageTopics {
     }
 
     /**
-     * One topic per subnet. Nodes join the topic ids in their existing
-     * [DcNode.attestationSubnetIds] assignment that fall within `0 until subnetCount`.
+     * One topic per subnet. Nodes join the topic ids independently assigned to this message type
+     * in [DcNode.slotMessageSubnetIds] that fall within `0 until subnetCount`.
      */
     data class Subnets(val subnetCount: Int) : DcSlotMessageTopics() {
         init {
@@ -127,7 +127,9 @@ data class DcSlotMessage(
     val indexInSlot: Int,
     val publisherNodeId: SimNodeId,
     /** Null for a global topic; otherwise the subnet topic carrying this message. */
-    val subnetId: Int? = null
+    val subnetId: Int? = null,
+    /** Topic namespace and subscriber assignment used for this message. */
+    val type: DcSlotMessageType
 ) {
     /** Compatibility vocabulary for code that treats slots as attestation waves. */
     val waveIndex: Int get() = slotIndex
@@ -201,7 +203,7 @@ class DcSlotMessageSchedule(
             }
             if (config.topics is DcSlotMessageTopics.Subnets) {
                 val missing = (0 until config.topics.subnetCount)
-                    .filter { network.nodesSubscribedTo(it).isEmpty() }
+                    .filter { network.nodesSubscribedTo(config.type, it).isEmpty() }
                 require(missing.isEmpty()) {
                     "${config.type} subnet topics have no subscribers: $missing"
                 }
@@ -247,7 +249,7 @@ class DcSlotMessageSchedule(
                     val subnetId = (config.topics as? DcSlotMessageTopics.Subnets)?.let {
                         indexInSlot % it.subnetCount
                     }
-                    DcSlotMessage(nextId++, slotIndex, indexInSlot, publisher.simNodeId, subnetId)
+                    DcSlotMessage(nextId++, slotIndex, indexInSlot, publisher.simNodeId, subnetId, config.type)
                 }
             }
             return DcSlotMessageSchedule(slotTimes, config, messages)

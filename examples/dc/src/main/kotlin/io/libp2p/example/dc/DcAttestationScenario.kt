@@ -170,7 +170,8 @@ class DcAttestationNodeProgramFactory<R>(
         DcAttestationNodeProgram(
             simNodeId = id,
             connectToNodeIds = dialTargets.getValue(id),
-            subnetIds = network.node(id).attestationSubnetIds,
+            attestationSubnetIds = network.node(id).attestationSubnetIds,
+            slotMessageSubnetIds = network.node(id).slotMessageSubnetIds,
             schedule = schedule,
             recorder = recorder,
             attestationSizeBytes = config.attestationSizeBytes,
@@ -193,7 +194,7 @@ class DcAttestationNodeProgramFactory<R>(
         if (message.subnetId == null) {
             network.nodeCount - 1
         } else {
-            network.nodesSubscribedTo(message.subnetId)
+            network.nodesSubscribedTo(message.type, message.subnetId)
                 .count { it.simNodeId != message.publisherNodeId }
         }
 
