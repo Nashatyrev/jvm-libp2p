@@ -26,9 +26,20 @@ class DcBlockScenarioTest {
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 1
                 this.peers = peers
-                randomSubnets(count = 2, of = subnetCount)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 2, of = subnetCount)
             }
             .build()
+
+    /** FFG attestations drawn as [attestersPerWave] distinct nodes per wave, over [subnetCount] subnets. */
+    private fun ffgMessages(attestersPerWave: Int, subnetCount: Int) = listOf(
+        DcSlotMessageConfig(
+            type = DcSlotMessageType.FFG_ATTESTATION,
+            sizeBytes = 240,
+            publisherSelection = DcPublisherSelection.RANDOM_NODES,
+            messagesPerSlot = attestersPerWave,
+            topics = DcSlotMessageTopics.Subnets(subnetCount)
+        )
+    )
 
     @Test
     fun `every node but the proposer receives each block, at the configured offset`() {
@@ -36,8 +47,7 @@ class DcBlockScenarioTest {
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val config = DcAttestationConfig(
             waveCount = 2,
-            attestersPerWave = 4,
-            attestationSizeBytes = 240,
+            messages = ffgMessages(attestersPerWave = 4, subnetCount = 4),
             waveInterval = 12.seconds,
             settle = 12.seconds,
             blocks = DcBlockConfig(sizeBytes = 128 * 1024, publishOffset = 2.seconds),
@@ -47,7 +57,9 @@ class DcBlockScenarioTest {
         val report = DcAttestationScenario.run(network, graph, config)
         println(report)
 
-        val blocks = requireNotNull(report.blocks) { "blocks were configured, so a block report is due" }
+        val blocks = requireNotNull(report.messages[DcSlotMessageType.BLOCK]) {
+            "blocks were configured, so a block report is due"
+        }
         assertThat(blocks.overall.publishedCount)
             .describedAs("one block per wave")
             .isEqualTo(config.waveCount)
@@ -63,7 +75,7 @@ class DcBlockScenarioTest {
         config.waveTimes.forEachIndexed { wave, waveTime ->
             assertThat(blocks.publishTimes[wave])
                 .describedAs("publish time of the block of wave %s", wave)
-                .isEqualTo(waveTime + 2.seconds)
+                .containsExactly(waveTime + 2.seconds)
         }
 
         // ... and the size lands on the wire: each node receives every block at least once, so its
@@ -80,9 +92,8 @@ class DcBlockScenarioTest {
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val config = DcAttestationConfig(
             waveCount = 2,
-            attestersPerWave = 4,
             settle = 12.seconds,
-            messages = listOf(
+            messages = ffgMessages(attestersPerWave = 4, subnetCount = 2) + listOf(
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.PAYLOAD,
                     sizeBytes = 32 * 1024,
@@ -181,16 +192,14 @@ class DcBlockScenarioTest {
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 1
                 peers = 10
-                subnetsByIndex { index -> setOf(index % 4) }
-                allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK, subnetCount = 4)
-                allMessageSubnets(DcSlotMessageType.BLOB_COLUMN, subnetCount = 8)
-                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, subnetCount = 2)
+                allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK, of = 4)
+                allMessageSubnets(DcSlotMessageType.BLOB_COLUMN, of = 8)
+                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, of = 2)
             }
             .build()
         val graph = network.peerGraph(minPeersPerSubnet = 1, randomSeed = 5)
         val config = DcAttestationConfig(
             waveCount = 1,
-            attestersPerWave = 4,
             settle = 12.seconds,
             messages = listOf(
                 DcSlotMessageConfig(
@@ -241,7 +250,7 @@ class DcBlockScenarioTest {
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val config = DcAttestationConfig(
             waveCount = 1,
-            attestersPerWave = 4,
+            messages = ffgMessages(attestersPerWave = 4, subnetCount = 4),
             settle = 12.seconds,
             blocks = DcBlockConfig(sizeBytes = 64 * 1024),
             randomSeed = 7
@@ -250,26 +259,36 @@ class DcBlockScenarioTest {
         val report = DcAttestationScenario.run(network, graph, config)
 
         assertThat(config.blocks!!.publishOffset).isEqualTo(Duration.ZERO)
-        assertThat(report.blocks!!.publishTimes[0]).isEqualTo(config.waveTimes[0])
-        assertThat(report.blocks!!.overall.deliveryRatio).isEqualTo(1.0)
+        val blocks = report.messages.getValue(DcSlotMessageType.BLOCK)
+        assertThat(blocks.publishTimes[0]).containsExactly(config.waveTimes[0])
+        assertThat(blocks.overall.deliveryRatio).isEqualTo(1.0)
     }
 
     @Test
     fun `a run without a block config issues no blocks and reports none`() {
         val network = population(nodeCount = 16, subnetCount = 4, peers = 6)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(waveCount = 1, attestersPerWave = 4, randomSeed = 7)
+        val config = DcAttestationConfig(
+            waveCount = 1,
+            messages = ffgMessages(attestersPerWave = 4, subnetCount = 4),
+            randomSeed = 7
+        )
 
         val report = DcAttestationScenario.run(network, graph, config)
 
         assertThat(config.blocks).isNull()
-        assertThat(report.blocks).isNull()
+        assertThat(report.messages[DcSlotMessageType.BLOCK]).isNull()
         assertThat(report.overall.deliveryRatio).isEqualTo(1.0)
     }
 
     @Test
     fun `the settle window starts from the block rather than from the slot boundary`() {
-        val base = DcAttestationConfig(waveCount = 2, waveInterval = 12.seconds, settle = 12.seconds)
+        val base = DcAttestationConfig(
+            waveCount = 2,
+            waveInterval = 12.seconds,
+            settle = 12.seconds,
+            messages = ffgMessages(attestersPerWave = 1, subnetCount = 1)
+        )
         val withBlocks = base.copy(blocks = DcBlockConfig(publishOffset = 2.seconds))
 
         // Without the extra offset the last block would only get 10s of the 12s settle window, and
@@ -282,6 +301,7 @@ class DcBlockScenarioTest {
         assertThatThrownBy {
             DcAttestationConfig(
                 waveInterval = 12.seconds,
+                messages = ffgMessages(attestersPerWave = 1, subnetCount = 1),
                 blocks = DcBlockConfig(publishOffset = 12.seconds)
             )
         }.hasMessageContaining("publishOffset must be less than")
@@ -292,11 +312,16 @@ class DcBlockScenarioTest {
         // The default maxGossipMessageSize is exactly 1 MiB, so a 1 MiB block cannot fit: gossipsub
         // reserves a 1% margin when splitting RPCs and the frame decoder drops anything above the
         // limit. Failing here beats a run in which no block ever arrives.
-        assertThatThrownBy { DcAttestationConfig(blocks = DcBlockConfig(sizeBytes = 1 shl 20)) }
-            .hasMessageContaining("exceeds what gossipsub will carry")
+        assertThatThrownBy {
+            DcAttestationConfig(
+                messages = ffgMessages(attestersPerWave = 1, subnetCount = 1),
+                blocks = DcBlockConfig(sizeBytes = 1 shl 20)
+            )
+        }.hasMessageContaining("exceeds what gossipsub will carry")
 
         val roomier = GossipParams.builder().maxGossipMessageSize(4 shl 20).build()
         val config = DcAttestationConfig(
+            messages = ffgMessages(attestersPerWave = 1, subnetCount = 1),
             blocks = DcBlockConfig(sizeBytes = 1 shl 20),
             gossipParams = roomier
         )
@@ -312,39 +337,44 @@ class DcBlockScenarioTest {
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 100
                 peers = 4
-                randomSubnets(count = 1, of = 4)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1, of = 4)
             }
             .addGroup(count = 10) {
                 spreadOverRegions()
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 1
                 peers = 4
-                randomSubnets(count = 1, of = 4)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1, of = 4)
             }
             .build()
-        val waveTimes = DcAttestationSchedule.waveTimes(count = 20, first = 30.seconds, interval = 12.seconds)
+        val waveTimes = DcSlotMessageWaves(count = 20, first = 30.seconds, interval = 12.seconds).times
 
-        val schedule = DcBlockSchedule.validatorWeighted(
+        val schedule = DcSlotMessageSchedule.create(
             network = network,
-            waveTimes = waveTimes,
-            publishOffset = 2.seconds,
+            slotTimes = waveTimes,
+            config = DcSlotMessageConfig(
+                type = DcSlotMessageType.BLOCK,
+                sizeBytes = DcBlockConfig.DEFAULT_SIZE_BYTES,
+                publishOffset = 2.seconds,
+                publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED
+            ),
             randomSeed = 3
         )
 
-        assertThat(schedule.blocks).hasSize(20)
-        assertThat(schedule.blocks.map { it.waveIndex }).isEqualTo((0 until 20).toList())
-        schedule.blocks.forEach { block ->
-            assertThat(network.node(block.proposerNodeId).isValidator)
-                .describedAs("proposer of wave %s runs a validator", block.waveIndex)
+        assertThat(schedule.messages).hasSize(20)
+        assertThat(schedule.messages.map { it.slotIndex }).isEqualTo((0 until 20).toList())
+        schedule.messages.forEach { block ->
+            assertThat(network.node(block.publisherNodeId).isValidator)
+                .describedAs("proposer of wave %s runs a validator", block.slotIndex)
                 .isTrue()
-            assertThat(schedule.timeOf(block)).isEqualTo(waveTimes[block.waveIndex] + 2.seconds)
+            assertThat(schedule.timeOf(block)).isEqualTo(waveTimes[block.slotIndex] + 2.seconds)
         }
         // 100 of the 110 validators sit on node 0, so it should take the clear majority of waves.
-        assertThat(schedule.blocks.count { it.proposerNodeId == 0 })
+        assertThat(schedule.messages.count { it.publisherNodeId == 0 })
             .describedAs("waves proposed by the 100-validator node")
             .isGreaterThan(10)
-        assertThat(schedule.blocksOf(0).map { it.waveIndex })
-            .isEqualTo(schedule.blocks.filter { it.proposerNodeId == 0 }.map { it.waveIndex })
+        assertThat(schedule.messagesOf(0).map { it.slotIndex })
+            .isEqualTo(schedule.messages.filter { it.publisherNodeId == 0 }.map { it.slotIndex })
     }
 
     @Test
@@ -355,7 +385,7 @@ class DcBlockScenarioTest {
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 2
                 peers = 2
-                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, subnetCount = 4)
+                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, of = 4)
             }
             .build()
         val waves = DcSlotMessageWaves(count = 3, first = 30.seconds, interval = 12.seconds)
@@ -389,9 +419,9 @@ class DcBlockScenarioTest {
             spreadOverRegions()
             bandwidth = Bandwidths.RESIDENTIAL
             peers = 5
-            randomSubnets(count = 1, of = 2)
+            randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1, of = 2)
             // Blob-column meshes are distinct from beacon-attestation meshes.
-            allMessageSubnets(DcSlotMessageType.BLOB_COLUMN, subnetCount = 2)
+            allMessageSubnets(DcSlotMessageType.BLOB_COLUMN, of = 2)
         }
         .addGroup(count = 2) {
             name = "pools"
@@ -434,7 +464,7 @@ class DcBlockScenarioTest {
                 spreadOverRegions()
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 1
-                randomSubnets(count = 1, of = 2)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1, of = 2)
             }
             .addGroup(count = 2)
             .addGroup(count = 3)
@@ -459,33 +489,37 @@ class DcBlockScenarioTest {
     @Test
     fun `proposerGroups restricts the draw to the named groups`() {
         val network = namedGroups()
-        val waveTimes = DcAttestationSchedule.waveTimes(count = 30, first = 30.seconds, interval = 12.seconds)
+        val waveTimes = DcSlotMessageWaves(count = 30, first = 30.seconds, interval = 12.seconds).times
 
-        val homeOnly = DcBlockSchedule.validatorWeighted(
-            network = network,
-            waveTimes = waveTimes,
-            proposerGroups = setOf("home"),
-            randomSeed = 3
-        )
+        fun weightedSchedule(waveTimes: List<Duration>, proposerGroups: Set<String>? = null) =
+            DcSlotMessageSchedule.create(
+                network = network,
+                slotTimes = waveTimes,
+                config = DcSlotMessageConfig(
+                    type = DcSlotMessageType.BLOCK,
+                    sizeBytes = DcBlockConfig.DEFAULT_SIZE_BYTES,
+                    publisherGroups = proposerGroups,
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED
+                ),
+                randomSeed = 3
+            )
+
+        val homeOnly = weightedSchedule(waveTimes, proposerGroups = setOf("home"))
 
         // Every proposer from `home`, even though `pools` holds 200 of the 208 validators and would
         // otherwise take almost every wave.
-        assertThat(homeOnly.blocks.map { it.proposerNodeId }.distinct())
+        assertThat(homeOnly.messages.map { it.publisherNodeId }.distinct())
             .allMatch { network.node(it).groupName == "home" }
-        assertThat(homeOnly.blocks.map { it.proposerNodeId }.distinct())
+        assertThat(homeOnly.messages.map { it.publisherNodeId }.distinct())
             .describedAs("all 8 home nodes weigh the same, so 30 waves should reach most of them")
             .hasSizeGreaterThan(4)
 
         // Left alone, the same draw is dominated by the pools. Over enough waves to make the
         // comparison meaningful: pools hold 96% of the validators, so 30 waves is short enough that
         // an unlucky seed lands well off that share.
-        val manyWaves = DcAttestationSchedule.waveTimes(count = 200, first = 30.seconds, interval = 12.seconds)
-        val anyGroup = DcBlockSchedule.validatorWeighted(
-            network = network,
-            waveTimes = manyWaves,
-            randomSeed = 3
-        )
-        assertThat(anyGroup.blocks.count { network.node(it.proposerNodeId).groupName == "pools" })
+        val manyWaves = DcSlotMessageWaves(count = 200, first = 30.seconds, interval = 12.seconds).times
+        val anyGroup = weightedSchedule(manyWaves)
+        assertThat(anyGroup.messages.count { network.node(it.publisherNodeId).groupName == "pools" })
             .describedAs("pools hold 200 of 208 validators, so they should take ~96% of 200 waves")
             .isGreaterThan(170)
     }
@@ -495,10 +529,15 @@ class DcBlockScenarioTest {
         val network = namedGroups()
 
         assertThatThrownBy {
-            DcBlockSchedule.validatorWeighted(
+            DcSlotMessageSchedule.create(
                 network = network,
-                waveTimes = listOf(30.seconds),
-                proposerGroups = setOf("home", "whales")
+                slotTimes = listOf(30.seconds),
+                config = DcSlotMessageConfig(
+                    type = DcSlotMessageType.BLOCK,
+                    sizeBytes = DcBlockConfig.DEFAULT_SIZE_BYTES,
+                    publisherGroups = setOf("home", "whales"),
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED
+                )
             )
         }.hasMessageContaining("names no such group: [whales]")
             .hasMessageContaining("[pools, home]")
@@ -510,7 +549,7 @@ class DcBlockScenarioTest {
             .defaults {
                 spreadOverRegions()
                 bandwidth = Bandwidths.RESIDENTIAL
-                randomSubnets(count = 1, of = 2)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1, of = 2)
             }
             .addGroup(count = 2) {
                 name = "stakers"
@@ -520,10 +559,15 @@ class DcBlockScenarioTest {
             .build()
 
         assertThatThrownBy {
-            DcBlockSchedule.validatorWeighted(
+            DcSlotMessageSchedule.create(
                 network = network,
-                waveTimes = listOf(30.seconds),
-                proposerGroups = setOf("relays")
+                slotTimes = listOf(30.seconds),
+                config = DcSlotMessageConfig(
+                    type = DcSlotMessageType.BLOCK,
+                    sizeBytes = DcBlockConfig.DEFAULT_SIZE_BYTES,
+                    publisherGroups = setOf("relays"),
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED
+                )
             )
         }.hasMessageContaining("No node in [relays] runs a validator")
     }
@@ -540,7 +584,7 @@ class DcBlockScenarioTest {
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val config = DcAttestationConfig(
             waveCount = 2,
-            attestersPerWave = 4,
+            messages = ffgMessages(attestersPerWave = 4, subnetCount = 2),
             settle = 12.seconds,
             blocks = DcBlockConfig(
                 sizeBytes = 64 * 1024,
@@ -553,9 +597,9 @@ class DcBlockScenarioTest {
         val report = DcAttestationScenario.run(network, graph, config)
         println(report)
 
-        val blocks = requireNotNull(report.blocks)
-        assertThat(blocks.proposerGroups).containsExactly("pools")
-        assertThat(blocks.proposers.values.map { network.node(it).groupName }.distinct())
+        val blocks = requireNotNull(report.messages[DcSlotMessageType.BLOCK])
+        assertThat(blocks.config.publisherGroups).containsExactly("pools")
+        assertThat(blocks.publishers.values.flatten().map { network.node(it).groupName }.distinct())
             .containsExactly("pools")
         assertThat(blocks.overall.deliveryRatio).isEqualTo(1.0)
     }

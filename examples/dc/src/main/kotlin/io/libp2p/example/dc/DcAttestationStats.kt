@@ -2,46 +2,7 @@ package io.libp2p.example.dc
 
 import io.libp2p.quicsim.runner.DatagramPacketTraceEvent
 import io.libp2p.quicsim.sim.SimNodeId
-import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.time.Duration
-
-/** One attestation, as scheduled before the run. */
-data class DcAttestation(
-    val id: Int,
-    val waveIndex: Int,
-    val attesterNodeId: SimNodeId,
-    val subnetId: Int
-)
-
-/** An attestation arriving at a node. [latency] is measured from the publisher's send time. */
-data class DcDelivery(
-    val attestationId: Int,
-    val waveIndex: Int,
-    val receiverNodeId: SimNodeId,
-    val subnetId: Int,
-    val latency: Duration
-)
-
-/**
- * Collects publications and deliveries during a run. Node programs run on several simulator
- * threads, so both queues are concurrent.
- */
-class DcAttestationRecorder {
-    private val publications = ConcurrentLinkedQueue<DcAttestation>()
-    private val deliveries = ConcurrentLinkedQueue<DcDelivery>()
-
-    fun recordPublished(attestation: DcAttestation) {
-        publications += attestation
-    }
-
-    fun recordDelivered(delivery: DcDelivery) {
-        deliveries += delivery
-    }
-
-    fun published(): List<DcAttestation> = publications.sortedBy { it.id }
-
-    fun deliveries(): List<DcDelivery> = deliveries.sortedWith(compareBy({ it.attestationId }, { it.receiverNodeId }))
-}
 
 /**
  * Delivery latency of attestations.
@@ -84,22 +45,8 @@ data class DcDeliveryStats(
 
     companion object {
         /**
-         * [expectedDeliveries] is passed in rather than derived from [deliveries], since the whole
+         * [expectedDeliveries] is passed in rather than derived from [latencies], since the whole
          * point is to notice deliveries that never arrived.
-         */
-        fun of(
-            published: List<DcAttestation>,
-            deliveries: List<DcDelivery>,
-            expectedDeliveries: Int
-        ): DcDeliveryStats = of(
-            publishedCount = published.size,
-            latencies = deliveries.map { it.latency },
-            expectedDeliveries = expectedDeliveries
-        )
-
-        /**
-         * The kind-agnostic form: everything above is computed from a published count and the
-         * latencies that were observed, so blocks and attestations share one implementation.
          */
         fun of(
             publishedCount: Int,
@@ -163,17 +110,6 @@ data class DcSlotMessageReport(
         }
     }
 
-    internal fun asBlockReport(): DcBlockReport = DcBlockReport(
-        overall = overall,
-        perWave = perSlot,
-        sizeBytes = config.sizeBytes,
-        publishOffset = config.publishOffset,
-        publishTimes = publishTimes.mapValues { it.value.first() },
-        proposers = publishers.mapValues { (_, ids) -> ids.single() },
-        warmupWaves = warmupWaves,
-        proposerGroups = config.publisherGroups
-    )
-
     companion object {
         fun of(
             published: List<DcSlotMessagePublication>,
@@ -215,86 +151,6 @@ data class DcSlotMessageReport(
     }
 }
 
-/**
- * Delivery of blocks, alongside the two configured quantities worth checking against what the run
- * actually did: [sizeBytes] and [publishOffset].
- *
- * [publishTimes] is the absolute moment each wave's proposer published, so the offset within the
- * slot can be verified rather than assumed — `publishTimes[wave] - waveTimes[wave]` should be
- * [publishOffset] exactly.
- */
-data class DcBlockReport(
-    val overall: DcDeliveryStats,
-    val perWave: Map<Int, DcDeliveryStats>,
-    val sizeBytes: Int,
-    val publishOffset: Duration,
-    val publishTimes: Map<Int, Duration>,
-    val proposers: Map<Int, SimNodeId>,
-    val warmupWaves: Int = 0,
-    /** Groups the proposers were drawn from; null means every group. */
-    val proposerGroups: Set<String>? = null
-) {
-    /** Wave indices behind [overall], i.e. every wave except the warm-up ones. */
-    val measuredWaves: List<Int> get() = perWave.keys.filter { it >= warmupWaves }.sorted()
-
-    override fun toString(): String = buildString {
-        appendLine(
-            "blocks: size=%d B (%.0f KiB) publishOffset=%s proposers=%s".format(
-                sizeBytes,
-                sizeBytes / 1024.0,
-                publishOffset,
-                proposerGroups?.joinToString(prefix = "groups ") ?: "all groups"
-            )
-        )
-        append("blocks overall: $overall")
-        perWave.toSortedMap().forEach { (wave, stats) ->
-            val tag = if (wave < warmupWaves) " [warmup, excluded from overall]" else ""
-            val proposer = proposers[wave]?.let { " proposer=node-$it" } ?: ""
-            val at = publishTimes[wave]?.let { " publishedAt=$it" } ?: ""
-            append("blocks wave $wave$tag$proposer$at: $stats")
-        }
-    }
-
-    companion object {
-        fun of(
-            published: List<DcBlockPublication>,
-            deliveries: List<DcBlockDelivery>,
-            expectedDeliveriesPerBlock: Int,
-            sizeBytes: Int,
-            publishOffset: Duration,
-            warmupWaves: Int = 0,
-            proposerGroups: Set<String>? = null
-        ): DcBlockReport {
-            val deliveriesByWave = deliveries.groupBy { it.waveIndex }
-            val measuredPublished = published.filter { it.block.waveIndex >= warmupWaves }
-            val measuredDeliveries = deliveries.filter { it.waveIndex >= warmupWaves }
-            return DcBlockReport(
-                overall = DcDeliveryStats.of(
-                    publishedCount = measuredPublished.size,
-                    latencies = measuredDeliveries.map { it.latency },
-                    expectedDeliveries = measuredPublished.size * expectedDeliveriesPerBlock,
-                    what = "blocks"
-                ),
-                perWave = published.associate { publication ->
-                    val wave = publication.block.waveIndex
-                    wave to DcDeliveryStats.of(
-                        publishedCount = 1,
-                        latencies = deliveriesByWave[wave].orEmpty().map { it.latency },
-                        expectedDeliveries = expectedDeliveriesPerBlock,
-                        what = "blocks"
-                    )
-                },
-                sizeBytes = sizeBytes,
-                publishOffset = publishOffset,
-                publishTimes = published.associate { it.block.waveIndex to it.publishedAt },
-                proposers = published.associate { it.block.waveIndex to it.block.proposerNodeId },
-                warmupWaves = warmupWaves,
-                proposerGroups = proposerGroups
-            )
-        }
-    }
-}
-
 /** Stats for the whole run plus a breakdown per wave, so a slow wave does not hide in the average. */
 data class DcAttestationReport(
     val overall: DcDeliveryStats,
@@ -313,10 +169,12 @@ data class DcAttestationReport(
     /** Leading waves excluded from [overall]; see [DcAttestationConfig.warmupWaves]. */
     val warmupWaves: Int = 0,
     val mesh: DcMeshStats? = null,
-    /** Separate reports keyed by [DcSlotMessageConfig.type]. */
+    /**
+     * Separate reports keyed by [DcSlotMessageConfig.type]. Block issuance ([DcAttestationConfig
+     * .blocks]) shows up here too, at [DcSlotMessageType.BLOCK] -- it is folded into the same
+     * generic message pipeline as every other type, so there is no separate block-shaped report.
+     */
     val messages: Map<DcSlotMessageType, DcSlotMessageReport> = emptyMap(),
-    /** Compatibility view of a legacy [DcAttestationConfig.blocks] message. */
-    val blocks: DcBlockReport? = null,
     /** Per-group breakdown; empty unless a group in the network was named. See [DcNodeGroup.name]. */
     val groups: DcGroupReport = DcGroupReport(emptyMap()),
     /** Where in the slot each message type's bytes land; see [DcAttestationConfig.slotTrafficBucketDuration]. */
@@ -444,68 +302,8 @@ data class DcAttestationReport(
             }
         mesh?.let { append(it) }
         messages.values.forEach { append(it) }
-        if (DcSlotMessageType.BLOCK !in messages) blocks?.let { append(it) }
         slotTraffic?.let { append(it) }
         append(groups)
-    }
-
-    companion object {
-        fun of(
-            published: List<DcAttestation>,
-            deliveries: List<DcDelivery>,
-            expectedDeliveriesOf: (DcAttestation) -> Int,
-            traffic: DcTrafficReport,
-            gossipBytesSent: Long = 0,
-            gossipBytesReceived: Long = 0,
-            gossipPublishBytesSent: Long = 0,
-            gossipPublishBytesReceived: Long = 0,
-            gossipPublishBytesSentByWave: Map<Int, Long> = emptyMap(),
-            gossipPublishBytesReceivedByWave: Map<Int, Long> = emptyMap(),
-            gossipPublishMessagesSent: Long = 0,
-            gossipPublishMessagesReceived: Long = 0,
-            gossipPublishMessagesSentByWave: Map<Int, Long> = emptyMap(),
-            gossipPublishMessagesReceivedByWave: Map<Int, Long> = emptyMap(),
-            warmupWaves: Int = 0,
-            mesh: DcMeshStats? = null,
-            messages: Map<DcSlotMessageType, DcSlotMessageReport> = emptyMap(),
-            blocks: DcBlockReport? = null
-        ): DcAttestationReport {
-            val deliveriesByWave = deliveries.groupBy { it.waveIndex }
-            val publishedByWave = published.groupBy { it.waveIndex }
-            // The headline figures cover the measured waves only; perWave below still carries every
-            // wave, so the warm-up ramp stays visible rather than being thrown away.
-            val measuredPublished = published.filter { it.waveIndex >= warmupWaves }
-            val measuredDeliveries = deliveries.filter { it.waveIndex >= warmupWaves }
-            return DcAttestationReport(
-                overall = DcDeliveryStats.of(
-                    published = measuredPublished,
-                    deliveries = measuredDeliveries,
-                    expectedDeliveries = measuredPublished.sumOf(expectedDeliveriesOf)
-                ),
-                perWave = publishedByWave.mapValues { (wave, wavePublished) ->
-                    DcDeliveryStats.of(
-                        published = wavePublished,
-                        deliveries = deliveriesByWave[wave].orEmpty(),
-                        expectedDeliveries = wavePublished.sumOf(expectedDeliveriesOf)
-                    )
-                },
-                traffic = traffic,
-                gossipBytesSent = gossipBytesSent,
-                gossipBytesReceived = gossipBytesReceived,
-                gossipPublishBytesSent = gossipPublishBytesSent,
-                gossipPublishBytesReceived = gossipPublishBytesReceived,
-                gossipPublishBytesSentByWave = gossipPublishBytesSentByWave,
-                gossipPublishBytesReceivedByWave = gossipPublishBytesReceivedByWave,
-                gossipPublishMessagesSent = gossipPublishMessagesSent,
-                gossipPublishMessagesReceived = gossipPublishMessagesReceived,
-                gossipPublishMessagesSentByWave = gossipPublishMessagesSentByWave,
-                gossipPublishMessagesReceivedByWave = gossipPublishMessagesReceivedByWave,
-                warmupWaves = warmupWaves,
-                mesh = mesh,
-                messages = messages,
-                blocks = blocks ?: messages[DcSlotMessageType.BLOCK]?.asBlockReport()
-            )
-        }
     }
 }
 

@@ -12,7 +12,7 @@ class DcPeerGraphTest {
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 1
                 this.peers = peers
-                randomSubnets(count = subnetsPerNode, of = subnetCount)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = subnetsPerNode, of = subnetCount)
             }
             .build()
 
@@ -24,8 +24,8 @@ class DcPeerGraphTest {
         println(graph.summary())
         assertThat(graph.subnetDeficiencies()).isEmpty()
         graph.network.nodes.forEach { node ->
-            node.attestationSubnetIds.forEach { subnetId ->
-                assertThat(graph.subnetPeersOf(node.simNodeId, subnetId))
+            node.subnetIdsFor(DcSlotMessageType.FFG_ATTESTATION).forEach { subnetId ->
+                assertThat(graph.subnetPeersOf(node.simNodeId, DcSlotMessageType.FFG_ATTESTATION, subnetId))
                     .describedAs("subnet $subnetId peers of node ${node.simNodeId}")
                     .hasSizeGreaterThanOrEqualTo(2)
             }
@@ -39,8 +39,8 @@ class DcPeerGraphTest {
 
         assertThat(graph.subnetDeficiencies()).isEmpty()
         graph.network.nodes.forEach { node ->
-            node.attestationSubnetIds.forEach { subnetId ->
-                assertThat(graph.subnetPeersOf(node.simNodeId, subnetId))
+            node.subnetIdsFor(DcSlotMessageType.FFG_ATTESTATION).forEach { subnetId ->
+                assertThat(graph.subnetPeersOf(node.simNodeId, DcSlotMessageType.FFG_ATTESTATION, subnetId))
                     .hasSizeGreaterThanOrEqualTo(4)
             }
         }
@@ -53,7 +53,7 @@ class DcPeerGraphTest {
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 1
                 peers = 12
-                subnetsByIndex { index -> setOf(index % 4) }
+                messageSubnetsByIndex(DcSlotMessageType.FFG_ATTESTATION) { index -> setOf(index % 4) }
                 messageSubnetsByIndex(DcSlotMessageType.PAYLOAD_CHUNK) { index ->
                     setOf(index % 8)
                 }
@@ -118,7 +118,7 @@ class DcPeerGraphTest {
             .addGroup(count = 40) {
                 bandwidth = Bandwidths.RESIDENTIAL
                 peers = 2
-                randomSubnets(count = 4, of = 8)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 4, of = 8)
             }
             .build()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 2)
@@ -134,11 +134,11 @@ class DcPeerGraphTest {
             .addGroup(count = 1) {
                 region = EUROPE
                 bandwidth = Bandwidths.VPS
-                subnets = setOf(9)
+                messageSubnets(DcSlotMessageType.FFG_ATTESTATION, setOf(9))
             }
             .addGroup(count = 10) {
                 bandwidth = Bandwidths.RESIDENTIAL
-                subnets = setOf(1)
+                messageSubnets(DcSlotMessageType.FFG_ATTESTATION, setOf(1))
             }
             .build()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 4)
@@ -157,12 +157,12 @@ class DcPeerGraphTest {
                 region = EUROPE
                 bandwidth = Bandwidths.VPS
                 peers = 2
-                subnets = setOf(1)
+                messageSubnets(DcSlotMessageType.FFG_ATTESTATION, setOf(1))
             }
             .addGroup(count = 30) {
                 bandwidth = Bandwidths.RESIDENTIAL
                 peers = 2
-                subnets = setOf(2)
+                messageSubnets(DcSlotMessageType.FFG_ATTESTATION, setOf(2))
             }
             .build()
 

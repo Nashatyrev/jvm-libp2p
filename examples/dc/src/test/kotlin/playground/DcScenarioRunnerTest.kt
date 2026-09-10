@@ -4,7 +4,6 @@ import io.libp2p.example.dc.Bandwidths
 import io.libp2p.example.dc.DcAttestationConfig
 import io.libp2p.example.dc.DcAttestationReport
 import io.libp2p.example.dc.DcAttestationScenario
-import io.libp2p.example.dc.DcAttestationSchedule
 import io.libp2p.example.dc.DcNetworkBuilder
 import io.libp2p.example.dc.DcPublisherSelection
 import io.libp2p.example.dc.DcSlotMessageConfig
@@ -59,7 +58,6 @@ class DcScenarioRunnerTest {
 
                 allMessageSubnets(DcSlotMessageType.BLOB_COLUMN, 128)
                 allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, 64)
-                allSubnets()
             }
             .addGroup(count = 90) {
                 // business
@@ -72,7 +70,6 @@ class DcScenarioRunnerTest {
                 // Model the current validator custody requirement: eight of 128 DA columns per node.
                 randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, 8, 128)
                 randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, 1, 64)
-                randomSubnets(1)
             }
             .build()
 
@@ -151,8 +148,8 @@ class DcScenarioRunnerTest {
                 subnetCount = 64
             )
             .defaults {
-                allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK, subnetCount = 64)
-                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, subnetCount = 64)
+                allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK, of = 64)
+                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, of = 64)
                 // Model the current validator custody requirement: eight of 128 DA columns per node.
                 messageSubnetsByIndex(DcSlotMessageType.BLOB_COLUMN) { index ->
                     (0 until 8).mapTo(mutableSetOf()) { offset ->
@@ -171,7 +168,7 @@ class DcScenarioRunnerTest {
                 bandwidth = Bandwidths.DATACENTER
                 validators = 10000
                 peers = 200
-                allSubnets()
+                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION)
             }
             .addGroup(count = 200) {
                 // business
@@ -184,7 +181,7 @@ class DcScenarioRunnerTest {
                 bandwidth = Bandwidths.DATACENTER
                 validators = 200
                 peers = 100
-                allSubnets()
+                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION)
             }
 //            .addGroup(count = 300) {
 //                // home stakers
@@ -301,7 +298,7 @@ class DcScenarioRunnerTest {
                 // members cannot reach minPeersPerSubnet = 8, and the graph check failed. Even
                 // assignment also keeps committee size identical at every sweep point, so a node's
                 // load does not depend on which subnet it happened to land in.
-                subnetsByIndex { index -> setOf(index % subnetCount) }
+                messageSubnetsByIndex(DcSlotMessageType.FFG_ATTESTATION) { index -> setOf(index % subnetCount) }
             }
             .build()
 
@@ -330,15 +327,25 @@ class DcScenarioRunnerTest {
             }
             .build()
 
+        // A 32nd of the validator set per wave: one slot's worth, from 32 slots per epoch.
+        // Deliberately independent of subnetCount — the 32 here is slots, not subnets — so the
+        // sweep publishes the same 262144 attestations at every point and only their spread over
+        // subnets changes.
+        val attestersPerWave = 1024 * 1024 / 32
         val attestationConfig = DcAttestationConfig(
             waveCount = 8,
-            // A 32nd of the validator set per wave: one slot's worth, from 32 slots per epoch.
-            // Deliberately independent of subnetCount — the 32 here is slots, not subnets — so the
-            // sweep publishes the same 262144 attestations at every point and only their spread
-            // over subnets changes.
-            attestersPerWave = 1024 * 1024 / 32,
+            // RANDOM_VALIDATORS, not ALL_VALIDATORS: the latter ignores attestersPerWave and has
+            // all 1,048,576 validators attest in every wave, 32x a slot's worth.
+            messages = listOf(
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.FFG_ATTESTATION,
+                    sizeBytes = 240,
+                    publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
+                    messagesPerSlot = attestersPerWave,
+                    topics = DcSlotMessageTopics.Subnets(subnetCount)
+                )
+            ),
             waveInterval = 1.seconds,
-            attestationSizeBytes = 240,
             settle = 30.seconds,
             // Waves 0-3 are the transport ramping up, not the protocol: QUIC congestion windows
             // start small and the meshes are still settling, which showed up as a p99 two to three
@@ -348,21 +355,11 @@ class DcScenarioRunnerTest {
             gossipParams = gossipParams,
             randomSeed = 1
         )
-        // randomValidators, not allValidators: the latter ignores attestersPerWave and has all
-        // 1,048,576 validators attest in every wave, 32x a slot's worth.
-        val schedule = DcAttestationSchedule
-            .randomValidators(
-                network = network,
-                waveTimes = attestationConfig.waveTimes,
-                attestersPerWave = attestationConfig.attestersPerWave,
-                randomSeed = 1
-            )
 
         return DcAttestationScenario.run(
             network = network,
             graph = graph,
-            config = attestationConfig,
-            schedule = schedule
+            config = attestationConfig
         )
     }
 

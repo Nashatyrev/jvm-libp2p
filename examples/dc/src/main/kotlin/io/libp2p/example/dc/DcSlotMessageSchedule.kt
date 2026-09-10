@@ -29,10 +29,6 @@ data class DcSlotMessageType(val id: String) {
         val PAYLOAD_CHUNK = DcSlotMessageType("chunk")
         val GOLDFISH_ATTESTATION = DcSlotMessageType("ac-vote")
         val FFG_ATTESTATION = DcSlotMessageType("ffg-vote")
-
-        /** Compatibility alias; FFG attestation is the precise name used by new scenarios. */
-        @Deprecated("Use FFG_ATTESTATION")
-        val FINALITY_ATTESTATION = FFG_ATTESTATION
     }
 }
 
@@ -110,14 +106,35 @@ sealed class DcSlotMessageTopics {
 
 /** How a publisher is drawn from the nodes selected by [DcSlotMessageConfig.publisherGroups]. */
 enum class DcPublisherSelection {
-    /** Every node has the same probability, whether or not it hosts validators. */
+    /**
+     * One producer per slot, drawn uniformly, whether or not it hosts validators; it alone emits
+     * every one of [DcSlotMessageConfig.messagesPerSlot] messages — the shape of a proposer
+     * splitting one payload into many chunks.
+     */
     RANDOM_NODE,
 
-    /** Probability is proportional to validator count; nodes without validators are excluded. */
+    /** As [RANDOM_NODE], but the draw is weighted by validator count; nodes with none are excluded. */
     VALIDATOR_WEIGHTED,
 
     /** Every validator publishes one message in every wave; a node publishes once per validator. */
-    ALL_VALIDATORS
+    ALL_VALIDATORS,
+
+    /**
+     * [DcSlotMessageConfig.messagesPerSlot] distinct validator-running nodes are drawn without
+     * replacement each slot, uniformly over nodes, each publishing exactly one message on one of
+     * its own subscribed subnets — unlike [RANDOM_NODE]/[VALIDATOR_WEIGHTED], the messages of one
+     * slot come from that many different nodes rather than one node emitting them all. The shape of
+     * a sampled subset of attesters voting independently, each on their own subnet.
+     */
+    RANDOM_NODES,
+
+    /**
+     * As [RANDOM_NODES], but the draw is over individual validators rather than nodes: one entry per
+     * validator, so a multi-validator node is proportionally more likely to be drawn and may appear
+     * more than once in the same slot. [DcSlotMessageConfig.messagesPerSlot] may therefore exceed
+     * the node count, as long as it does not exceed the validator count.
+     */
+    RANDOM_VALIDATORS
 }
 
 /**
@@ -175,10 +192,7 @@ data class DcSlotMessage(
     val subnetId: Int? = null,
     /** Topic namespace and subscriber assignment used for this message. */
     val type: DcSlotMessageType
-) {
-    /** Compatibility vocabulary for code that treats slots as attestation waves. */
-    val waveIndex: Int get() = slotIndex
-}
+)
 
 data class DcSlotMessagePublication(
     val message: DcSlotMessage,
@@ -190,9 +204,7 @@ data class DcSlotMessageDelivery(
     val slotIndex: Int,
     val receiverNodeId: SimNodeId,
     val latency: Duration
-) {
-    val waveIndex: Int get() = slotIndex
-}
+)
 
 class DcSlotMessageRecorder {
     private val publications = ConcurrentLinkedQueue<DcSlotMessagePublication>()
@@ -261,26 +273,64 @@ class DcSlotMessageSchedule(
                     "${config.type} subnet topics have no subscribers: $missing"
                 }
             }
-            val candidates = network.nodesInGroups(config.publisherGroups).let { nodes ->
-                when (config.publisherSelection) {
-                    DcPublisherSelection.RANDOM_NODE -> nodes
-                    DcPublisherSelection.VALIDATOR_WEIGHTED,
-                    DcPublisherSelection.ALL_VALIDATORS -> nodes.filter { it.isValidator }
-                }
+
+            val selection = config.publisherSelection
+            val groupNodes = network.nodesInGroups(config.publisherGroups)
+            val where = config.publisherGroups?.let { " in $it" }.orEmpty()
+
+            // RANDOM_NODES additionally requires a subscribed subnet up front, since its draw must
+            // be over nodes that can actually name one -- ALL_VALIDATORS/RANDOM_VALIDATORS check
+            // this per validator instead, since two validators on the same node can differ in which
+            // subnets they cover isn't modelled, but the node-level filter would otherwise still be
+            // correct for them too.
+            val requiresOwnSubnet = config.topics is DcSlotMessageTopics.Subnets &&
+                selection == DcPublisherSelection.RANDOM_NODES
+            val candidates = groupNodes.filter { node ->
+                val validatorOk = selection == DcPublisherSelection.RANDOM_NODE || node.isValidator
+                val subnetOk = !requiresOwnSubnet || node.subnetIdsFor(config.type).isNotEmpty()
+                validatorOk && subnetOk
             }
             require(candidates.isNotEmpty()) {
-                val where = config.publisherGroups?.let { " in $it" }.orEmpty()
-                when (config.publisherSelection) {
+                when (selection) {
                     DcPublisherSelection.RANDOM_NODE -> "No node$where can publish ${config.type}"
-                    DcPublisherSelection.VALIDATOR_WEIGHTED ->
+                    DcPublisherSelection.RANDOM_NODES -> if (requiresOwnSubnet) {
+                        "No node$where runs a validator subscribed to a ${config.type} subnet"
+                    } else {
                         "No node$where runs a validator, so nothing can publish ${config.type}"
-                    DcPublisherSelection.ALL_VALIDATORS ->
+                    }
+                    DcPublisherSelection.VALIDATOR_WEIGHTED,
+                    DcPublisherSelection.ALL_VALIDATORS,
+                    DcPublisherSelection.RANDOM_VALIDATORS ->
                         "No node$where runs a validator, so nothing can publish ${config.type}"
+                }
+            }
+            if (selection == DcPublisherSelection.RANDOM_NODES) {
+                require(candidates.size >= config.messagesPerSlot) {
+                    "${config.type} messagesPerSlot=${config.messagesPerSlot} exceeds the " +
+                        "${candidates.size} eligible nodes$where"
                 }
             }
 
+            // One entry per validator, so a multi-validator node is drawn proportionally more often
+            // -- needed for RANDOM_VALIDATORS, which draws individual validator-slots rather than
+            // whole nodes. A node needs a subscribed subnet the same way RANDOM_NODES' own
+            // candidates do, since each drawn slot must be able to name one.
+            val validatorSlots: List<DcNode<R>>? = if (selection == DcPublisherSelection.RANDOM_VALIDATORS) {
+                val eligible = candidates.filter {
+                    config.topics !is DcSlotMessageTopics.Subnets || it.subnetIdsFor(config.type).isNotEmpty()
+                }
+                eligible.flatMap { node -> List(node.validatorCount) { node } }.also {
+                    require(it.size >= config.messagesPerSlot) {
+                        "${config.type} messagesPerSlot=${config.messagesPerSlot} exceeds the " +
+                            "${it.size} eligible validators$where"
+                    }
+                }
+            } else {
+                null
+            }
+
             val random = Random(randomSeed)
-            val cumulative = if (config.publisherSelection == DcPublisherSelection.VALIDATOR_WEIGHTED) {
+            val cumulative = if (selection == DcPublisherSelection.VALIDATOR_WEIGHTED) {
                 LongArray(candidates.size).also { weights ->
                     var running = 0L
                     candidates.forEachIndexed { index, node ->
@@ -293,42 +343,58 @@ class DcSlotMessageSchedule(
             }
 
             var nextId = 0
+            fun ownSubnetOf(publisher: DcNode<R>): Int? = (config.topics as? DcSlotMessageTopics.Subnets)?.let { topics ->
+                val subscribed = publisher.subnetIdsFor(config.type).filter { it in 0 until topics.subnetCount }
+                require(subscribed.isNotEmpty()) {
+                    "${config.type} publisher node-${publisher.simNodeId} has no subscribed subnet"
+                }
+                subscribed.random(random)
+            }
+
             val messages = slotTimes.indices.flatMap { slotIndex ->
-                if (config.publisherSelection == DcPublisherSelection.ALL_VALIDATORS) {
-                    var indexInSlot = 0
-                    return@flatMap candidates.flatMap { publisher ->
-                        List(publisher.validatorCount) {
-                            val subnetId = (config.topics as? DcSlotMessageTopics.Subnets)?.let { topics ->
-                                val subscribed = publisher.subnetIdsFor(config.type)
-                                    .filter { it in 0 until topics.subnetCount }
-                                require(subscribed.isNotEmpty()) {
-                                    "${config.type} publisher node-${publisher.simNodeId} has no subscribed subnet"
-                                }
-                                subscribed.random(random)
+                when (selection) {
+                    DcPublisherSelection.ALL_VALIDATORS -> {
+                        var indexInSlot = 0
+                        candidates.flatMap { publisher ->
+                            List(publisher.validatorCount) {
+                                DcSlotMessage(
+                                    nextId++,
+                                    slotIndex,
+                                    indexInSlot++,
+                                    publisher.simNodeId,
+                                    ownSubnetOf(publisher),
+                                    config.type
+                                )
                             }
-                            DcSlotMessage(
-                                nextId++,
-                                slotIndex,
-                                indexInSlot++,
-                                publisher.simNodeId,
-                                subnetId,
-                                config.type
-                            )
                         }
                     }
-                }
-                // Chunks belonging to one slot come from the same selected producer.
-                val publisher = if (cumulative == null) {
-                    candidates[random.nextInt(candidates.size)]
-                } else {
-                    val draw = random.nextLong(cumulative.last())
-                    candidates[cumulative.indexOfFirst { it > draw }]
-                }
-                List(config.messagesPerSlot) { indexInSlot ->
-                    val subnetId = (config.topics as? DcSlotMessageTopics.Subnets)?.let {
-                        indexInSlot % it.subnetCount
+
+                    DcPublisherSelection.RANDOM_NODES ->
+                        candidates.shuffled(random).take(config.messagesPerSlot).mapIndexed { indexInSlot, publisher ->
+                            DcSlotMessage(nextId++, slotIndex, indexInSlot, publisher.simNodeId, ownSubnetOf(publisher), config.type)
+                        }
+
+                    DcPublisherSelection.RANDOM_VALIDATORS ->
+                        validatorSlots!!.shuffled(random).take(config.messagesPerSlot)
+                            .mapIndexed { indexInSlot, publisher ->
+                                DcSlotMessage(nextId++, slotIndex, indexInSlot, publisher.simNodeId, ownSubnetOf(publisher), config.type)
+                            }
+
+                    DcPublisherSelection.RANDOM_NODE, DcPublisherSelection.VALIDATOR_WEIGHTED -> {
+                        // Every message of one slot comes from the same selected producer.
+                        val publisher = if (cumulative == null) {
+                            candidates[random.nextInt(candidates.size)]
+                        } else {
+                            val draw = random.nextLong(cumulative.last())
+                            candidates[cumulative.indexOfFirst { it > draw }]
+                        }
+                        List(config.messagesPerSlot) { indexInSlot ->
+                            val subnetId = (config.topics as? DcSlotMessageTopics.Subnets)?.let {
+                                indexInSlot % it.subnetCount
+                            }
+                            DcSlotMessage(nextId++, slotIndex, indexInSlot, publisher.simNodeId, subnetId, config.type)
+                        }
                     }
-                    DcSlotMessage(nextId++, slotIndex, indexInSlot, publisher.simNodeId, subnetId, config.type)
                 }
             }
             return DcSlotMessageSchedule(slotTimes, config, messages)

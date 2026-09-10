@@ -15,14 +15,14 @@ import kotlin.random.Random
  *     bandwidth = Bandwidths.RESIDENTIAL
  *     validators = 1
  *     peers = 20
- *     randomSubnets(count = 2, of = 64)
+ *     randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 2, of = 64)
  * }
  * ```
  *
  * The same type describes the defaults a group inherits (see [DcNetworkBuilder.defaults] and
  * [DcNetworkBuilder.withDefaults]). A group may freely override anything it inherits; what it may
- * not do is set two competing options *of its own* — one placement, one validator allocation and
- * one subnet assignment each, checked in [validated].
+ * not do is set two competing options *of its own* — one placement, one validator allocation, and
+ * at most one subnet assignment per message family — checked in [validated].
  */
 class DcNodeGroup<R> internal constructor(
     private val allRegions: List<R>,
@@ -31,7 +31,6 @@ class DcNodeGroup<R> internal constructor(
 ) {
     private var placement: Placement<R> = Placement.AllRegions()
     private var validatorSpec: ValidatorSpec = ValidatorSpec.PerNode(0)
-    private var subnetSpec: SubnetSpec = SubnetSpec.None
     private val slotMessageSubnetSpecs = mutableMapOf<DcSlotMessageType, SubnetSpec>()
 
     /** Kinds of option assigned by the current block, used to reject competing options. */
@@ -103,43 +102,6 @@ class DcNodeGroup<R> internal constructor(
             validatorSpec = value?.let { ValidatorSpec.Total(it) } ?: ValidatorSpec.PerNode(0)
         }
 
-    // --- subnets: at most one per block --------------------------------------------------------
-
-    /** Attestation subnets every node of the group subscribes to. */
-    var subnets: Set<Int>
-        get() = (subnetSpec as? SubnetSpec.Fixed)?.ids ?: emptySet()
-        set(value) {
-            assign("subnets")
-            subnetSpec = if (value.isEmpty()) SubnetSpec.None else SubnetSpec.Fixed(value.toSet())
-        }
-
-    /**
-     * Assigns subnets per node, called with the index of the node *within this group*. Use it for
-     * deterministic coverage, e.g. `subnetsByIndex { index -> setOf(index % subnetCount) }`.
-     */
-    fun subnetsByIndex(subnetIdsOf: (Int) -> Set<Int>) {
-        assign("subnetsByIndex")
-        subnetSpec = SubnetSpec.ByIndex(subnetIdsOf)
-    }
-
-    /**
-     * Subscribes each node to [count] distinct subnets drawn at random from `0 until of`. [of]
-     * defaults to the network's total subnet count ([DcNetworkBuilder.subnetCount]); pass it
-     * explicitly to draw from a smaller range instead. The draw is seeded per node from the
-     * builder's seed, so it is reproducible across runs and unaffected by the order in which groups
-     * are added.
-     */
-    fun randomSubnets(count: Int, of: Int = subnetCount) {
-        assign("randomSubnets")
-        subnetSpec = SubnetSpec.RandomOf(count, of)
-    }
-
-    /** Subscribes each node of the group to every subnet in the network (`0 until subnetCount`). */
-    fun allSubnets() {
-        assign("allSubnets")
-        subnetSpec = SubnetSpec.Fixed((0 until subnetCount).toSet())
-    }
-
     // --- independently namespaced slot-message subnets ---------------------------------------
 
     /** Assigns fixed [subnetIds] for one slot-message family to every node in the group. */
@@ -158,16 +120,21 @@ class DcNodeGroup<R> internal constructor(
         slotMessageSubnetSpecs[type] = SubnetSpec.ByIndex(subnetIdsOf)
     }
 
-    /** Draws [count] independent subscriptions for [type] from `0 until of`. */
-    fun randomMessageSubnets(type: DcSlotMessageType, count: Int, of: Int) {
+    /**
+     * Draws [count] independent subscriptions for [type] from `0 until of`. [of] defaults to the
+     * network's total subnet count ([DcNetworkBuilder.subnetCount]); pass it explicitly to draw
+     * from a smaller range instead. The draw is seeded per node from the builder's seed, so it is
+     * reproducible across runs and unaffected by the order in which groups are added.
+     */
+    fun randomMessageSubnets(type: DcSlotMessageType, count: Int, of: Int = subnetCount) {
         assignMessageSubnets(type, "randomMessageSubnets")
         slotMessageSubnetSpecs[type] = SubnetSpec.RandomOf(count, of)
     }
 
-    /** Subscribes every node in the group to every subnet for [type]. */
-    fun allMessageSubnets(type: DcSlotMessageType, subnetCount: Int) {
+    /** Subscribes every node in the group to every subnet for [type] (`0 until of`). */
+    fun allMessageSubnets(type: DcSlotMessageType, of: Int = subnetCount) {
         assignMessageSubnets(type, "allMessageSubnets")
-        slotMessageSubnetSpecs[type] = SubnetSpec.Fixed((0 until subnetCount).toSet())
+        slotMessageSubnetSpecs[type] = SubnetSpec.Fixed((0 until of).toSet())
     }
 
     private fun assignMessageSubnets(type: DcSlotMessageType, option: String) {
@@ -182,7 +149,6 @@ class DcNodeGroup<R> internal constructor(
     internal fun copyAsTemplate(): DcNodeGroup<R> = DcNodeGroup(allRegions, subnetCount).also {
         it.placement = placement
         it.validatorSpec = validatorSpec
-        it.subnetSpec = subnetSpec
         it.slotMessageSubnetSpecs.putAll(slotMessageSubnetSpecs)
         it.name = name
         it.bandwidth = bandwidth
@@ -193,7 +159,6 @@ class DcNodeGroup<R> internal constructor(
     internal fun validated(): DcNodeGroup<R> = apply {
         requireSingleAssignment("placement", "region", "regionWeights", "spreadOverRegions")
         requireSingleAssignment("validator allocation", "validators", "validatorsTotal")
-        requireSingleAssignment("subnet assignment", "subnets", "subnetsByIndex", "randomSubnets", "allSubnets")
         slotMessageSubnetSpecs.keys.forEach { type ->
             val prefix = "slot-message:${type.id}:"
             val used = assignedKinds.filter { it.startsWith(prefix) }
@@ -214,18 +179,6 @@ class DcNodeGroup<R> internal constructor(
             is ValidatorSpec.Total -> require(spec.count >= 0) {
                 "validatorsTotal must be >= 0, got ${spec.count}"
             }
-        }
-        when (val spec = subnetSpec) {
-            is SubnetSpec.Fixed -> require(spec.ids.all { it >= 0 }) {
-                "attestation subnet ids must be >= 0, got ${spec.ids}"
-            }
-            is SubnetSpec.RandomOf -> {
-                require(spec.of > 0) { "randomSubnets 'of' must be > 0, got ${spec.of}" }
-                require(spec.count in 0..spec.of) {
-                    "randomSubnets count must be in [0, ${spec.of}], got ${spec.count}"
-                }
-            }
-            else -> Unit
         }
         slotMessageSubnetSpecs.forEach { (type, spec) -> validateSubnetSpec("${type.id} subnet", spec) }
         when (val spec = placement) {
@@ -257,10 +210,6 @@ class DcNodeGroup<R> internal constructor(
         is ValidatorSpec.PerNode -> List(count) { spec.count }
         is ValidatorSpec.Total -> distributeEvenly(spec.count, count)
     }
-
-    /** Subnets of the node at [index] within the group, which is node [simNodeId] of the network. */
-    internal fun subnetsFor(index: Int, simNodeId: SimNodeId, randomSeed: Long): Set<Int> =
-        resolveSubnetSpec("attestation subnet", subnetSpec, index, simNodeId, randomSeed)
 
     /** Independently assigned subnet ids, keyed by slot-message family. */
     internal fun messageSubnetsFor(

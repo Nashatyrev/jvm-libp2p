@@ -21,10 +21,6 @@ data class DcPeerGraph<R>(
 
     fun degree(simNodeId: SimNodeId): Int = adjacency[simNodeId].size
 
-    /** Peers of [simNodeId] that also subscribe to [subnetId]. */
-    fun subnetPeersOf(simNodeId: SimNodeId, subnetId: Int): Set<SimNodeId> =
-        adjacency[simNodeId].filterTo(mutableSetOf()) { network.node(it).subscribesTo(subnetId) }
-
     /** Peers sharing [subnetId] in the independently namespaced [type] family. */
     fun subnetPeersOf(
         simNodeId: SimNodeId,
@@ -38,9 +34,7 @@ data class DcPeerGraph<R>(
     private fun subnetPeersOf(
         simNodeId: SimNodeId,
         subscription: DcSubnetSubscription
-    ): Set<SimNodeId> = subscription.messageType?.let { type ->
-        subnetPeersOf(simNodeId, type, subscription.subnetId)
-    } ?: subnetPeersOf(simNodeId, subscription.subnetId)
+    ): Set<SimNodeId> = subnetPeersOf(simNodeId, subscription.messageType, subscription.subnetId)
 
     /**
      * Full adjacency, both directions. Suitable when every node should know all of its peers.
@@ -124,11 +118,10 @@ data class DcPeerGraph<R>(
         val subnetId: Int,
         val actualPeers: Int,
         val requiredPeers: Int,
-        /** Null denotes the ordinary beacon-attestation subnet family. */
-        val messageType: DcSlotMessageType? = null
+        val messageType: DcSlotMessageType
     ) {
         override fun toString(): String =
-            "SubnetDeficiency(node=$simNodeId, subnet=${messageType?.id ?: "beacon-attestation"}/$subnetId, " +
+            "SubnetDeficiency(node=$simNodeId, subnet=${messageType.id}/$subnetId, " +
                 "actual=$actualPeers, required=$requiredPeers)"
     }
 }
@@ -186,9 +179,7 @@ fun <R> DcNetwork<R>.peerGraph(
     // 1. subnet coverage
     if (minPeersPerSubnet > 0) {
         subnetSubscriptions().forEach { subscription ->
-            val subscribers = subscription.messageType?.let { type ->
-                nodesSubscribedTo(type, subscription.subnetId)
-            } ?: nodesSubscribedTo(subscription.subnetId)
+            val subscribers = nodesSubscribedTo(subscription.messageType, subscription.subnetId)
             val shuffledSubscribers = subscribers.map { it.simNodeId }.shuffled(random)
             if (shuffledSubscribers.size < 2) return@forEach
             // Connecting each subscriber to the next `span` around the ring gives it 2*span subnet

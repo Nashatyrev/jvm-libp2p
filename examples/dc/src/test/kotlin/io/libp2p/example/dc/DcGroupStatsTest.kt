@@ -15,13 +15,24 @@ import kotlin.time.Duration.Companion.seconds
  */
 class DcGroupStatsTest {
 
+    /** 4 nodes, each drawing a fresh independent random attester -- distinct from `RANDOM_NODE`. */
+    private fun ffgMessages(subnetCount: Int = 2) = listOf(
+        DcSlotMessageConfig(
+            type = DcSlotMessageType.FFG_ATTESTATION,
+            sizeBytes = 240,
+            publisherSelection = DcPublisherSelection.RANDOM_NODES,
+            messagesPerSlot = 4,
+            topics = DcSlotMessageTopics.Subnets(subnetCount)
+        )
+    )
+
     /** `pools` holds the bulk of the validators, `home` the tail — same shape as [DcBlockScenarioTest]. */
     private fun namedGroups() = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 2)
         .defaults {
             spreadOverRegions()
             bandwidth = Bandwidths.RESIDENTIAL
             peers = 5
-            randomSubnets(count = 1, of = 2)
+            randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1, of = 2)
         }
         .addGroup(count = 2) {
             name = "pools"
@@ -41,11 +52,11 @@ class DcGroupStatsTest {
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 1
                 peers = 5
-                randomSubnets(count = 1, of = 2)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1, of = 2)
             }
             .build()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(waveCount = 1, attestersPerWave = 4, randomSeed = 7)
+        val config = DcAttestationConfig(waveCount = 1, messages = ffgMessages(), randomSeed = 7)
 
         val report = DcAttestationScenario.run(network, graph, config)
 
@@ -58,7 +69,7 @@ class DcGroupStatsTest {
     fun `population counts per group reconcile with the network`() {
         val network = namedGroups()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(waveCount = 1, attestersPerWave = 4, settle = 12.seconds, randomSeed = 7)
+        val config = DcAttestationConfig(waveCount = 1, settle = 12.seconds, messages = ffgMessages(), randomSeed = 7)
 
         val report = DcAttestationScenario.run(network, graph, config)
 
@@ -78,7 +89,7 @@ class DcGroupStatsTest {
     fun `per-group udp and gossip byte totals add up to the whole-run totals`() {
         val network = namedGroups()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(waveCount = 2, attestersPerWave = 4, settle = 12.seconds, randomSeed = 7)
+        val config = DcAttestationConfig(waveCount = 2, settle = 12.seconds, messages = ffgMessages(), randomSeed = 7)
 
         val report = DcAttestationScenario.run(network, graph, config)
         val groups = report.groups.groups.values
@@ -97,9 +108,9 @@ class DcGroupStatsTest {
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val config = DcAttestationConfig(
             waveCount = 2,
-            attestersPerWave = 4,
             settle = 12.seconds,
             blocks = DcBlockConfig(sizeBytes = 32 * 1024, proposerGroups = setOf("pools")),
+            messages = ffgMessages(),
             randomSeed = 7
         )
 
@@ -108,10 +119,11 @@ class DcGroupStatsTest {
         val home = requireNotNull(report.groups["home"])
         val poolsBlocks = requireNotNull(pools.messagesReceived[DcSlotMessageType.BLOCK])
         val homeBlocks = requireNotNull(home.messagesReceived[DcSlotMessageType.BLOCK])
+        val blocks = requireNotNull(report.messages[DcSlotMessageType.BLOCK])
 
         assertThat(poolsBlocks.publishedCount + homeBlocks.publishedCount)
             .describedAs("every block came from pools, the only allowed proposer group")
-            .isEqualTo(report.blocks!!.overall.publishedCount)
+            .isEqualTo(blocks.overall.publishedCount)
         assertThat(homeBlocks.publishedCount)
             .describedAs("home never proposes under proposerGroups = [pools]")
             .isZero()
@@ -120,9 +132,9 @@ class DcGroupStatsTest {
         assertThat(poolsBlocks.deliveryRatio).isEqualTo(1.0)
         assertThat(homeBlocks.deliveryRatio).isEqualTo(1.0)
         assertThat(poolsBlocks.expectedDeliveries + homeBlocks.expectedDeliveries)
-            .isEqualTo(report.blocks!!.overall.expectedDeliveries)
+            .isEqualTo(blocks.overall.expectedDeliveries)
         assertThat(poolsBlocks.actualDeliveries + homeBlocks.actualDeliveries)
-            .isEqualTo(report.blocks!!.overall.actualDeliveries)
+            .isEqualTo(blocks.overall.actualDeliveries)
     }
 
     @Test
@@ -131,9 +143,9 @@ class DcGroupStatsTest {
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val config = DcAttestationConfig(
             waveCount = 2,
-            attestersPerWave = 4,
             settle = 12.seconds,
             blocks = DcBlockConfig(sizeBytes = 32 * 1024),
+            messages = ffgMessages(),
             randomSeed = 7
         )
 
@@ -156,7 +168,7 @@ class DcGroupStatsTest {
     fun `mesh sizes are reported per group`() {
         val network = namedGroups()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(waveCount = 1, attestersPerWave = 4, settle = 12.seconds, randomSeed = 7)
+        val config = DcAttestationConfig(waveCount = 1, settle = 12.seconds, messages = ffgMessages(), randomSeed = 7)
 
         val report = DcAttestationScenario.run(network, graph, config)
 
@@ -173,7 +185,7 @@ class DcGroupStatsTest {
                 spreadOverRegions()
                 bandwidth = Bandwidths.RESIDENTIAL
                 peers = 4
-                randomSubnets(count = 1, of = 2)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1, of = 2)
             }
             .addGroup(count = 2) {
                 name = "pools"
@@ -182,7 +194,7 @@ class DcGroupStatsTest {
             .addGroup(count = 6) { validators = 1 }
             .build()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(waveCount = 1, attestersPerWave = 4, settle = 12.seconds, randomSeed = 7)
+        val config = DcAttestationConfig(waveCount = 1, settle = 12.seconds, messages = ffgMessages(), randomSeed = 7)
 
         val report = DcAttestationScenario.run(network, graph, config)
 
@@ -197,7 +209,7 @@ class DcGroupStatsTest {
     fun `toString prints a per-group section when groups were named`() {
         val network = namedGroups()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(waveCount = 1, attestersPerWave = 4, settle = 12.seconds, randomSeed = 7)
+        val config = DcAttestationConfig(waveCount = 1, settle = 12.seconds, messages = ffgMessages(), randomSeed = 7)
 
         val report = DcAttestationScenario.run(network, graph, config)
 
@@ -213,10 +225,10 @@ class DcGroupStatsTest {
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val config = DcAttestationConfig(
             waveCount = 2,
-            attestersPerWave = 4,
             waveInterval = 12.seconds,
             settle = 12.seconds,
             blocks = DcBlockConfig(sizeBytes = 8 * 1024, publishOffset = 2.seconds, proposerGroups = setOf("pools")),
+            messages = ffgMessages(),
             randomSeed = 7
         )
 
@@ -245,11 +257,11 @@ class DcGroupStatsTest {
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 1
                 peers = 5
-                randomSubnets(count = 1, of = 2)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1, of = 2)
             }
             .build()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(waveCount = 1, attestersPerWave = 4, settle = 12.seconds, randomSeed = 7)
+        val config = DcAttestationConfig(waveCount = 1, settle = 12.seconds, messages = ffgMessages(), randomSeed = 7)
 
         val report = DcAttestationScenario.run(network, graph, config)
 
@@ -263,7 +275,7 @@ class DcGroupStatsTest {
     fun `toString prints each group's own slot traffic table underneath its other figures`() {
         val network = namedGroups()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(waveCount = 1, attestersPerWave = 4, settle = 12.seconds, randomSeed = 7)
+        val config = DcAttestationConfig(waveCount = 1, settle = 12.seconds, messages = ffgMessages(), randomSeed = 7)
 
         val report = DcAttestationScenario.run(network, graph, config)
 

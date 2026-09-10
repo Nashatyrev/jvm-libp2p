@@ -11,16 +11,18 @@ import kotlin.time.Duration.Companion.milliseconds
 class DcAttestationStatsTest {
 
     private fun delivery(id: Int, receiver: Int, latencyMs: Int, wave: Int = 0) =
-        DcDelivery(
-            attestationId = id,
-            waveIndex = wave,
+        DcSlotMessageDelivery(
+            messageId = id,
+            slotIndex = wave,
             receiverNodeId = receiver,
-            subnetId = 0,
             latency = latencyMs.milliseconds
         )
 
-    private fun attestation(id: Int, wave: Int = 0) =
-        DcAttestation(id = id, waveIndex = wave, attesterNodeId = 0, subnetId = 0)
+    private fun message(id: Int, wave: Int = 0) =
+        DcSlotMessage(id = id, slotIndex = wave, indexInSlot = 0, publisherNodeId = 0, type = DcSlotMessageType.FFG_ATTESTATION)
+
+    private fun publication(id: Int, wave: Int = 0, publishedAt: Duration = Duration.ZERO) =
+        DcSlotMessagePublication(message(id, wave), publishedAt)
 
     private fun packet(direction: DatagramPacketTraceEvent.Direction, nodeId: Int, atMs: Int, bytes: Int) =
         DatagramPacketTraceEvent(
@@ -34,11 +36,6 @@ class DcAttestationStatsTest {
             bytes = bytes,
             payloadSha256 = "deadbeef"
         )
-
-    private fun noTraffic(nodeCount: Int = 1) = DcTrafficReport(
-        overall = DcTrafficStats(nodeCount, packetsSent = 0, packetsReceived = 0, bytesSent = 0, bytesReceived = 0),
-        perWave = emptyMap()
-    )
 
     @Test
     fun `percentiles use nearest rank over the observed latencies`() {
@@ -65,10 +62,13 @@ class DcAttestationStatsTest {
 
     @Test
     fun `reports percentiles and delivery ratio`() {
-        val published = listOf(attestation(0))
         val deliveries = (1..10).map { delivery(id = 0, receiver = it, latencyMs = it * 10) }
 
-        val stats = DcDeliveryStats.of(published, deliveries, expectedDeliveries = 10)
+        val stats = DcDeliveryStats.of(
+            publishedCount = 1,
+            latencies = deliveries.map { it.latency },
+            expectedDeliveries = 10
+        )
 
         assertThat(stats.publishedCount).isEqualTo(1)
         assertThat(stats.actualDeliveries).isEqualTo(10)
@@ -84,10 +84,13 @@ class DcAttestationStatsTest {
 
     @Test
     fun `counts deliveries that never arrived`() {
-        val published = listOf(attestation(0))
         val deliveries = (1..8).map { delivery(id = 0, receiver = it, latencyMs = 20) }
 
-        val stats = DcDeliveryStats.of(published, deliveries, expectedDeliveries = 10)
+        val stats = DcDeliveryStats.of(
+            publishedCount = 1,
+            latencies = deliveries.map { it.latency },
+            expectedDeliveries = 10
+        )
 
         assertThat(stats.actualDeliveries).isEqualTo(8)
         assertThat(stats.missingDeliveries).isEqualTo(2)
@@ -98,34 +101,35 @@ class DcAttestationStatsTest {
 
     @Test
     fun `breaks statistics down per wave`() {
-        val published = listOf(attestation(0, wave = 0), attestation(1, wave = 1))
+        val published = listOf(publication(0, wave = 0), publication(1, wave = 1))
         val deliveries = listOf(
             delivery(id = 0, receiver = 1, latencyMs = 10, wave = 0),
             delivery(id = 0, receiver = 2, latencyMs = 30, wave = 0),
             delivery(id = 1, receiver = 1, latencyMs = 100, wave = 1),
             delivery(id = 1, receiver = 2, latencyMs = 300, wave = 1)
         )
+        val config = DcSlotMessageConfig(DcSlotMessageType.FFG_ATTESTATION, sizeBytes = 240)
 
-        val report = DcAttestationReport.of(published, deliveries, expectedDeliveriesOf = { 2 }, traffic = noTraffic())
+        val report = DcSlotMessageReport.of(published, deliveries, expectedDeliveriesOf = { 2 }, config = config)
 
         assertThat(report.overall.actualDeliveries).isEqualTo(4)
         assertThat(report.overall.expectedDeliveries).isEqualTo(4)
-        assertThat(report.perWave.keys).containsExactly(0, 1)
-        assertThat(report.perWave.getValue(0).p50).isEqualTo(10.milliseconds)
-        assertThat(report.perWave.getValue(1).p50).isEqualTo(100.milliseconds)
-        assertThat(report.perWave.getValue(1).max).isEqualTo(300.milliseconds)
+        assertThat(report.perSlot.keys).containsExactly(0, 1)
+        assertThat(report.perSlot.getValue(0).p50).isEqualTo(10.milliseconds)
+        assertThat(report.perSlot.getValue(1).p50).isEqualTo(100.milliseconds)
+        assertThat(report.perSlot.getValue(1).max).isEqualTo(300.milliseconds)
     }
 
     @Test
     fun `recorder keeps everything published and delivered`() {
-        val recorder = DcAttestationRecorder()
-        recorder.recordPublished(attestation(1))
-        recorder.recordPublished(attestation(0))
+        val recorder = DcSlotMessageRecorder()
+        recorder.recordPublished(message(1), Duration.ZERO)
+        recorder.recordPublished(message(0), Duration.ZERO)
         recorder.recordDelivered(delivery(id = 1, receiver = 5, latencyMs = 10))
         recorder.recordDelivered(delivery(id = 0, receiver = 4, latencyMs = 20))
 
-        assertThat(recorder.published().map { it.id }).containsExactly(0, 1)
-        assertThat(recorder.deliveries().map { it.attestationId }).containsExactly(0, 1)
+        assertThat(recorder.published().map { it.message.id }).containsExactly(0, 1)
+        assertThat(recorder.deliveries().map { it.messageId }).containsExactly(0, 1)
     }
 
     @Test

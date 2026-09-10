@@ -27,21 +27,32 @@ class DcAttestationScenarioTest {
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = validatorsPerNode
                 this.peers = peers
-                randomSubnets(count = subnetsPerNode, of = subnetCount)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = subnetsPerNode, of = subnetCount)
             }
             .build()
+
+    /** FFG attestations drawn as [attestersPerWave] distinct nodes per wave, over [subnetCount] subnets. */
+    private fun ffgMessages(attestersPerWave: Int, subnetCount: Int) = listOf(
+        DcSlotMessageConfig(
+            type = DcSlotMessageType.FFG_ATTESTATION,
+            sizeBytes = 240,
+            publisherSelection = DcPublisherSelection.RANDOM_NODES,
+            messagesPerSlot = attestersPerWave,
+            topics = DcSlotMessageTopics.Subnets(subnetCount)
+        )
+    )
 
     @Test
     fun `attestation waves reach every subscriber and report latency percentiles`() {
         val network = population(nodeCount = 40, subnetCount = 4, subnetsPerNode = 2, peers = 10)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
+        val attestersPerWave = 8
         val config = DcAttestationConfig(
             waveCount = 2,
-            attestersPerWave = 8,
-            attestationSizeBytes = 240,
             warmup = 30.seconds,
             waveInterval = 12.seconds,
             settle = 12.seconds,
+            messages = ffgMessages(attestersPerWave, subnetCount = 4),
             randomSeed = 7
         )
 
@@ -51,7 +62,7 @@ class DcAttestationScenarioTest {
         assertThat(report.messages).containsKey(DcSlotMessageType.FFG_ATTESTATION)
         assertThat(report.messages.getValue(DcSlotMessageType.FFG_ATTESTATION).overall)
             .isEqualTo(report.overall)
-        assertThat(report.overall.publishedCount).isEqualTo(config.waveCount * config.attestersPerWave)
+        assertThat(report.overall.publishedCount).isEqualTo(config.waveCount * attestersPerWave)
         assertThat(report.overall.deliveryRatio)
             .describedAs("delivery ratio; percentiles are meaningless if attestations went missing")
             .isEqualTo(1.0)
@@ -77,8 +88,8 @@ class DcAttestationScenarioTest {
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val base = DcAttestationConfig(
             waveCount = 4,
-            attestersPerWave = 8,
             warmupWaves = 0,
+            messages = ffgMessages(attestersPerWave = 8, subnetCount = 4),
             randomSeed = 7
         )
         val all = DcAttestationScenario.run(network, graph, base)
@@ -105,8 +116,13 @@ class DcAttestationScenarioTest {
 
     @Test
     fun `warmupWaves must leave a wave to measure`() {
-        assertThatThrownBy { DcAttestationConfig(waveCount = 3, warmupWaves = 3) }
-            .hasMessageContaining("must leave at least one measured wave")
+        assertThatThrownBy {
+            DcAttestationConfig(
+                waveCount = 3,
+                warmupWaves = 3,
+                messages = ffgMessages(attestersPerWave = 1, subnetCount = 1)
+            )
+        }.hasMessageContaining("must leave at least one measured wave")
     }
 
     @Test
@@ -115,9 +131,9 @@ class DcAttestationScenarioTest {
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 3)
         val config = DcAttestationConfig(
             waveCount = 1,
-            attestersPerWave = 4,
             warmup = 30.seconds,
             settle = 12.seconds,
+            messages = ffgMessages(attestersPerWave = 4, subnetCount = 4),
             randomSeed = 11
         )
 
@@ -130,33 +146,39 @@ class DcAttestationScenarioTest {
     }
 
     @Test
-    fun `schedule picks the requested number of distinct attesters per wave`() {
+    fun `RANDOM_NODES picks the requested number of distinct publishers per slot`() {
         val network = population(nodeCount = 40, subnetCount = 8, subnetsPerNode = 2, peers = 10)
-        val schedule = DcAttestationSchedule.random(
+        val schedule = DcSlotMessageSchedule.create(
             network = network,
-            waveTimes = DcAttestationSchedule.waveTimes(count = 3, first = 30.seconds, interval = 12.seconds),
-            attestersPerWave = 10,
+            waves = DcSlotMessageWaves(count = 3, first = 30.seconds, interval = 12.seconds),
+            config = DcSlotMessageConfig(
+                type = DcSlotMessageType.FFG_ATTESTATION,
+                sizeBytes = 240,
+                publisherSelection = DcPublisherSelection.RANDOM_NODES,
+                messagesPerSlot = 10,
+                topics = DcSlotMessageTopics.Subnets(8)
+            ),
             randomSeed = 4
         )
 
-        assertThat(schedule.attestations).hasSize(30)
-        schedule.attestations.groupBy { it.waveIndex }.forEach { (wave, attestations) ->
-            assertThat(attestations.map { it.attesterNodeId })
-                .describedAs("attesters in wave %s", wave)
+        assertThat(schedule.messages).hasSize(30)
+        schedule.messages.groupBy { it.slotIndex }.forEach { (slot, messages) ->
+            assertThat(messages.map { it.publisherNodeId })
+                .describedAs("publishers in slot %s", slot)
                 .hasSize(10)
                 .doesNotHaveDuplicates()
         }
-        // an attester always attests on a subnet it actually subscribes to
-        schedule.attestations.forEach { attestation ->
-            assertThat(network.node(attestation.attesterNodeId).attestationSubnetIds)
-                .contains(attestation.subnetId)
+        // a publisher always attests on a subnet it actually subscribes to
+        schedule.messages.forEach { message ->
+            assertThat(network.node(message.publisherNodeId).subnetIdsFor(DcSlotMessageType.FFG_ATTESTATION))
+                .contains(requireNotNull(message.subnetId))
         }
-        assertThat(schedule.attestationsOf(schedule.attestations.first().attesterNodeId)).isNotEmpty()
+        assertThat(schedule.messagesOf(schedule.messages.first().publisherNodeId)).isNotEmpty()
     }
 
     @Test
-    fun `validator-level schedule draws the requested attesters per wave from the validator set`() {
-        // 10 nodes x 4 validators = 40 validator slots, so 25 per wave is well over the node count.
+    fun `RANDOM_VALIDATORS draws the requested publishers per slot from the validator set`() {
+        // 10 nodes x 4 validators = 40 validator slots, so 25 per slot is well over the node count.
         val network = population(
             nodeCount = 10,
             subnetCount = 4,
@@ -164,31 +186,37 @@ class DcAttestationScenarioTest {
             peers = 4,
             validatorsPerNode = 4
         )
-        val schedule = DcAttestationSchedule.randomValidators(
+        val schedule = DcSlotMessageSchedule.create(
             network = network,
-            waveTimes = DcAttestationSchedule.waveTimes(count = 3, first = 30.seconds, interval = 12.seconds),
-            attestersPerWave = 25,
+            waves = DcSlotMessageWaves(count = 3, first = 30.seconds, interval = 12.seconds),
+            config = DcSlotMessageConfig(
+                type = DcSlotMessageType.FFG_ATTESTATION,
+                sizeBytes = 240,
+                publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
+                messagesPerSlot = 25,
+                topics = DcSlotMessageTopics.Subnets(4)
+            ),
             randomSeed = 4
         )
 
-        assertThat(schedule.attestations).hasSize(75)
-        schedule.attestations.groupBy { it.waveIndex }.forEach { (wave, attestations) ->
-            assertThat(attestations)
+        assertThat(schedule.messages).hasSize(75)
+        schedule.messages.groupBy { it.slotIndex }.forEach { (slot, messages) ->
+            assertThat(messages)
                 .describedAs(
-                    "attesters in wave %s; drawing over validators rather than nodes is " +
-                        "what lets a wave exceed the 10 nodes",
-                    wave
+                    "publishers in slot %s; drawing over validators rather than nodes is " +
+                        "what lets a slot exceed the 10 nodes",
+                    slot
                 )
                 .hasSize(25)
         }
-        schedule.attestations.forEach { attestation ->
-            assertThat(network.node(attestation.attesterNodeId).attestationSubnetIds)
-                .contains(attestation.subnetId)
+        schedule.messages.forEach { message ->
+            assertThat(network.node(message.publisherNodeId).subnetIdsFor(DcSlotMessageType.FFG_ATTESTATION))
+                .contains(requireNotNull(message.subnetId))
         }
     }
 
     @Test
-    fun `validator-level schedule rejects asking for more attesters than there are validators`() {
+    fun `RANDOM_VALIDATORS rejects asking for more publishers than there are validators`() {
         val network = population(
             nodeCount = 10,
             subnetCount = 4,
@@ -198,12 +226,18 @@ class DcAttestationScenarioTest {
         )
 
         assertThatThrownBy {
-            DcAttestationSchedule.randomValidators(
+            DcSlotMessageSchedule.create(
                 network = network,
-                waveTimes = listOf(30.seconds),
-                attestersPerWave = 41
+                slotTimes = listOf(30.seconds),
+                config = DcSlotMessageConfig(
+                    type = DcSlotMessageType.FFG_ATTESTATION,
+                    sizeBytes = 240,
+                    publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
+                    messagesPerSlot = 41,
+                    topics = DcSlotMessageTopics.Subnets(4)
+                )
             )
-        }.hasMessageContaining("exceeds the 40 validators")
+        }.hasMessageContaining("exceeds the 40 eligible validators")
     }
 
     @Test
@@ -217,7 +251,7 @@ class DcAttestationScenarioTest {
                 uploadBandwidth = up
                 validators = 1
                 peers = 2
-                randomSubnets(count = 1, of = 2)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1, of = 2)
             }
             .build()
 
@@ -290,15 +324,21 @@ class DcAttestationScenarioTest {
     }
 
     @Test
-    fun `rejects asking for more attesters than there are eligible validators`() {
+    fun `RANDOM_NODES rejects asking for more publishers than there are eligible nodes`() {
         val network = population(nodeCount = 10, subnetCount = 4, subnetsPerNode = 1, peers = 4)
 
         assertThatThrownBy {
-            DcAttestationSchedule.random(
+            DcSlotMessageSchedule.create(
                 network = network,
-                waveTimes = listOf(30.seconds),
-                attestersPerWave = 50
+                slotTimes = listOf(30.seconds),
+                config = DcSlotMessageConfig(
+                    type = DcSlotMessageType.FFG_ATTESTATION,
+                    sizeBytes = 240,
+                    publisherSelection = DcPublisherSelection.RANDOM_NODES,
+                    messagesPerSlot = 50,
+                    topics = DcSlotMessageTopics.Subnets(4)
+                )
             )
-        }.hasMessageContaining("exceeds the 10 nodes")
+        }.hasMessageContaining("exceeds the 10 eligible nodes")
     }
 }

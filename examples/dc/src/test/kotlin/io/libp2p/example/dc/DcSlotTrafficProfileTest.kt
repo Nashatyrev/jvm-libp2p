@@ -372,16 +372,24 @@ class DcSlotTrafficProfileTest {
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 1
                 peers = 5
-                randomSubnets(count = 1, of = 2)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1, of = 2)
             }
             .build()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val config = DcAttestationConfig(
             waveCount = 2,
-            attestersPerWave = 4,
             waveInterval = 12.seconds,
             settle = 12.seconds,
             blocks = DcBlockConfig(sizeBytes = 8 * 1024, publishOffset = 2.seconds),
+            messages = listOf(
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.FFG_ATTESTATION,
+                    sizeBytes = 240,
+                    publisherSelection = DcPublisherSelection.RANDOM_NODES,
+                    messagesPerSlot = 4,
+                    topics = DcSlotMessageTopics.Subnets(2)
+                )
+            ),
             randomSeed = 7
         )
 
@@ -407,7 +415,11 @@ class DcSlotTrafficProfileTest {
 
     @Test
     fun `slotTrafficBucketDuration configures the resolution`() {
-        val config = DcAttestationConfig(waveInterval = 4.seconds, slotTrafficBucketDuration = 500.milliseconds)
+        val config = DcAttestationConfig(
+            waveInterval = 4.seconds,
+            slotTrafficBucketDuration = 500.milliseconds,
+            messages = listOf(DcSlotMessageConfig(type = DcSlotMessageType.FFG_ATTESTATION, sizeBytes = 240))
+        )
         assertThat(config.slotTrafficBucketDuration).isEqualTo(500.milliseconds)
     }
 

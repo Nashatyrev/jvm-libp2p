@@ -31,13 +31,12 @@ data class DcNode<R>(
     val validatorCount: Int,
     /** Number of gossip peers this node maintains connections to. */
     val peerCount: Int,
-    /** Attestation subnets this node subscribes to. */
-    val attestationSubnetIds: Set<Int>,
     /**
-     * Subnet subscriptions for independently routed slot-message families.
+     * Subnet subscriptions, independently routed per slot-message family — including FFG
+     * attestation, which is a [DcSlotMessageType] like any other.
      *
      * The numeric ids are local to each [DcSlotMessageType]: payload subnet 7, blob-column subnet
-     * 7, and finality-attestation subnet 7 are three different gossip meshes.
+     * 7, and FFG-attestation subnet 7 are three different gossip meshes.
      */
     val slotMessageSubnetIds: Map<DcSlotMessageType, Set<Int>> = emptyMap(),
     /**
@@ -57,8 +56,6 @@ data class DcNode<R>(
 
     val isValidator: Boolean get() = validatorCount > 0
 
-    fun subscribesTo(subnetId: Int): Boolean = subnetId in attestationSubnetIds
-
     fun subscribesTo(type: DcSlotMessageType, subnetId: Int): Boolean =
         subnetId in subnetIdsFor(type)
 
@@ -66,9 +63,8 @@ data class DcNode<R>(
         slotMessageSubnetIds[type].orEmpty()
 
     internal fun subnetSubscriptions(): Set<DcSubnetSubscription> = buildSet {
-        attestationSubnetIds.forEach { add(DcSubnetSubscription.attestation(it)) }
         slotMessageSubnetIds.forEach { (type, subnetIds) ->
-            subnetIds.forEach { add(DcSubnetSubscription.slotMessage(type, it)) }
+            subnetIds.forEach { add(DcSubnetSubscription(type, it)) }
         }
     }
 
@@ -78,31 +74,21 @@ data class DcNode<R>(
         val messageSubnets = slotMessageSubnetIds.entries
             .sortedBy { it.key.id }
             .joinToString { (type, ids) -> "${type.id}=${ids.sorted()}" }
-        val extra = if (messageSubnets.isEmpty()) "" else ", messageSubnets={$messageSubnets}"
-        return "$id[$group$region, $link, validators=$validatorCount, peers=$peerCount, " +
-            "attestationSubnets=${attestationSubnetIds.sorted()}$extra]"
+        val extra = if (messageSubnets.isEmpty()) "" else ", subnets={$messageSubnets}"
+        return "$id[$group$region, $link, validators=$validatorCount, peers=$peerCount$extra]"
     }
 }
 
-/** One logical subnet. Numeric ids are namespaced by the traffic family. */
+/** One logical subnet. Numeric ids are namespaced by the message-type family. */
 data class DcSubnetSubscription(
-    /** Null denotes the ordinary beacon-attestation family. */
-    val messageType: DcSlotMessageType?,
+    val messageType: DcSlotMessageType,
     val subnetId: Int
 ) {
     init {
         require(subnetId >= 0) { "subnetId must be >= 0, got $subnetId" }
     }
 
-    override fun toString(): String =
-        "${messageType?.id ?: "beacon-attestation"}/$subnetId"
-
-    companion object {
-        fun attestation(subnetId: Int) = DcSubnetSubscription(null, subnetId)
-
-        fun slotMessage(type: DcSlotMessageType, subnetId: Int) =
-            DcSubnetSubscription(type, subnetId)
-    }
+    override fun toString(): String = "${messageType.id}/$subnetId"
 }
 
 /** Convenience constructors for [Bandwidth] in the units people actually quote links in. */

@@ -23,7 +23,7 @@ import kotlin.time.Duration
  *         bandwidth = Bandwidths.RESIDENTIAL
  *         peers = 20
  *         spreadOverRegions()
- *         randomSubnets(count = 2)
+ *         randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 2)
  *     }
  *     // 4 big staking operators in Europe, subscribed to every subnet
  *     .addGroup(count = 4) {
@@ -31,7 +31,7 @@ import kotlin.time.Duration
  *         bandwidth = Bandwidths.DATACENTER
  *         validators = 500
  *         peers = 100
- *         allSubnets()
+ *         allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION)
  *     }
  *     // 60 home stakers on the defaults above
  *     .addGroup(count = 60) { validators = 1 }
@@ -46,9 +46,9 @@ import kotlin.time.Duration
  *
  * Placement is deterministic (round-robin, or largest remainder for weighted splits) and random
  * subnet draws are seeded per node from [randomSeed], so a given builder sequence always produces
- * the same network. [subnetCount] is the network-wide total attestation subnets; it is the default
- * range for [DcNodeGroup.randomSubnets] and [DcNodeGroup.allSubnets], but individual groups can
- * still name a smaller range or a fixed set of subnet ids.
+ * the same network. [subnetCount] is the network-wide default subnet range; it is the default `of`
+ * for [DcNodeGroup.randomMessageSubnets] and [DcNodeGroup.allMessageSubnets], but individual groups
+ * can still name a smaller range or a fixed set of subnet ids per message family.
  *
  * [build] hands back both the [DcNode] descriptors and the [QuicNetworkTopology] to feed to the
  * simulator; the two are index-aligned, so `network.nodes[i].simNodeId == i`.
@@ -120,7 +120,6 @@ class DcNetworkBuilder<R>(
                 uploadBandwidthBytesPerSecond = uploadBandwidthBytesPerSecond,
                 validatorCount = groupValidators[index],
                 peerCount = group.peers,
-                attestationSubnetIds = group.subnetsFor(index, simNodeId, randomSeed),
                 slotMessageSubnetIds = group.messageSubnetsFor(index, simNodeId, randomSeed),
                 groupName = group.name
             )
@@ -185,11 +184,6 @@ data class DcNetwork<R>(
 
     fun nodesByRegion(): Map<R, List<DcNode<R>>> = nodes.groupBy { it.region }
 
-    /** All attestation subnets at least one node subscribes to. */
-    fun attestationSubnetIds(): Set<Int> = nodes.flatMapTo(sortedSetOf()) { it.attestationSubnetIds }
-
-    fun nodesSubscribedTo(subnetId: Int): List<DcNode<R>> = nodes.filter { it.subscribesTo(subnetId) }
-
     /** All subnet ids used by one independently routed slot-message family. */
     fun messageSubnetIds(type: DcSlotMessageType): Set<Int> =
         nodes.flatMapTo(sortedSetOf()) { it.subnetIdsFor(type) }
@@ -211,18 +205,16 @@ data class DcNetwork<R>(
     fun nodesInGroups(groupNames: Set<String>?): List<DcNode<R>> =
         if (groupNames == null) nodes else nodes.filter { it.groupName in groupNames }
 
-    /** Subscriber count per attestation subnet, useful for spotting under-covered subnets. */
-    fun subscribersPerSubnet(): Map<Int, Int> =
-        attestationSubnetIds().associateWith { subnetId -> nodesSubscribedTo(subnetId).size }
-
+    /** Subscriber count per subnet of [type], useful for spotting under-covered subnets. */
     fun subscribersPerSubnet(type: DcSlotMessageType): Map<Int, Int> =
         messageSubnetIds(type).associateWith { subnetId -> nodesSubscribedTo(type, subnetId).size }
 
     fun summary(): String = buildString {
+        val subnetsByType = subnetSubscriptions().groupBy { it.messageType }
         appendLine(
             "nodes=$nodeCount validators=$validatorCount " +
-                "attestationSubnets=${attestationSubnetIds().size} " +
-                "messageSubnets=${subnetSubscriptions().count { it.messageType != null }}"
+                "subnets=" + subnetsByType.entries.sortedBy { it.key.id }
+                    .joinToString { (type, ids) -> "${type.id}=${ids.size}" }
         )
         groupNames().forEach { groupName ->
             val groupNodes = nodesInGroup(groupName)

@@ -10,6 +10,9 @@ import org.junit.jupiter.api.Test
 
 class DcNetworkBuilderTest {
 
+    /** Subnet assignment throughout this file targets FFG attestation, same as any other family. */
+    private val ffg = DcSlotMessageType.FFG_ATTESTATION
+
     @Test
     fun `generates nodes per region with the requested bandwidth and validators`() {
         val network = DcNetworkBuilder.world()
@@ -139,31 +142,31 @@ class DcNetworkBuilderTest {
     }
 
     @Test
-    fun `records peer count and attestation subnets per node`() {
+    fun `records peer count and message subnets per node`() {
         val network = DcNetworkBuilder.world()
             .addGroup(count = 2) {
                 region = EUROPE
                 bandwidth = Bandwidths.DATACENTER
                 validators = 100
                 peers = 5
-                subnets = setOf(0, 1, 2)
+                messageSubnets(ffg, setOf(0, 1, 2))
             }
             .addGroup(count = 4) {
                 bandwidth = Bandwidths.RESIDENTIAL
                 validators = 1
                 peers = 3
-                subnets = setOf(2)
+                messageSubnets(ffg, setOf(2))
             }
             .build()
 
         assertThat(network.nodes.map { it.peerCount }).containsExactly(5, 5, 3, 3, 3, 3)
-        assertThat(network.node(0).attestationSubnetIds).containsExactly(0, 1, 2)
-        assertThat(network.node(0).subscribesTo(1)).isTrue()
-        assertThat(network.node(2).subscribesTo(1)).isFalse()
-        assertThat(network.attestationSubnetIds()).containsExactly(0, 1, 2)
-        assertThat(network.nodesSubscribedTo(2)).hasSize(6)
-        assertThat(network.nodesSubscribedTo(0)).hasSize(2)
-        assertThat(network.subscribersPerSubnet()).isEqualTo(mapOf(0 to 2, 1 to 2, 2 to 6))
+        assertThat(network.node(0).subnetIdsFor(ffg)).containsExactly(0, 1, 2)
+        assertThat(network.node(0).subscribesTo(ffg, 1)).isTrue()
+        assertThat(network.node(2).subscribesTo(ffg, 1)).isFalse()
+        assertThat(network.messageSubnetIds(ffg)).containsExactly(0, 1, 2)
+        assertThat(network.nodesSubscribedTo(ffg, 2)).hasSize(6)
+        assertThat(network.nodesSubscribedTo(ffg, 0)).hasSize(2)
+        assertThat(network.subscribersPerSubnet(ffg)).isEqualTo(mapOf(0 to 2, 1 to 2, 2 to 6))
     }
 
     @Test
@@ -173,14 +176,14 @@ class DcNetworkBuilderTest {
             .addGroup(count = 8) {
                 bandwidth = Bandwidths.VPS
                 validators = 1
-                subnetsByIndex { index -> setOf(index % subnetCount) }
+                messageSubnetsByIndex(ffg) { index -> setOf(index % subnetCount) }
             }
             .build()
 
-        assertThat(network.attestationSubnetIds()).containsExactly(0, 1, 2, 3)
-        assertThat(network.subscribersPerSubnet().values).allMatch { it == 2 }
-        assertThat(network.node(0).attestationSubnetIds).containsExactly(0)
-        assertThat(network.node(5).attestationSubnetIds).containsExactly(1)
+        assertThat(network.messageSubnetIds(ffg)).containsExactly(0, 1, 2, 3)
+        assertThat(network.subscribersPerSubnet(ffg).values).allMatch { it == 2 }
+        assertThat(network.node(0).subnetIdsFor(ffg)).containsExactly(0)
+        assertThat(network.node(5).subnetIdsFor(ffg)).containsExactly(1)
     }
 
     @Test
@@ -189,33 +192,27 @@ class DcNetworkBuilderTest {
             .addGroup(count = 16) {
                 bandwidth = Bandwidths.VPS
                 validators = 1
-                subnetsByIndex { index -> setOf(index % 4) }
+                messageSubnetsByIndex(ffg) { index -> setOf(index % 2) }
                 messageSubnetsByIndex(DcSlotMessageType.PAYLOAD_CHUNK) { index ->
                     setOf(index % 8)
                 }
                 messageSubnetsByIndex(DcSlotMessageType.BLOB_COLUMN) { index ->
                     setOf(index % 16)
                 }
-                messageSubnetsByIndex(DcSlotMessageType.FFG_ATTESTATION) { index ->
-                    setOf(index % 2)
-                }
             }
             .build()
 
-        assertThat(network.attestationSubnetIds()).containsExactlyElementsOf(0 until 4)
+        assertThat(network.messageSubnetIds(ffg)).containsExactly(0, 1)
         assertThat(network.messageSubnetIds(DcSlotMessageType.PAYLOAD_CHUNK))
             .containsExactlyElementsOf(0 until 8)
         assertThat(network.messageSubnetIds(DcSlotMessageType.BLOB_COLUMN))
             .containsExactlyElementsOf(0 until 16)
-        assertThat(network.messageSubnetIds(DcSlotMessageType.FFG_ATTESTATION))
-            .containsExactly(0, 1)
         assertThat(network.node(5).subnetIdsFor(DcSlotMessageType.PAYLOAD_CHUNK))
             .containsExactly(5)
         assertThat(network.node(5).subnetIdsFor(DcSlotMessageType.BLOB_COLUMN))
             .containsExactly(5)
-        assertThat(network.node(5).subnetIdsFor(DcSlotMessageType.FFG_ATTESTATION))
+        assertThat(network.node(5).subnetIdsFor(ffg))
             .containsExactly(1)
-        assertThat(network.node(5).attestationSubnetIds).containsExactly(1)
     }
 
     @Test
@@ -240,7 +237,7 @@ class DcNetworkBuilderTest {
             }
             .build()
 
-        assertThat(network.attestationSubnetIds()).isEmpty()
+        assertThat(network.messageSubnetIds(ffg)).isEmpty()
         assertThat(network.nodes.map { it.peerCount }.distinct())
             .containsExactly(DcNodeGroup.DEFAULT_PEER_COUNT)
     }
@@ -288,7 +285,7 @@ class DcNetworkBuilderTest {
         assertThatThrownBy {
             DcNetworkBuilder.world().addGroup(count = 1) {
                 bandwidth = Bandwidths.VPS
-                subnets = setOf(0, -3)
+                messageSubnets(ffg, setOf(0, -3))
             }
         }.isInstanceOf(IllegalArgumentException::class.java)
 
@@ -324,10 +321,10 @@ class DcNetworkBuilderTest {
         assertThatThrownBy {
             DcNetworkBuilder.world().addGroup(count = 4) {
                 bandwidth = Bandwidths.VPS
-                subnets = setOf(1)
-                subnetsByIndex { setOf(it) }
+                messageSubnets(ffg, setOf(1))
+                messageSubnetsByIndex(ffg) { setOf(it) }
             }
-        }.hasMessageContaining("at most one subnet assignment option")
+        }.hasMessageContaining("Set at most one ${ffg.id} subnet assignment")
     }
 
     @Test
@@ -337,7 +334,7 @@ class DcNetworkBuilderTest {
                 bandwidth = Bandwidths.RESIDENTIAL
                 peers = 12
                 region = ASIA
-                subnets = setOf(3)
+                messageSubnets(ffg, setOf(3))
             }
             // groups are big enough that peer counts are not clamped by the network size
             .addGroup(count = 30) { validators = 1 }
@@ -346,7 +343,7 @@ class DcNetworkBuilderTest {
                 region = EUROPE
                 bandwidth = Bandwidths.DATACENTER
                 peers = 40
-                subnets = setOf(7, 8)
+                messageSubnets(ffg, setOf(7, 8))
                 validators = 100
             }
             .build()
@@ -356,13 +353,13 @@ class DcNetworkBuilderTest {
         assertThat(inherited.map { it.peerCount }.distinct()).containsExactly(12)
         assertThat(inherited.map { it.bandwidthBytesPerSecond }.distinct())
             .containsExactly(Bandwidths.RESIDENTIAL.bytesPerSecond)
-        assertThat(inherited.map { it.attestationSubnetIds }.distinct()).containsExactly(setOf(3))
+        assertThat(inherited.map { it.subnetIdsFor(ffg) }.distinct()).containsExactly(setOf(3))
 
         val overridden = network.nodes.drop(30)
         assertThat(overridden.map { it.region }.distinct()).containsExactly(EUROPE)
         assertThat(overridden.map { it.peerCount }.distinct()).containsExactly(40)
         assertThat(overridden.map { it.validatorCount }.distinct()).containsExactly(100)
-        assertThat(overridden.map { it.attestationSubnetIds }.distinct()).containsExactly(setOf(7, 8))
+        assertThat(overridden.map { it.subnetIdsFor(ffg) }.distinct()).containsExactly(setOf(7, 8))
     }
 
     @Test
@@ -412,13 +409,13 @@ class DcNetworkBuilderTest {
     fun `draws a random subnet subset per node`() {
         val network = DcNetworkBuilder.world(randomSeed = 42)
             .defaults { bandwidth = Bandwidths.RESIDENTIAL }
-            .addGroup(count = 50) { randomSubnets(count = 2, of = 64) }
+            .addGroup(count = 50) { randomMessageSubnets(ffg, count = 2, of = 64) }
             .build()
 
-        assertThat(network.nodes.map { it.attestationSubnetIds.size }.distinct()).containsExactly(2)
-        assertThat(network.attestationSubnetIds()).allMatch { it in 0 until 64 }
+        assertThat(network.nodes.map { it.subnetIdsFor(ffg).size }.distinct()).containsExactly(2)
+        assertThat(network.messageSubnetIds(ffg)).allMatch { it in 0 until 64 }
         // a 2-of-64 draw over 50 nodes should not collapse onto one subnet
-        assertThat(network.attestationSubnetIds().size).isGreaterThan(10)
+        assertThat(network.messageSubnetIds(ffg).size).isGreaterThan(10)
     }
 
     @Test
@@ -426,11 +423,11 @@ class DcNetworkBuilderTest {
         fun buildWith(seed: Long) = DcNetworkBuilder.world(randomSeed = seed)
             .addGroup(count = 20) {
                 bandwidth = Bandwidths.VPS
-                randomSubnets(count = 3, of = 32)
+                randomMessageSubnets(ffg, count = 3, of = 32)
             }
             .build()
             .nodes
-            .map { it.attestationSubnetIds }
+            .map { it.subnetIdsFor(ffg) }
 
         assertThat(buildWith(7)).isEqualTo(buildWith(7))
         assertThat(buildWith(7)).isNotEqualTo(buildWith(8))
@@ -441,22 +438,22 @@ class DcNetworkBuilderTest {
         assertThatThrownBy {
             DcNetworkBuilder.world().addGroup(count = 1) {
                 bandwidth = Bandwidths.VPS
-                randomSubnets(count = 5, of = 4)
+                randomMessageSubnets(ffg, count = 5, of = 4)
             }
-        }.hasMessageContaining("randomSubnets count must be in")
+        }.hasMessageContaining("random count must be in")
     }
 
     @Test
-    fun `randomSubnets defaults its range to the builder's subnet count`() {
+    fun `randomMessageSubnets defaults its range to the builder's subnet count`() {
         val network = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 8)
             .addGroup(count = 30) {
                 bandwidth = Bandwidths.RESIDENTIAL
-                randomSubnets(count = 2)
+                randomMessageSubnets(ffg, count = 2)
             }
             .build()
 
-        assertThat(network.attestationSubnetIds()).allMatch { it in 0 until 8 }
-        assertThat(network.nodes.map { it.attestationSubnetIds.size }.distinct()).containsExactly(2)
+        assertThat(network.messageSubnetIds(ffg)).allMatch { it in 0 until 8 }
+        assertThat(network.nodes.map { it.subnetIdsFor(ffg).size }.distinct()).containsExactly(2)
     }
 
     @Test
@@ -470,24 +467,24 @@ class DcNetworkBuilderTest {
         val network = DcNetworkBuilder.world(subnetCount = 12)
             .addGroup(count = 3) {
                 bandwidth = Bandwidths.DATACENTER
-                allSubnets()
+                allMessageSubnets(ffg)
             }
             .build()
 
         network.nodes.forEach { node ->
-            assertThat(node.attestationSubnetIds).isEqualTo((0 until 12).toSet())
+            assertThat(node.subnetIdsFor(ffg)).isEqualTo((0 until 12).toSet())
         }
     }
 
     @Test
-    fun `allSubnets and subnets are mutually exclusive`() {
+    fun `allMessageSubnets and messageSubnets are mutually exclusive`() {
         assertThatThrownBy {
             DcNetworkBuilder.world().addGroup(count = 1) {
                 bandwidth = Bandwidths.VPS
-                allSubnets()
-                subnets = setOf(1)
+                allMessageSubnets(ffg)
+                messageSubnets(ffg, setOf(1))
             }
-        }.hasMessageContaining("Set at most one subnet assignment option")
+        }.hasMessageContaining("Set at most one ${ffg.id} subnet assignment")
     }
 
     @Test
