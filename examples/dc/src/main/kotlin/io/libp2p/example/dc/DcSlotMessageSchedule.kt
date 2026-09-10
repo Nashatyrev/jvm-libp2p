@@ -24,11 +24,11 @@ data class DcSlotMessageType(val id: String) {
         private val ID = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
 
         val BLOCK = DcSlotMessageType("block")
-        val BLOB_COLUMN = DcSlotMessageType("blob-column")
+        val BLOB_COLUMN = DcSlotMessageType("blob")
         val PAYLOAD = DcSlotMessageType("payload")
-        val PAYLOAD_CHUNK = DcSlotMessageType("payload-chunk")
-        val GOLDFISH_ATTESTATION = DcSlotMessageType("goldfish-attestation")
-        val FFG_ATTESTATION = DcSlotMessageType("ffg-attestation")
+        val PAYLOAD_CHUNK = DcSlotMessageType("payload")
+        val GOLDFISH_ATTESTATION = DcSlotMessageType("ac-vote")
+        val FFG_ATTESTATION = DcSlotMessageType("ffg-vote")
 
         /** Compatibility alias; FFG attestation is the precise name used by new scenarios. */
         @Deprecated("Use FFG_ATTESTATION")

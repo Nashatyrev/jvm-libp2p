@@ -40,7 +40,6 @@ class DcScenarioRunnerTest {
         val network = DcNetworkBuilder
             .world(
                 randomSeed = 1,
-                subnetCount = 64
             )
             .defaults {
                 // Spread payload chunks across their own 64 meshes.
@@ -59,6 +58,7 @@ class DcScenarioRunnerTest {
                 peers = 60
 
                 allMessageSubnets(DcSlotMessageType.BLOB_COLUMN, 128)
+                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, 64)
                 allSubnets()
             }
             .addGroup(count = 90) {
@@ -71,6 +71,7 @@ class DcScenarioRunnerTest {
 
                 // Model the current validator custody requirement: eight of 128 DA columns per node.
                 randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, 8, 128)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, 1, 64)
                 randomSubnets(1)
             }
             .build()
@@ -89,7 +90,6 @@ class DcScenarioRunnerTest {
 
         val attestationConfig = DcAttestationConfig(
             waveCount = 1,
-            attestationSizeBytes = 240,
             settle = 30.seconds,
             messages = listOf(
                 DcSlotMessageConfig(
@@ -118,6 +118,13 @@ class DcScenarioRunnerTest {
                     publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
                     messagesPerSlot = 128,
                     topics = DcSlotMessageTopics.Subnets(128)
+                ),
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.FFG_ATTESTATION,
+                    sizeBytes = 240,
+                    publishOffset = 3.seconds,
+                    publisherSelection = DcPublisherSelection.ALL_VALIDATORS,
+                    topics = DcSlotMessageTopics.Subnets(64)
                 )
             ),
             gossipParams = gossipParams,
