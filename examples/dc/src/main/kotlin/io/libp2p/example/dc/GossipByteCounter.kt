@@ -22,9 +22,9 @@ import kotlin.time.Duration
  *
  * Publish bytes are additionally attributed to the slot that produced them, by reading the slot
  * index out of the payload ([DcMessagePayload.slotIndexOf], which recognises every message kind, so
- * blocks are credited to their slot alongside attestations). That attribution is exact, unlike the
+ * blocks are credited to their slot like any other type). That attribution is exact, unlike the
  * wall-clock bucketing used for UDP traffic in [DcTrafficReport] — when slots overlap (a short
- * [DcAttestationConfig.slotInterval] relative to dissemination time) a slot's bytes keep flowing long
+ * [DcRunConfig.slotInterval] relative to dissemination time) a slot's bytes keep flowing long
  * after the next slot has started, so time windows credit them to the wrong slot.
  *
  * When constructed with [slotProfile], inbound reads are additionally bucketed by where in the slot
@@ -34,7 +34,7 @@ import kotlin.time.Duration
  * still genuine wire traffic even though gossip's own deduplication will discard it) — plus
  * per-bucket control bytes ([controlBytesReadByBucket]). That needs to know the current simulated
  * time, which is not available at construction, so [currentTimeSupplier] is set later — see
- * [DcAttestationNodeProgram.onAllConnected].
+ * [DcNodeProgram.onAllConnected].
  */
 @io.netty.channel.ChannelHandler.Sharable
 class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : ChannelDuplexHandler() {

@@ -16,7 +16,7 @@ import kotlin.time.Duration.Companion.seconds
  * Unit-level tests of the bucketing itself: [DcSlotProfileParams.bucketOf], [GossipByteCounter]'s
  * wire-level attribution (including unique-vs-duplicate), [DcSlotMessageTopics.typeOf], and
  * [DcSlotTrafficProfile.of]'s aggregation across nodes — plus one end-to-end run confirming the
- * whole path is wired up. [DcAttestationScenarioTest] and [DcBlockScenarioTest] already exercise
+ * whole path is wired up. [DcScenarioTest] and [DcBlockScenarioTest] already exercise
  * real runs at scale; what is worth checking in isolation here is where a byte lands and how it is
  * normalized, which a full run would only show indirectly. The per-group breakdown
  * ([DcGroupStats.slotTraffic]) is exercised in [DcGroupStatsTest].
@@ -407,7 +407,7 @@ class DcSlotTrafficProfileTest {
             }
             .build()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 2,
             slotInterval = 12.seconds,
             settle = 12.seconds,
@@ -424,7 +424,7 @@ class DcSlotTrafficProfileTest {
             randomSeed = 7
         )
 
-        val report = DcAttestationScenario.run(network, graph, config)
+        val report = DcScenario.run(network, graph, config)
 
         val profile = requireNotNull(report.slotTraffic)
         assertThat(profile.bucketCount).isEqualTo(120)
@@ -446,7 +446,7 @@ class DcSlotTrafficProfileTest {
 
     @Test
     fun `slotTrafficBucketDuration configures the resolution`() {
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotInterval = 4.seconds,
             slotTrafficBucketDuration = 500.milliseconds,
             messages = listOf(DcSlotMessageConfig(type = DcSlotMessageType.FFG_ATTESTATION, sizeBytes = 240))
@@ -456,7 +456,7 @@ class DcSlotTrafficProfileTest {
 
     @Test
     fun `a non-positive slotTrafficBucketDuration is rejected`() {
-        assertThatThrownBy { DcAttestationConfig(slotTrafficBucketDuration = Duration.ZERO) }
+        assertThatThrownBy { DcRunConfig(slotTrafficBucketDuration = Duration.ZERO) }
             .hasMessageContaining("slotTrafficBucketDuration must be > 0")
     }
 }

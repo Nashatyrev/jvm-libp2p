@@ -9,7 +9,7 @@ import kotlin.time.Duration.Companion.milliseconds
  * Where in the slot cycle [GossipByteCounter] should attribute the wire bytes it sees, shared by
  * every node in a run so their counters all bucket the same way.
  *
- * [anchor] is the moment slot 0 begins — [DcAttestationConfig.warmup] — since every node's clock
+ * [anchor] is the moment slot 0 begins — [DcRunConfig.warmup] — since every node's clock
  * starts at zero and advances in lockstep, `(now - anchor) mod slotDuration` is exactly how far into
  * the *current repetition* of the slot cycle `now` falls, with no need to know which specific
  * message (if any) is being read. That is what lets this bucket control and transport traffic
@@ -150,8 +150,8 @@ data class DcSlotTrafficProfile(
          * own profile rather than the whole network's; see [DcGroupStats.slotTraffic].
          *
          * [gossipCounters] and [inboundEvents] must have been built with the same [params] the
-         * counters were themselves constructed with — [io.libp2p.example.dc.DcAttestationNodeProgram]
-         * guarantees this by deriving both from the same [DcAttestationConfig].
+         * counters were themselves constructed with — [io.libp2p.example.dc.DcNodeProgram]
+         * guarantees this by deriving both from the same [DcRunConfig].
          */
         fun of(
             gossipCounters: Collection<GossipByteCounter>,

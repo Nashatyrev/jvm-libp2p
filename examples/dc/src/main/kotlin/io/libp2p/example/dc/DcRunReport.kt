@@ -5,7 +5,7 @@ import io.libp2p.quicsim.sim.SimNodeId
 import kotlin.time.Duration
 
 /**
- * Delivery latency of attestations.
+ * Delivery latency of one set of published messages.
  *
  * [deliveryRatio] matters as much as the percentiles: percentiles are computed over deliveries that
  * *happened*, so a run that loses slow messages would otherwise look faster than one that delivers
@@ -22,7 +22,7 @@ data class DcDeliveryStats(
     val max: Duration?,
     val mean: Duration?,
     /** What was published, for the first line of [toString]; the maths is the same either way. */
-    val what: String = "attestations"
+    val what: String = "messages"
 ) {
     val deliveryRatio: Double
         get() = if (expectedDeliveries == 0) 0.0 else actualDeliveries.toDouble() / expectedDeliveries
@@ -52,7 +52,7 @@ data class DcDeliveryStats(
             publishedCount: Int,
             latencies: List<Duration>,
             expectedDeliveries: Int,
-            what: String = "attestations"
+            what: String = "messages"
         ): DcDeliveryStats {
             val sorted = latencies.sorted()
             return DcDeliveryStats(
@@ -195,7 +195,7 @@ data class DcSlotMessageReport(
 }
 
 /** Stats for the whole run plus a breakdown per slot, so a slow slot does not hide in the average. */
-data class DcAttestationReport(
+data class DcRunReport(
     val overall: DcDeliveryStats,
     val perSlot: Map<Int, DcDeliveryStats>,
     val traffic: DcTrafficReport,
@@ -209,18 +209,18 @@ data class DcAttestationReport(
     val gossipPublishMessagesReceived: Long = 0,
     val gossipPublishMessagesSentBySlot: Map<Int, Long> = emptyMap(),
     val gossipPublishMessagesReceivedBySlot: Map<Int, Long> = emptyMap(),
-    /** Leading slots excluded from [overall]; see [DcAttestationConfig.warmupSlots]. */
+    /** Leading slots excluded from [overall]; see [DcRunConfig.warmupSlots]. */
     val warmupSlots: Int = 0,
     val mesh: DcMeshStats? = null,
     /**
-     * Separate reports keyed by [DcSlotMessageConfig.type]. Block issuance ([DcAttestationConfig
+     * Separate reports keyed by [DcSlotMessageConfig.type]. Block issuance ([DcRunConfig
      * .blocks]) shows up here too, at [DcSlotMessageType.BLOCK] -- it is folded into the same
      * generic message pipeline as every other type, so there is no separate block-shaped report.
      */
     val messages: Map<DcSlotMessageType, DcSlotMessageReport> = emptyMap(),
     /** Per-group breakdown; empty unless a group in the network was named. See [DcNodeGroup.name]. */
     val groups: DcGroupReport = DcGroupReport(emptyMap()),
-    /** Where in the slot each message type's bytes land; see [DcAttestationConfig.slotTrafficBucketDuration]. */
+    /** Where in the slot each message type's bytes land; see [DcRunConfig.slotTrafficBucketDuration]. */
     val slotTraffic: DcSlotTrafficProfile? = null
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
@@ -238,7 +238,7 @@ data class DcAttestationReport(
 
     /**
      * Publish bytes one node receives for one slot. Unlike a whole-run total this does not move
-     * when [DcAttestationConfig.slotCount] or [DcAttestationConfig.warmupSlots] change, so it is
+     * when [DcRunConfig.slotCount] or [DcRunConfig.warmupSlots] change, so it is
      * the load figure to compare across runs.
      */
     val publishBytesReceivedPerNodePerSlot: Double
@@ -421,7 +421,7 @@ data class DcTrafficStats(
 
 /**
  * Traffic for the whole run plus a breakdown per slot. [overall] spans the entire run — including
- * mesh formation during [DcAttestationConfig.warmup], before any slot publishes — so it reflects the
+ * mesh formation during [DcRunConfig.warmup], before any slot publishes — so it reflects the
  * true bandwidth cost; [perSlot] only covers each slot's own time window, for comparing slots to
  * each other.
  */

@@ -12,7 +12,7 @@ import kotlin.time.Duration.Companion.seconds
  * These run in virtual time, but the packet-level simulation is real work: keep node counts modest
  * unless you are deliberately running a large study.
  */
-class DcAttestationScenarioTest {
+class DcScenarioTest {
 
     private fun population(
         nodeCount: Int,
@@ -47,7 +47,7 @@ class DcAttestationScenarioTest {
         val network = population(nodeCount = 40, subnetCount = 4, subnetsPerNode = 2, peers = 10)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val attestersPerSlot = 8
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 2,
             warmup = 30.seconds,
             slotInterval = 12.seconds,
@@ -56,7 +56,7 @@ class DcAttestationScenarioTest {
             randomSeed = 7
         )
 
-        val report = DcAttestationScenario.run(network, graph, config)
+        val report = DcScenario.run(network, graph, config)
         println(report)
 
         assertThat(report.messages).containsKey(DcSlotMessageType.FFG_ATTESTATION)
@@ -86,14 +86,14 @@ class DcAttestationScenarioTest {
     fun `warmupSlots excludes the leading slots from the headline figures`() {
         val network = population(nodeCount = 40, subnetCount = 4, subnetsPerNode = 2, peers = 10)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val base = DcAttestationConfig(
+        val base = DcRunConfig(
             slotCount = 4,
             warmupSlots = 0,
             messages = ffgMessages(attestersPerSlot = 8, subnetCount = 4),
             randomSeed = 7
         )
-        val all = DcAttestationScenario.run(network, graph, base)
-        val measured = DcAttestationScenario.run(network, graph, base.copy(warmupSlots = 2))
+        val all = DcScenario.run(network, graph, base)
+        val measured = DcScenario.run(network, graph, base.copy(warmupSlots = 2))
 
         // Every slot is still reported; only the aggregate narrows.
         assertThat(measured.perSlot.keys).containsExactlyInAnyOrderElementsOf(all.perSlot.keys)
@@ -117,7 +117,7 @@ class DcAttestationScenarioTest {
     @Test
     fun `warmupSlots must leave a slot to measure`() {
         assertThatThrownBy {
-            DcAttestationConfig(
+            DcRunConfig(
                 slotCount = 3,
                 warmupSlots = 3,
                 messages = ffgMessages(attestersPerSlot = 1, subnetCount = 1)
@@ -129,7 +129,7 @@ class DcAttestationScenarioTest {
     fun `the same seed produces the same latencies`() {
         val network = population(nodeCount = 24, subnetCount = 4, subnetsPerNode = 2, peers = 8)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 3)
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 1,
             warmup = 30.seconds,
             settle = 12.seconds,
@@ -137,8 +137,8 @@ class DcAttestationScenarioTest {
             randomSeed = 11
         )
 
-        val first = DcAttestationScenario.run(network, graph, config)
-        val second = DcAttestationScenario.run(network, graph, config)
+        val first = DcScenario.run(network, graph, config)
+        val second = DcScenario.run(network, graph, config)
 
         assertThat(second.overall.p50).isEqualTo(first.overall.p50)
         assertThat(second.overall.p99).isEqualTo(first.overall.p99)
@@ -359,14 +359,14 @@ class DcAttestationScenarioTest {
     @Test
     fun `one type issued at several offsets gets a schedule per wave, numbered by offset`() {
         val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 2,
             slotInterval = 12.seconds,
             // Listed back to front, to show wave numbering follows the offset rather than the order.
             messages = ffgWaves(waves = 3, subnetCount = 4).reversed()
         )
 
-        val schedules = DcAttestationScenario.defaultMessageSchedules(network, config)
+        val schedules = DcScenario.defaultMessageSchedules(network, config)
 
         assertThat(schedules).hasSize(3)
         assertThat(schedules.map { it.config.publishOffset })
@@ -389,13 +389,13 @@ class DcAttestationScenarioTest {
     @Test
     fun `message ids do not overlap between the waves of one type`() {
         val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 2,
             slotInterval = 12.seconds,
             messages = ffgWaves(waves = 4, subnetCount = 4)
         )
 
-        val schedules = DcAttestationScenario.defaultMessageSchedules(network, config)
+        val schedules = DcScenario.defaultMessageSchedules(network, config)
 
         // Ids are what GossipByteCounter keys a first sighting on, and what the report joins a
         // delivery back to its wave by, so they have to be unique across the whole run.
@@ -408,13 +408,13 @@ class DcAttestationScenarioTest {
     fun `the scenario name reports a wave count instead of one segment per wave`() {
         val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 1,
             slotInterval = 12.seconds,
             messages = ffgWaves(waves = 12, subnetCount = 4)
         )
 
-        val name = DcAttestationScenario.of(network, graph, config).name
+        val name = DcScenario.of(network, graph, config).name
 
         assertThat(name).contains("-${DcSlotMessageType.FFG_ATTESTATION.id}2x240Bx12waves-4subnets")
         assertThat(name.split("ffg")).describedAs("one segment for the type, not twelve").hasSize(2)
@@ -424,7 +424,7 @@ class DcAttestationScenarioTest {
     fun `a type issued as several waves reports per wave within the slot`() {
         val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 1,
             slotInterval = 12.seconds,
             settle = 12.seconds,
@@ -432,7 +432,7 @@ class DcAttestationScenarioTest {
             randomSeed = 7
         )
 
-        val report = DcAttestationScenario.run(network, graph, config)
+        val report = DcScenario.run(network, graph, config)
 
         val ffg = report.messages.getValue(DcSlotMessageType.FFG_ATTESTATION)
         assertThat(ffg.publishOffsets).containsExactly(0.seconds, 1.seconds, 2.seconds)

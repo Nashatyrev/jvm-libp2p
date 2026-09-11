@@ -78,37 +78,37 @@ data class DcBlockConfig(
 
 /**
  * A repeated-slot run of independently typed block, payload, column and FFG-attestation messages.
- * Every entry in [DcAttestationConfig.messages] is expanded over the compact slot cadence, so
+ * Every entry in [DcRunConfig.messages] is expanded over the compact slot cadence, so
  * callers configure a message once rather than describing each slot separately.
  *
  * A type may also be listed more than once, at different [DcSlotMessageConfig.publishOffset]s, to
  * issue it as several *waves* within each slot — "slot" being the repeating cycle, "wave" one
  * issuance inside it.
  *
- * [warmup] exists because gossipsub needs time to form its meshes; attesting before that measures
+ * [warmup] exists because gossipsub needs time to form its meshes; publishing before that measures
  * mesh construction rather than dissemination. [settle] is how long the run keeps going after the
  * last slot, and therefore the longest latency the run is able to observe — anything slower is
- * counted as an undelivered attestation instead of a large number.
+ * counted as an undelivered message instead of a large number.
  */
-data class DcAttestationConfig(
+data class DcRunConfig(
     val slotCount: Int = 3,
     val warmup: Duration = 30.seconds,
     val slotInterval: Duration = 12.seconds,
     val settle: Duration = 12.seconds,
     /**
-     * Leading slots left out of the headline figures in [DcAttestationReport.overall].
+     * Leading slots left out of the headline figures in [DcRunReport.overall].
      *
      * QUIC congestion windows start small and meshes are still settling, so the first slots deliver
      * the same bytes more slowly than a running network would — measured at 2-3x the steady-state
-     * p99 and up to 4x the steady-state max. They stay in [DcAttestationReport.perSlot] so the
+     * p99 and up to 4x the steady-state max. They stay in [DcRunReport.perSlot] so the
      * ramp is still visible; they are only excluded from the aggregate.
      */
     val warmupSlots: Int = 0,
-    /** Block issuance, or null for a run that publishes attestations only. */
+    /** Block issuance, or null for a run that issues no blocks. */
     val blocks: DcBlockConfig? = null,
     /** Global or subnet-scoped message kinds issued in every slot. */
     val messages: List<DcSlotMessageConfig> = emptyList(),
-    /** Bucket width of [DcAttestationReport.slotTraffic], the per-message-type intra-slot profile. */
+    /** Bucket width of [DcRunReport.slotTraffic], the per-message-type intra-slot profile. */
     val slotTrafficBucketDuration: Duration = 100.milliseconds,
     val gossipParams: GossipParams = GossipParams(),
     val randomSeed: Long = 0
@@ -130,7 +130,7 @@ data class DcAttestationConfig(
         }
         require(configs.any { it.type == DcSlotMessageType.FFG_ATTESTATION }) {
             "messages must include a DcSlotMessageType.FFG_ATTESTATION entry -- " +
-                "DcAttestationReport.overall/perSlot are its headline figures"
+                "DcRunReport.overall/perSlot are its headline figures"
         }
         configs.forEach { message ->
             require(message.publishOffset < slotInterval) {
@@ -172,10 +172,10 @@ data class DcAttestationConfig(
 }
 
 /** Creates the node programs and holds on to the recorder so results survive the run. */
-class DcAttestationNodeProgramFactory<R>(
+class DcNodeProgramFactory<R>(
     private val network: DcNetwork<R>,
     private val graph: DcPeerGraph<R>,
-    private val config: DcAttestationConfig,
+    private val config: DcRunConfig,
     private val messageSchedules: List<DcSlotMessageSchedule>
 ) : NodeProgramFactory {
 
@@ -198,10 +198,10 @@ class DcAttestationNodeProgramFactory<R>(
     }
 
     private val dialTargets = graph.dialTargets()
-    private val nodePrograms = mutableListOf<DcAttestationNodeProgram>()
+    private val nodePrograms = mutableListOf<DcNodeProgram>()
 
     override fun createNode(id: SimNodeId): NodeProgram =
-        DcAttestationNodeProgram(
+        DcNodeProgram(
             simNodeId = id,
             connectToNodeIds = dialTargets.getValue(id),
             slotMessageSubnetIds = network.node(id).slotMessageSubnetIds,
@@ -237,7 +237,7 @@ class DcAttestationNodeProgramFactory<R>(
     fun expectedDeliveriesOf(message: DcSlotMessage): Int =
         subscribersOf(message).count { it.simNodeId != message.publisherNodeId }
 
-    fun report(traffic: DcTrafficReport, events: List<DatagramPacketTraceEvent>): DcAttestationReport {
+    fun report(traffic: DcTrafficReport, events: List<DatagramPacketTraceEvent>): DcRunReport {
         // One report per type, covering every wave of it: a type issued as several waves within a
         // slot has one schedule per wave, all recording into that type's single recorder.
         val schedulesByType = messageSchedules.groupBy { it.config.type }
@@ -277,7 +277,7 @@ class DcAttestationNodeProgramFactory<R>(
             nodeCount = network.nodeCount,
             slotsMeasured = slotsMeasured
         )
-        return DcAttestationReport(
+        return DcRunReport(
             overall = ffgReport.overall,
             perSlot = ffgReport.perSlot,
             traffic = traffic,
@@ -301,7 +301,7 @@ class DcAttestationNodeProgramFactory<R>(
 }
 
 /** Totals each node's per-slot byte counts into one map keyed by slot index. */
-private fun List<DcAttestationNodeProgram>.sumBySlot(
+private fun List<DcNodeProgram>.sumBySlot(
     counts: (GossipByteCounter) -> Map<Int, Long>
 ): Map<Int, Long> {
     val totals = mutableMapOf<Int, Long>()
@@ -313,7 +313,7 @@ private fun List<DcAttestationNodeProgram>.sumBySlot(
     return totals
 }
 
-object DcAttestationScenario {
+object DcScenario {
 
     /**
      * Node ids by group name, for [DcTrafficReport]'s per-group traffic breakdown. Empty when
@@ -336,9 +336,9 @@ object DcAttestationScenario {
     fun <R> of(
         network: DcNetwork<R>,
         graph: DcPeerGraph<R>,
-        config: DcAttestationConfig = DcAttestationConfig(),
+        config: DcRunConfig = DcRunConfig(),
         messageSchedules: List<DcSlotMessageSchedule> = defaultMessageSchedules(network, config)
-    ): QuicScenario<DcAttestationNodeProgramFactory<R>> {
+    ): QuicScenario<DcNodeProgramFactory<R>> {
         // One segment per type rather than per config, so a type issued as many waves within a slot
         // contributes "x12waves" instead of twelve near-identical segments.
         val messageSuffix = config.allMessageConfigs.groupBy { it.type }
@@ -354,11 +354,11 @@ object DcAttestationScenario {
                 "-${type.id}${first.messagesPerSlot}x${first.sizeBytes}B$timing-$topics"
             }
         return QuicScenario(
-            name = "dc-attestations-${network.nodeCount}n-${config.slotCount}slots$messageSuffix",
+            name = "dc-${network.nodeCount}n-${config.slotCount}slots$messageSuffix",
             network = network.topology,
             maxRunDuration = config.maxRunDuration,
             createNodeProgramFactory = {
-                DcAttestationNodeProgramFactory(network, graph, config, messageSchedules)
+                DcNodeProgramFactory(network, graph, config, messageSchedules)
             }
         )
     }
@@ -374,7 +374,7 @@ object DcAttestationScenario {
      */
     fun <R> defaultMessageSchedules(
         network: DcNetwork<R>,
-        config: DcAttestationConfig
+        config: DcRunConfig
     ): List<DcSlotMessageSchedule> {
         val configs = config.allMessageConfigs
         // Waves of one type are numbered by their offset into the slot, earliest first, whatever
@@ -407,10 +407,10 @@ object DcAttestationScenario {
     fun <R> run(
         network: DcNetwork<R>,
         graph: DcPeerGraph<R>,
-        config: DcAttestationConfig = DcAttestationConfig(),
+        config: DcRunConfig = DcRunConfig(),
         latencyWindowParallelism: Int = Runtime.getRuntime().availableProcessors(),
         messageSchedules: List<DcSlotMessageSchedule> = defaultMessageSchedules(network, config)
-    ): DcAttestationReport {
+    ): DcRunReport {
         val traceRecorder = RecordingDatagramPacketTraceRecorder()
         val result = SimulatedQuicScenarioRunner(
             latencyWindowParallelism = latencyWindowParallelism,

@@ -28,7 +28,7 @@ import kotlin.time.Duration
  * scheduler starts at zero and they are advanced in lockstep, so `timer.elapsedTime()` is a clock
  * shared by all nodes and the subtraction is exact — no clock skew to correct for.
  */
-class DcAttestationNodeProgram(
+class DcNodeProgram(
     simNodeId: SimNodeId,
     connectToNodeIds: List<SimNodeId>,
     private val slotMessageSubnetIds: Map<DcSlotMessageType, Set<Int>>,

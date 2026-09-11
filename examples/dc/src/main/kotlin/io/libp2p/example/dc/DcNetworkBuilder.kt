@@ -10,8 +10,8 @@ import kotlin.time.Duration
 
 /**
  * Generates the node population of a Decoupled Consensus network: nodes placed in geographical
- * regions, each with a given access bandwidth, number of validators, peer count, and set of
- * attestation subnets it subscribes to.
+ * regions, each with a given access bandwidth, number of validators, peer count, and the subnets it
+ * subscribes to per message type.
  *
  * Nodes are added a group at a time, each group configured as a block (see [DcNodeGroup]) so that
  * attributes are named and adding a new one never grows an argument list. Whatever the groups have
@@ -161,7 +161,7 @@ class DcNetworkBuilder<R>(
     }
 
     companion object {
-        /** Total attestation subnets used when a builder does not say otherwise. */
+        /** Subnet range used for a message type the builder does not say otherwise about. */
         const val DEFAULT_SUBNET_COUNT: Int = 64
 
         /** Builder over the simulator's six-continent world model. */

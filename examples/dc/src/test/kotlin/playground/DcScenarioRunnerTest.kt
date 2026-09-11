@@ -1,11 +1,11 @@
 package playground
 
 import io.libp2p.example.dc.Bandwidths
-import io.libp2p.example.dc.DcAttestationConfig
-import io.libp2p.example.dc.DcAttestationReport
-import io.libp2p.example.dc.DcAttestationScenario
 import io.libp2p.example.dc.DcNetworkBuilder
 import io.libp2p.example.dc.DcPublisherSelection
+import io.libp2p.example.dc.DcRunConfig
+import io.libp2p.example.dc.DcRunReport
+import io.libp2p.example.dc.DcScenario
 import io.libp2p.example.dc.DcSlotMessageConfig
 import io.libp2p.example.dc.DcSlotMessageTopics
 import io.libp2p.example.dc.DcSlotMessageType
@@ -100,7 +100,7 @@ class DcScenarioRunnerTest {
             )
         }
 
-        val attestationConfig = DcAttestationConfig(
+        val runConfig = DcRunConfig(
             slotCount = 1,
             settle = 30.seconds,
             messages = listOf(
@@ -136,10 +136,10 @@ class DcScenarioRunnerTest {
             randomSeed = 1
         )
 
-        val report = DcAttestationScenario.run(
+        val report = DcScenario.run(
             network = network,
             graph = graph,
-            config = attestationConfig
+            config = runConfig
         )
         println(report)
     }
@@ -216,7 +216,7 @@ class DcScenarioRunnerTest {
             .gossipSize(0)
             .build()
 
-        val attestationConfig = DcAttestationConfig(
+        val attestationConfig = DcRunConfig(
             slotCount = 1,
             // ~223MB reaches each node, and a 50 Mbit/s residential link carries 6.25MB/s, so the
             // slot needs ~36s of link time alone. The default 12s settle would cut off around two
@@ -262,7 +262,7 @@ class DcScenarioRunnerTest {
             gossipParams = gossipParams,
             randomSeed = 1
         )
-        val report = DcAttestationScenario.run(
+        val report = DcScenario.run(
             network = network,
             graph = graph,
             config = attestationConfig
@@ -277,7 +277,7 @@ class DcScenarioRunnerTest {
      * a subnet holds 1024/[subnetCount] nodes and carries 1/[subnetCount] of the traffic, so
      * *fewer* subnets means bigger committees and more bytes per node.
      */
-    private fun runRolling(d: Int, subnetCount: Int, lazyGossip: Boolean = false): DcAttestationReport {
+    private fun runRolling(d: Int, subnetCount: Int, lazyGossip: Boolean = false): DcRunReport {
         val network = DcNetworkBuilder
             .world(
                 randomSeed = 1,
@@ -336,7 +336,7 @@ class DcScenarioRunnerTest {
         // sweep publishes the same 262144 attestations at every point and only their spread over
         // subnets changes.
         val attestersPerSlot = 1024 * 1024 / 32
-        val attestationConfig = DcAttestationConfig(
+        val attestationConfig = DcRunConfig(
             slotCount = 8,
             // RANDOM_VALIDATORS, not ALL_VALIDATORS: the latter ignores attestersPerSlot and has
             // all 1,048,576 validators attest in every slot, 32x a slot's worth.
@@ -360,7 +360,7 @@ class DcScenarioRunnerTest {
             randomSeed = 1
         )
 
-        return DcAttestationScenario.run(
+        return DcScenario.run(
             network = network,
             graph = graph,
             config = attestationConfig

@@ -11,7 +11,7 @@ import kotlin.time.Duration
  * suffix) and in every report.
  *
  * Declaration order is report order: anything printed per message type — the columns of
- * [DcSlotTrafficProfile], the per-type sections of [DcAttestationReport] and [DcGroupStats] — is
+ * [DcSlotTrafficProfile], the per-type sections of [DcRunReport] and [DcGroupStats] — is
  * ordered by [Enum.ordinal], so the constants are listed in the order they occur within a slot.
  */
 enum class DcSlotMessageType(val id: String) {
@@ -267,7 +267,7 @@ class DcSlotMessageSchedule(
          * message type is issued as several waves within a slot: [GossipByteCounter] keys a node's
          * first sighting of a message on `(type, id)`, and [DcSlotMessageReport] joins deliveries to
          * their wave by id, so every schedule of a type needs its own id range — see
-         * [DcAttestationScenario.defaultMessageSchedules], which hands them out.
+         * [DcScenario.defaultMessageSchedules], which hands them out.
          */
         fun <R> create(
             network: DcNetwork<R>,

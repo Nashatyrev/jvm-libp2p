@@ -7,7 +7,7 @@ import io.libp2p.quicsim.sim.SimNodeId
  * What one node group carried and what it saw, for a run whose groups were named.
  *
  * Groups are where a run's populations differ — link rate, peer count, validators hosted — so the
- * whole-network averages in [DcAttestationReport] hide exactly the thing worth knowing: whether the
+ * whole-network averages in [DcRunReport] hide exactly the thing worth knowing: whether the
  * residential nodes are saturated while the datacenter ones idle, and whether that shows up as
  * later deliveries for that group. Everything here is per group, and the byte figures are per node
  * of the group so groups of different sizes can be compared directly.

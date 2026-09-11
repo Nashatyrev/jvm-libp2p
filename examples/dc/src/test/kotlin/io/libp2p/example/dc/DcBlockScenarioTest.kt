@@ -45,7 +45,7 @@ class DcBlockScenarioTest {
     fun `every node but the proposer receives each block, at the configured offset`() {
         val network = population(nodeCount = 20, subnetCount = 4, peers = 8)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 2,
             messages = ffgMessages(attestersPerSlot = 4, subnetCount = 4),
             slotInterval = 12.seconds,
@@ -54,7 +54,7 @@ class DcBlockScenarioTest {
             randomSeed = 7
         )
 
-        val report = DcAttestationScenario.run(network, graph, config)
+        val report = DcScenario.run(network, graph, config)
         println(report)
 
         val blocks = requireNotNull(report.messages[DcSlotMessageType.BLOCK]) {
@@ -90,7 +90,7 @@ class DcBlockScenarioTest {
     fun `each slot message type has separate issuance and statistics`() {
         val network = namedGroups()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 2,
             settle = 12.seconds,
             messages = ffgMessages(attestersPerSlot = 4, subnetCount = 2) + listOf(
@@ -119,7 +119,7 @@ class DcBlockScenarioTest {
             randomSeed = 7
         )
 
-        val report = DcAttestationScenario.run(network, graph, config)
+        val report = DcScenario.run(network, graph, config)
 
         assertThat(report.messages.keys)
             .containsExactly(
@@ -164,7 +164,7 @@ class DcBlockScenarioTest {
 
         // Same type at the same offset is still a mistake: two competing issuance configs.
         assertThatThrownBy {
-            DcAttestationConfig(
+            DcRunConfig(
                 messages = ffgMessages(attestersPerSlot = 1, subnetCount = 1) + listOf(
                     DcSlotMessageConfig(DcSlotMessageType.BLOB_COLUMN, sizeBytes = 1024),
                     DcSlotMessageConfig(DcSlotMessageType.BLOB_COLUMN, sizeBytes = 2048)
@@ -173,7 +173,7 @@ class DcBlockScenarioTest {
         }.hasMessageContaining("message type/publishOffset pairs must be unique")
 
         // Same type at different offsets is how a type issues several waves within one slot.
-        val waveConfig = DcAttestationConfig(
+        val waveConfig = DcRunConfig(
             slotInterval = 12.seconds,
             messages = (0 until 3).map { wave ->
                 DcSlotMessageConfig(
@@ -217,7 +217,7 @@ class DcBlockScenarioTest {
             }
             .build()
         val graph = network.peerGraph(minPeersPerSubnet = 1, randomSeed = 5)
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 1,
             settle = 12.seconds,
             messages = listOf(
@@ -242,9 +242,9 @@ class DcBlockScenarioTest {
             ),
             randomSeed = 7
         )
-        val schedules = DcAttestationScenario.defaultMessageSchedules(network, config)
+        val schedules = DcScenario.defaultMessageSchedules(network, config)
 
-        val report = DcAttestationScenario.run(
+        val report = DcScenario.run(
             network = network,
             graph = graph,
             config = config,
@@ -267,7 +267,7 @@ class DcBlockScenarioTest {
     fun `a zero offset publishes the block on the slot boundary`() {
         val network = population(nodeCount = 16, subnetCount = 4, peers = 6)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 1,
             messages = ffgMessages(attestersPerSlot = 4, subnetCount = 4),
             settle = 12.seconds,
@@ -275,7 +275,7 @@ class DcBlockScenarioTest {
             randomSeed = 7
         )
 
-        val report = DcAttestationScenario.run(network, graph, config)
+        val report = DcScenario.run(network, graph, config)
 
         assertThat(config.blocks!!.publishOffset).isEqualTo(Duration.ZERO)
         val blocks = report.messages.getValue(DcSlotMessageType.BLOCK)
@@ -287,13 +287,13 @@ class DcBlockScenarioTest {
     fun `a run without a block config issues no blocks and reports none`() {
         val network = population(nodeCount = 16, subnetCount = 4, peers = 6)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 1,
             messages = ffgMessages(attestersPerSlot = 4, subnetCount = 4),
             randomSeed = 7
         )
 
-        val report = DcAttestationScenario.run(network, graph, config)
+        val report = DcScenario.run(network, graph, config)
 
         assertThat(config.blocks).isNull()
         assertThat(report.messages[DcSlotMessageType.BLOCK]).isNull()
@@ -302,7 +302,7 @@ class DcBlockScenarioTest {
 
     @Test
     fun `the settle window starts from the block rather than from the slot boundary`() {
-        val base = DcAttestationConfig(
+        val base = DcRunConfig(
             slotCount = 2,
             slotInterval = 12.seconds,
             settle = 12.seconds,
@@ -318,7 +318,7 @@ class DcBlockScenarioTest {
     @Test
     fun `a block published later than a whole slot is rejected`() {
         assertThatThrownBy {
-            DcAttestationConfig(
+            DcRunConfig(
                 slotInterval = 12.seconds,
                 messages = ffgMessages(attestersPerSlot = 1, subnetCount = 1),
                 blocks = DcBlockConfig(publishOffset = 12.seconds)
@@ -332,14 +332,14 @@ class DcBlockScenarioTest {
         // reserves a 1% margin when splitting RPCs and the frame decoder drops anything above the
         // limit. Failing here beats a run in which no block ever arrives.
         assertThatThrownBy {
-            DcAttestationConfig(
+            DcRunConfig(
                 messages = ffgMessages(attestersPerSlot = 1, subnetCount = 1),
                 blocks = DcBlockConfig(sizeBytes = 1 shl 20)
             )
         }.hasMessageContaining("exceeds what gossipsub will carry")
 
         val roomier = GossipParams.builder().maxGossipMessageSize(4 shl 20).build()
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             messages = ffgMessages(attestersPerSlot = 1, subnetCount = 1),
             blocks = DcBlockConfig(sizeBytes = 1 shl 20),
             gossipParams = roomier
@@ -601,7 +601,7 @@ class DcBlockScenarioTest {
     fun `a run proposes only from the configured groups`() {
         val network = namedGroups()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val config = DcAttestationConfig(
+        val config = DcRunConfig(
             slotCount = 2,
             messages = ffgMessages(attestersPerSlot = 4, subnetCount = 2),
             settle = 12.seconds,
@@ -613,7 +613,7 @@ class DcBlockScenarioTest {
             randomSeed = 7
         )
 
-        val report = DcAttestationScenario.run(network, graph, config)
+        val report = DcScenario.run(network, graph, config)
         println(report)
 
         val blocks = requireNotNull(report.messages[DcSlotMessageType.BLOCK])

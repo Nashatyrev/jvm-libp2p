@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
-class DcAttestationStatsTest {
+class DcRunReportTest {
 
     private fun delivery(id: Int, receiver: Int, latencyMs: Int, slot: Int = 0) =
         DcSlotMessageDelivery(
