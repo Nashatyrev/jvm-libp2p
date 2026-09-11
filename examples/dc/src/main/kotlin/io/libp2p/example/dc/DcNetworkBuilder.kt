@@ -47,8 +47,12 @@ import kotlin.time.Duration
  * Placement is deterministic (round-robin, or largest remainder for weighted splits) and random
  * subnet draws are seeded per node from [randomSeed], so a given builder sequence always produces
  * the same network. [subnetCount] is the network-wide default subnet range; it is the default `of`
- * for [DcNodeGroup.randomMessageSubnets] and [DcNodeGroup.allMessageSubnets], but individual groups
- * can still name a smaller range or a fixed set of subnet ids per message family.
+ * for [DcNodeGroup.randomMessageSubnets] and [DcNodeGroup.allMessageSubnets] for any message type not
+ * named in [subnetCounts] — e.g. `DcNetworkBuilder.world(subnetCounts = mapOf(BLOB_COLUMN to 128))`
+ * means every `allMessageSubnets(BLOB_COLUMN)`/`randomMessageSubnets(BLOB_COLUMN, count = n)` call
+ * defaults its range to 128 without repeating that number at each call site. Individual groups can
+ * still name a smaller range or a fixed set of subnet ids per message family by passing `of`
+ * explicitly.
  *
  * [build] hands back both the [DcNode] descriptors and the [QuicNetworkTopology] to feed to the
  * simulator; the two are index-aligned, so `network.nodes[i].simNodeId == i`.
@@ -58,16 +62,21 @@ class DcNetworkBuilder<R>(
     private val maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME,
     private val randomSeed: Long = 0,
     val subnetCount: Int = DEFAULT_SUBNET_COUNT,
+    /** Per-[DcSlotMessageType] override of [subnetCount]; see the class doc. */
+    val subnetCounts: Map<DcSlotMessageType, Int> = emptyMap(),
     private val hostId: (SimNodeId) -> String = { "node-$it" }
 ) {
     init {
         require(subnetCount > 0) { "subnetCount must be > 0, got $subnetCount" }
+        subnetCounts.forEach { (type, count) ->
+            require(count > 0) { "subnetCounts[$type] must be > 0, got $count" }
+        }
     }
 
     private val nodes = mutableListOf<DcNode<R>>()
 
     /** Innermost defaults; groups start from a copy of this. */
-    private var currentDefaults = DcNodeGroup<R>(descriptor.regions, subnetCount)
+    private var currentDefaults = DcNodeGroup<R>(descriptor.regions, subnetCount, subnetCounts)
 
     /** Nodes added so far. */
     val nodeCount: Int get() = nodes.size
@@ -159,9 +168,16 @@ class DcNetworkBuilder<R>(
         fun world(
             maxQueueWaitTime: Duration = UdpSimNetworkDefaults.MAX_QUEUE_WAIT_TIME,
             randomSeed: Long = 0,
-            subnetCount: Int = DEFAULT_SUBNET_COUNT
+            subnetCount: Int = DEFAULT_SUBNET_COUNT,
+            subnetCounts: Map<DcSlotMessageType, Int> = emptyMap()
         ): DcNetworkBuilder<ContinentRegion> =
-            DcNetworkBuilder(RegionalNetworkDescriptor.WORLD_DESCRIPTOR_1, maxQueueWaitTime, randomSeed, subnetCount)
+            DcNetworkBuilder(
+                RegionalNetworkDescriptor.WORLD_DESCRIPTOR_1,
+                maxQueueWaitTime,
+                randomSeed,
+                subnetCount,
+                subnetCounts
+            )
     }
 }
 

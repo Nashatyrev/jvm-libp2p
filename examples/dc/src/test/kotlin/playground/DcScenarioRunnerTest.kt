@@ -39,10 +39,15 @@ class DcScenarioRunnerTest {
         val network = DcNetworkBuilder
             .world(
                 randomSeed = 1,
+                subnetCounts = mapOf(
+                    DcSlotMessageType.PAYLOAD_CHUNK to 64,
+                    DcSlotMessageType.BLOB_COLUMN to 128,
+                    DcSlotMessageType.FFG_ATTESTATION to 64
+                )
             )
             .defaults {
                 // Spread payload chunks across their own 64 meshes.
-                allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK, 64)
+                allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK)
             }
             .addGroup(count = 10) {
                 // validator pools
@@ -56,8 +61,8 @@ class DcScenarioRunnerTest {
                 validators = 100
                 peers = 60
 
-                allMessageSubnets(DcSlotMessageType.BLOB_COLUMN, 128)
-                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, 64)
+                allMessageSubnets(DcSlotMessageType.BLOB_COLUMN)
+                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION)
             }
             .addGroup(count = 90) {
                 // business
@@ -68,8 +73,8 @@ class DcScenarioRunnerTest {
                 peers = 30
 
                 // Model the current validator custody requirement: eight of 128 DA columns per node.
-                randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, 8, 128)
-                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, 1, 64)
+                randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, count = 8)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1)
             }
             .build()
 
@@ -99,7 +104,7 @@ class DcScenarioRunnerTest {
                 ),
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.PAYLOAD_CHUNK,
-                    sizeBytes = 1024 * 1024 / 64,
+                    sizeBytes = 128 * 1024 / 64,
                     publishOffset = 1.seconds,
                     publisherGroups = setOf("validator-pools"),
                     publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
@@ -109,7 +114,7 @@ class DcScenarioRunnerTest {
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.BLOB_COLUMN,
                     // Scenario assumption: one 8 KiB sidecar per DA column.
-                    sizeBytes = 32 * 1024,
+                    sizeBytes = 4 * 1024,
                     publishOffset = 1.seconds,
                     publisherGroups = setOf("validator-pools"),
                     publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,

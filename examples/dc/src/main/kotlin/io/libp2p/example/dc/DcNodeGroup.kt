@@ -26,8 +26,10 @@ import kotlin.random.Random
  */
 class DcNodeGroup<R> internal constructor(
     private val allRegions: List<R>,
-    /** Total attestation subnets in the network, from [DcNetworkBuilder.subnetCount]. */
-    private val subnetCount: Int
+    /** Network-wide default subnet range, from [DcNetworkBuilder.subnetCount]. */
+    private val subnetCount: Int,
+    /** Per-type override of [subnetCount], from [DcNetworkBuilder.subnetCounts]. */
+    private val subnetCounts: Map<DcSlotMessageType, Int> = emptyMap()
 ) {
     private var placement: Placement<R> = Placement.AllRegions()
     private var validatorSpec: ValidatorSpec = ValidatorSpec.PerNode(0)
@@ -121,21 +123,28 @@ class DcNodeGroup<R> internal constructor(
     }
 
     /**
-     * Draws [count] independent subscriptions for [type] from `0 until of`. [of] defaults to the
-     * network's total subnet count ([DcNetworkBuilder.subnetCount]); pass it explicitly to draw
-     * from a smaller range instead. The draw is seeded per node from the builder's seed, so it is
+     * Draws [count] independent subscriptions for [type] from `0 until of`. [of] defaults to
+     * [type]'s entry in [DcNetworkBuilder.subnetCounts], or the network's total subnet count
+     * ([DcNetworkBuilder.subnetCount]) if [type] has none; pass it explicitly to draw from a
+     * different range instead. The draw is seeded per node from the builder's seed, so it is
      * reproducible across runs and unaffected by the order in which groups are added.
      */
-    fun randomMessageSubnets(type: DcSlotMessageType, count: Int, of: Int = subnetCount) {
+    fun randomMessageSubnets(type: DcSlotMessageType, count: Int, of: Int = subnetCountFor(type)) {
         assignMessageSubnets(type, "randomMessageSubnets")
         slotMessageSubnetSpecs[type] = SubnetSpec.RandomOf(count, of)
     }
 
-    /** Subscribes every node in the group to every subnet for [type] (`0 until of`). */
-    fun allMessageSubnets(type: DcSlotMessageType, of: Int = subnetCount) {
+    /**
+     * Subscribes every node in the group to every subnet for [type] (`0 until of`). [of] defaults
+     * the same way as in [randomMessageSubnets].
+     */
+    fun allMessageSubnets(type: DcSlotMessageType, of: Int = subnetCountFor(type)) {
         assignMessageSubnets(type, "allMessageSubnets")
         slotMessageSubnetSpecs[type] = SubnetSpec.Fixed((0 until of).toSet())
     }
+
+    /** [type]'s own subnet count, or the network-wide default if it was not given one. */
+    private fun subnetCountFor(type: DcSlotMessageType): Int = subnetCounts[type] ?: subnetCount
 
     private fun assignMessageSubnets(type: DcSlotMessageType, option: String) {
         assign("slot-message:${type.id}:$option")
@@ -146,7 +155,7 @@ class DcNodeGroup<R> internal constructor(
     }
 
     /** A copy usable as the starting point of a nested scope or a group, with no assignments yet. */
-    internal fun copyAsTemplate(): DcNodeGroup<R> = DcNodeGroup(allRegions, subnetCount).also {
+    internal fun copyAsTemplate(): DcNodeGroup<R> = DcNodeGroup(allRegions, subnetCount, subnetCounts).also {
         it.placement = placement
         it.validatorSpec = validatorSpec
         it.slotMessageSubnetSpecs.putAll(slotMessageSubnetSpecs)

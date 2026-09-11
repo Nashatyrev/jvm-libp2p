@@ -463,6 +463,38 @@ class DcNetworkBuilderTest {
     }
 
     @Test
+    fun `subnetCounts overrides the default range per message type`() {
+        val network = DcNetworkBuilder.world(
+            randomSeed = 1,
+            subnetCount = 64,
+            subnetCounts = mapOf(
+                DcSlotMessageType.BLOB_COLUMN to 128,
+                DcSlotMessageType.PAYLOAD_CHUNK to 8
+            )
+        )
+            .addGroup(count = 20) {
+                bandwidth = Bandwidths.RESIDENTIAL
+                // No `of` at any of these three call sites: BLOB_COLUMN and PAYLOAD_CHUNK take
+                // their range from subnetCounts, ffg falls back to the network-wide subnetCount.
+                allMessageSubnets(DcSlotMessageType.BLOB_COLUMN)
+                randomMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK, count = 3)
+                randomMessageSubnets(ffg, count = 2)
+            }
+            .build()
+
+        assertThat(network.messageSubnetIds(DcSlotMessageType.BLOB_COLUMN)).isEqualTo((0 until 128).toSet())
+        assertThat(network.messageSubnetIds(DcSlotMessageType.PAYLOAD_CHUNK)).allMatch { it in 0 until 8 }
+        assertThat(network.messageSubnetIds(ffg)).allMatch { it in 0 until 64 }
+    }
+
+    @Test
+    fun `rejects a non-positive entry in subnetCounts`() {
+        assertThatThrownBy {
+            DcNetworkBuilder.world(subnetCounts = mapOf(ffg to 0))
+        }.hasMessageContaining("subnetCounts[$ffg] must be > 0")
+    }
+
+    @Test
     fun `subscribes a group to every subnet`() {
         val network = DcNetworkBuilder.world(subnetCount = 12)
             .addGroup(count = 3) {
