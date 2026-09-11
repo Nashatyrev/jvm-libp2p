@@ -94,13 +94,21 @@ class DcAttestationNodeProgram(
         }
     }
 
-    /** Every message family owns its topics; global topics are joined by every node. */
+    /**
+     * Every message family owns its topics; global topics are joined by every node.
+     *
+     * One subscription per message *type*, not per schedule: a type issued as several waves within a
+     * slot has one schedule per wave, all of them on the same topics, so subscribing per schedule
+     * would register that many consumers on each topic and record every arriving message once per
+     * wave — reporting deliveries as a multiple of what actually arrived.
+     */
     private fun subscribe(simContext: SimContext) {
-        messageSchedules.forEach { schedule ->
-            val topics = schedule.subscriptionsOf(slotMessageSubnetIds[schedule.config.type].orEmpty())
+        messageSchedules.groupBy { it.config.type }.forEach { (type, schedules) ->
+            val subnetIds = slotMessageSubnetIds[type].orEmpty()
+            val topics = schedules.flatMap { it.subscriptionsOf(subnetIds) }.distinct()
             if (topics.isNotEmpty()) {
                 messageApi.subscribe(
-                    Consumer { msg -> onSlotMessage(schedule.config.type, msg, simContext) },
+                    Consumer { msg -> onSlotMessage(type, msg, simContext) },
                     *topics.toTypedArray()
                 )
             }

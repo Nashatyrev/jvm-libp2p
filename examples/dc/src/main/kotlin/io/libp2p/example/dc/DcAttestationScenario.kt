@@ -234,20 +234,24 @@ class DcAttestationNodeProgramFactory<R>(
         subscribersOf(message).count { it.simNodeId != message.publisherNodeId }
 
     fun report(traffic: DcTrafficReport, events: List<DatagramPacketTraceEvent>): DcAttestationReport {
-        val reports = messageSchedules.associate { messageSchedule ->
-            val recorder = messageRecorders.getValue(messageSchedule.config.type)
-            messageSchedule.config.type to DcSlotMessageReport.of(
+        // One report per type, covering every wave of it: a type issued as several waves within a
+        // slot has one schedule per wave, all recording into that type's single recorder.
+        val schedulesByType = messageSchedules.groupBy { it.config.type }
+        val reports = schedulesByType.mapValues { (type, schedules) ->
+            val recorder = messageRecorders.getValue(type)
+            DcSlotMessageReport.of(
                 published = recorder.published(),
                 deliveries = recorder.deliveries(),
                 expectedDeliveriesOf = ::expectedDeliveriesOf,
-                config = messageSchedule.config,
-                warmupWaves = config.warmupWaves
+                config = schedules.first().config,
+                warmupWaves = config.warmupWaves,
+                publishOffsets = schedules.map { it.config.publishOffset }.sorted()
             )
         }
         val ffgReport = reports.getValue(DcSlotMessageType.FFG_ATTESTATION)
-        val messagesByType = messageSchedules.associate { messageSchedule ->
-            val recorder = messageRecorders.getValue(messageSchedule.config.type)
-            messageSchedule.config.type to (recorder.published() to recorder.deliveries())
+        val messagesByType = schedulesByType.keys.associateWith { type ->
+            val recorder = messageRecorders.getValue(type)
+            recorder.published() to recorder.deliveries()
         }
         val slotsMeasured = config.measuredWaves.count()
         val groups = DcGroupReport.of(
@@ -331,13 +335,20 @@ object DcAttestationScenario {
         config: DcAttestationConfig = DcAttestationConfig(),
         messageSchedules: List<DcSlotMessageSchedule> = defaultMessageSchedules(network, config)
     ): QuicScenario<DcAttestationNodeProgramFactory<R>> {
-        val messageSuffix = config.allMessageConfigs.joinToString(separator = "") {
-            val topics = when (val topicConfig = it.topics) {
-                DcSlotMessageTopics.Global -> "global"
-                is DcSlotMessageTopics.Subnets -> "${topicConfig.subnetCount}subnets"
+        // One segment per type rather than per config, so a type issued as many waves within a slot
+        // contributes "x12waves" instead of twelve near-identical segments.
+        val messageSuffix = config.allMessageConfigs.groupBy { it.type }
+            .entries
+            .joinToString(separator = "") { (type, configs) ->
+                val first = configs.first()
+                val topics = when (val topicConfig = first.topics) {
+                    DcSlotMessageTopics.Global -> "global"
+                    is DcSlotMessageTopics.Subnets -> "${topicConfig.subnetCount}subnets"
+                }
+                val timing =
+                    if (configs.size == 1) "@${first.publishOffset}" else "x${configs.size}waves"
+                "-${type.id}${first.messagesPerSlot}x${first.sizeBytes}B$timing-$topics"
             }
-            "-${it.type.id}${it.messagesPerSlot}x${it.sizeBytes}B@${it.publishOffset}-$topics"
-        }
         return QuicScenario(
             name = "dc-attestations-${network.nodeCount}n-${config.waveCount}waves$messageSuffix",
             network = network.topology,
@@ -348,17 +359,39 @@ object DcAttestationScenario {
         )
     }
 
-    /** Builds one deterministic schedule for every configured slot-message kind. */
+    /**
+     * Builds one deterministic schedule per configured slot-message kind — meaning per
+     * [DcSlotMessageConfig], so a type configured as several waves within a slot gets one schedule
+     * per wave, each at its own [DcSlotMessageConfig.publishOffset].
+     *
+     * Message ids are handed out in non-overlapping ranges across all schedules, since a type's
+     * waves share one recorder and are told apart by id — see
+     * [DcSlotMessageSchedule.Companion.create]'s `firstMessageId`.
+     */
     fun <R> defaultMessageSchedules(
         network: DcNetwork<R>,
         config: DcAttestationConfig
-    ): List<DcSlotMessageSchedule> = config.allMessageConfigs.mapIndexed { index, message ->
-        DcSlotMessageSchedule.create(
-            network = network,
-            waves = config.waves,
-            config = message,
-            randomSeed = config.randomSeed + index
-        )
+    ): List<DcSlotMessageSchedule> {
+        val configs = config.allMessageConfigs
+        // Waves of one type are numbered by their offset into the slot, earliest first, whatever
+        // order the configs were listed in. The schedules themselves stay in listed order, so the
+        // per-schedule random seeds below do not shift when a wave is added.
+        val waveIndexOf = configs.groupBy { it.type }
+            .flatMap { (_, ofType) ->
+                ofType.sortedBy { it.publishOffset }.mapIndexed { wave, message -> message to wave }
+            }
+            .toMap()
+        var nextMessageId = 0
+        return configs.mapIndexed { index, message ->
+            DcSlotMessageSchedule.create(
+                network = network,
+                waves = config.waves,
+                config = message,
+                randomSeed = config.randomSeed + index,
+                firstMessageId = nextMessageId,
+                waveIndexInSlot = waveIndexOf.getValue(message)
+            ).also { nextMessageId += it.messages.size }
+        }
     }
 
     /**

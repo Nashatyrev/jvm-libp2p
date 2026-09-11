@@ -341,4 +341,113 @@ class DcAttestationScenarioTest {
             )
         }.hasMessageContaining("exceeds the 10 eligible nodes")
     }
+
+    // --- several waves of one type within a slot -------------------------------------------------
+
+    /** FFG attestations issued [waves] times per slot, one config per offset into the slot. */
+    private fun ffgWaves(waves: Int, subnetCount: Int) = (0 until waves).map { wave ->
+        DcSlotMessageConfig(
+            type = DcSlotMessageType.FFG_ATTESTATION,
+            sizeBytes = 240,
+            publishOffset = wave.seconds,
+            publisherSelection = DcPublisherSelection.RANDOM_NODES,
+            messagesPerSlot = 2,
+            topics = DcSlotMessageTopics.Subnets(subnetCount)
+        )
+    }
+
+    @Test
+    fun `one type issued at several offsets gets a schedule per wave, numbered by offset`() {
+        val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
+        val config = DcAttestationConfig(
+            waveCount = 2,
+            waveInterval = 12.seconds,
+            // Listed back to front, to show wave numbering follows the offset rather than the order.
+            messages = ffgWaves(waves = 3, subnetCount = 4).reversed()
+        )
+
+        val schedules = DcAttestationScenario.defaultMessageSchedules(network, config)
+
+        assertThat(schedules).hasSize(3)
+        assertThat(schedules.map { it.config.publishOffset })
+            .describedAs("schedules stay in listed order, so per-schedule seeds do not shift")
+            .containsExactly(2.seconds, 1.seconds, 0.seconds)
+        assertThat(schedules.map { schedule -> schedule.messages.map { it.waveIndexInSlot }.distinct() })
+            .describedAs("wave index follows the offset into the slot, earliest first")
+            .containsExactly(listOf(2), listOf(1), listOf(0))
+        // Every wave covers the same real slots, so the slot index stays the slot number.
+        assertThat(schedules.flatMap { schedule -> schedule.messages.map { it.slotIndex } }.distinct())
+            .containsExactlyInAnyOrder(0, 1)
+        schedules.forEach { schedule ->
+            schedule.messages.forEach { message ->
+                assertThat(schedule.timeOf(message))
+                    .isEqualTo(config.waveTimes[message.slotIndex] + schedule.config.publishOffset)
+            }
+        }
+    }
+
+    @Test
+    fun `message ids do not overlap between the waves of one type`() {
+        val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
+        val config = DcAttestationConfig(
+            waveCount = 2,
+            waveInterval = 12.seconds,
+            messages = ffgWaves(waves = 4, subnetCount = 4)
+        )
+
+        val schedules = DcAttestationScenario.defaultMessageSchedules(network, config)
+
+        // Ids are what GossipByteCounter keys a first sighting on, and what the report joins a
+        // delivery back to its wave by, so they have to be unique across the whole run.
+        val allIds = schedules.flatMap { schedule -> schedule.messages.map { it.id } }
+        assertThat(allIds).doesNotHaveDuplicates()
+        assertThat(allIds.sorted()).isEqualTo(allIds.indices.toList())
+    }
+
+    @Test
+    fun `the scenario name reports a wave count instead of one segment per wave`() {
+        val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
+        val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
+        val config = DcAttestationConfig(
+            waveCount = 1,
+            waveInterval = 12.seconds,
+            messages = ffgWaves(waves = 12, subnetCount = 4)
+        )
+
+        val name = DcAttestationScenario.of(network, graph, config).name
+
+        assertThat(name).contains("-${DcSlotMessageType.FFG_ATTESTATION.id}2x240Bx12waves-4subnets")
+        assertThat(name.split("ffg")).describedAs("one segment for the type, not twelve").hasSize(2)
+    }
+
+    @Test
+    fun `a type issued as several waves reports per wave within the slot`() {
+        val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
+        val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
+        val config = DcAttestationConfig(
+            waveCount = 1,
+            waveInterval = 12.seconds,
+            settle = 12.seconds,
+            messages = ffgWaves(waves = 3, subnetCount = 4),
+            randomSeed = 7
+        )
+
+        val report = DcAttestationScenario.run(network, graph, config)
+
+        val ffg = report.messages.getValue(DcSlotMessageType.FFG_ATTESTATION)
+        assertThat(ffg.publishOffsets).containsExactly(0.seconds, 1.seconds, 2.seconds)
+        assertThat(ffg.perWaveInSlot.keys).containsExactlyInAnyOrder(0, 1, 2)
+        assertThat(ffg.perWaveInSlot.values.map { it.publishedCount })
+            .describedAs("two messages per wave, one slot")
+            .containsOnly(2)
+        assertThat(ffg.overall.publishedCount)
+            .describedAs("the type's overall figures cover every wave of it")
+            .isEqualTo(6)
+        // The whole point of the per-type subscribe: one delivery recorded per message per
+        // subscriber, not one per wave-schedule.
+        assertThat(ffg.overall.deliveryRatio).isEqualTo(1.0)
+        assertThat(ffg.perWaveInSlot.values.map { it.deliveryRatio }).containsOnly(1.0)
+        assertThat(ffg.perWaveInSlot.values.sumOf { it.actualDeliveries })
+            .isEqualTo(ffg.overall.actualDeliveries)
+    }
 }

@@ -189,7 +189,15 @@ data class DcSlotMessage(
     /** Null for a global topic; otherwise the subnet topic carrying this message. */
     val subnetId: Int? = null,
     /** Topic namespace and subscriber assignment used for this message. */
-    val type: DcSlotMessageType
+    val type: DcSlotMessageType,
+    /**
+     * Which wave within the slot issued this message, when [type] is configured as several waves —
+     * one [DcSlotMessageConfig] per [DcSlotMessageConfig.publishOffset] — and 0 for the single-wave
+     * case. Ordered by offset into the slot, so wave 0 is the earliest. Stamped on the schedule
+     * rather than carried on the wire: [DcSlotMessageReport] joins deliveries back to it by
+     * [id], which is why message ids have to be unique across a type's waves.
+     */
+    val waveIndexInSlot: Int = 0
 )
 
 data class DcSlotMessagePublication(
@@ -248,15 +256,29 @@ class DcSlotMessageSchedule(
             network: DcNetwork<R>,
             waves: DcSlotMessageWaves,
             config: DcSlotMessageConfig,
-            randomSeed: Long = 0
-        ): DcSlotMessageSchedule = create(network, waves.times, config, randomSeed)
+            randomSeed: Long = 0,
+            firstMessageId: Int = 0,
+            waveIndexInSlot: Int = 0
+        ): DcSlotMessageSchedule =
+            create(network, waves.times, config, randomSeed, firstMessageId, waveIndexInSlot)
 
+        /**
+         * [firstMessageId] is where this schedule starts numbering its messages. It matters when one
+         * message type is issued as several waves within a slot: [GossipByteCounter] keys a node's
+         * first sighting of a message on `(type, id)`, and [DcSlotMessageReport] joins deliveries to
+         * their wave by id, so every schedule of a type needs its own id range — see
+         * [DcAttestationScenario.defaultMessageSchedules], which hands them out.
+         */
         fun <R> create(
             network: DcNetwork<R>,
             slotTimes: List<Duration>,
             config: DcSlotMessageConfig,
-            randomSeed: Long = 0
+            randomSeed: Long = 0,
+            firstMessageId: Int = 0,
+            waveIndexInSlot: Int = 0
         ): DcSlotMessageSchedule {
+            require(firstMessageId >= 0) { "firstMessageId must be >= 0, got $firstMessageId" }
+            require(waveIndexInSlot >= 0) { "waveIndexInSlot must be >= 0, got $waveIndexInSlot" }
             config.publisherGroups?.let { requested ->
                 val unknown = requested - network.groupNames()
                 require(unknown.isEmpty()) {
@@ -340,7 +362,7 @@ class DcSlotMessageSchedule(
                 null
             }
 
-            var nextId = 0
+            var nextId = firstMessageId
             fun ownSubnetOf(publisher: DcNode<R>): Int? = (config.topics as? DcSlotMessageTopics.Subnets)?.let { topics ->
                 val subscribed = publisher.subnetIdsFor(config.type).filter { it in 0 until topics.subnetCount }
                 require(subscribed.isNotEmpty()) {
@@ -361,7 +383,8 @@ class DcSlotMessageSchedule(
                                     indexInSlot++,
                                     publisher.simNodeId,
                                     ownSubnetOf(publisher),
-                                    config.type
+                                    config.type,
+                                    waveIndexInSlot
                                 )
                             }
                         }
@@ -369,13 +392,29 @@ class DcSlotMessageSchedule(
 
                     DcPublisherSelection.RANDOM_NODES ->
                         candidates.shuffled(random).take(config.messagesPerSlot).mapIndexed { indexInSlot, publisher ->
-                            DcSlotMessage(nextId++, slotIndex, indexInSlot, publisher.simNodeId, ownSubnetOf(publisher), config.type)
+                            DcSlotMessage(
+                                nextId++,
+                                slotIndex,
+                                indexInSlot,
+                                publisher.simNodeId,
+                                ownSubnetOf(publisher),
+                                config.type,
+                                waveIndexInSlot
+                            )
                         }
 
                     DcPublisherSelection.RANDOM_VALIDATORS ->
                         validatorSlots!!.shuffled(random).take(config.messagesPerSlot)
                             .mapIndexed { indexInSlot, publisher ->
-                                DcSlotMessage(nextId++, slotIndex, indexInSlot, publisher.simNodeId, ownSubnetOf(publisher), config.type)
+                                DcSlotMessage(
+                                    nextId++,
+                                    slotIndex,
+                                    indexInSlot,
+                                    publisher.simNodeId,
+                                    ownSubnetOf(publisher),
+                                    config.type,
+                                    waveIndexInSlot
+                                )
                             }
 
                     DcPublisherSelection.RANDOM_NODE, DcPublisherSelection.VALIDATOR_WEIGHTED -> {
@@ -390,7 +429,15 @@ class DcSlotMessageSchedule(
                             val subnetId = (config.topics as? DcSlotMessageTopics.Subnets)?.let {
                                 indexInSlot % it.subnetCount
                             }
-                            DcSlotMessage(nextId++, slotIndex, indexInSlot, publisher.simNodeId, subnetId, config.type)
+                            DcSlotMessage(
+                                nextId++,
+                                slotIndex,
+                                indexInSlot,
+                                publisher.simNodeId,
+                                subnetId,
+                                config.type,
+                                waveIndexInSlot
+                            )
                         }
                     }
                 }

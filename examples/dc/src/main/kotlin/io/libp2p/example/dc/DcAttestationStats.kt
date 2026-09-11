@@ -79,23 +79,43 @@ data class DcSlotMessageReport(
     val config: DcSlotMessageConfig,
     val publishTimes: Map<Int, List<Duration>>,
     val publishers: Map<Int, Set<SimNodeId>>,
-    val warmupWaves: Int = 0
+    val warmupWaves: Int = 0,
+    /**
+     * Every offset into the slot this type is issued at, in order — one entry per
+     * [DcSlotMessageConfig] of this type, so a single-wave type has just
+     * [DcSlotMessageConfig.publishOffset]. [config] is the first of those configs; the rest differ
+     * only in their offset.
+     */
+    val publishOffsets: List<Duration> = listOf(config.publishOffset),
+    /**
+     * Stats per wave within the slot, keyed by [DcSlotMessage.waveIndexInSlot], for a type issued as
+     * several waves — so a wave that lands while the slot is already busy can be told apart from one
+     * that has the network to itself. Holds a single entry for a single-wave type, where it says the
+     * same thing as [overall].
+     */
+    val perWaveInSlot: Map<Int, DcDeliveryStats> = emptyMap()
 ) {
     val measuredSlots: List<Int> get() = perSlot.keys.filter { it >= warmupWaves }.sorted()
 
     override fun toString(): String = buildString {
         appendLine(
-            "%s: %d x %d B per slot, publishOffset=%s topics=%s publishers=%s selection=%s".format(
+            "%s: %d x %d B per slot, %s topics=%s publishers=%s selection=%s".format(
                 type.id,
                 config.messagesPerSlot,
                 config.sizeBytes,
-                config.publishOffset,
+                offsetsDescription(),
                 config.topics,
                 config.publisherGroups?.joinToString(prefix = "groups ") ?: "all groups",
                 config.publisherSelection
             )
         )
         append("$type overall: $overall")
+        if (perWaveInSlot.size > 1) {
+            perWaveInSlot.toSortedMap().forEach { (wave, stats) ->
+                val at = publishOffsets.getOrNull(wave)?.let { " @$it" }.orEmpty()
+                append("$type wave $wave of ${perWaveInSlot.size} in slot$at: $stats")
+            }
+        }
         perSlot.toSortedMap().forEach { (slot, stats) ->
             val tag = if (slot < warmupWaves) " [warmup, excluded from overall]" else ""
             val publisher = publishers[slot]?.let { ids ->
@@ -110,18 +130,32 @@ data class DcSlotMessageReport(
         }
     }
 
+    private fun offsetsDescription(): String =
+        if (publishOffsets.size <= 1) {
+            "publishOffset=${publishOffsets.singleOrNull() ?: config.publishOffset}"
+        } else {
+            "waves=${publishOffsets.size} publishOffsets=${publishOffsets.first()}..${publishOffsets.last()}"
+        }
+
     companion object {
         fun of(
             published: List<DcSlotMessagePublication>,
             deliveries: List<DcSlotMessageDelivery>,
             expectedDeliveriesOf: (DcSlotMessage) -> Int,
             config: DcSlotMessageConfig,
-            warmupWaves: Int = 0
+            warmupWaves: Int = 0,
+            publishOffsets: List<Duration> = listOf(config.publishOffset)
         ): DcSlotMessageReport {
             val deliveriesByWave = deliveries.groupBy { it.slotIndex }
             val publicationsByWave = published.groupBy { it.message.slotIndex }
             val measuredPublished = published.filter { it.message.slotIndex >= warmupWaves }
             val measuredDeliveries = deliveries.filter { it.slotIndex >= warmupWaves }
+            // Deliveries carry only the message id, so the wave they belong to is looked up from the
+            // publisher side -- sound because ids are unique across a type's waves, see
+            // DcSlotMessageSchedule.create's firstMessageId.
+            val waveOfMessageId = measuredPublished.associate { it.message.id to it.message.waveIndexInSlot }
+            val measuredByWaveInSlot = measuredPublished.groupBy { it.message.waveIndexInSlot }
+            val deliveriesByWaveInSlot = measuredDeliveries.groupBy { waveOfMessageId[it.messageId] }
             return DcSlotMessageReport(
                 type = config.type,
                 overall = DcDeliveryStats.of(
@@ -145,7 +179,16 @@ data class DcSlotMessageReport(
                 publishers = publicationsByWave.mapValues { (_, values) ->
                     values.mapTo(linkedSetOf()) { it.message.publisherNodeId }
                 },
-                warmupWaves = warmupWaves
+                warmupWaves = warmupWaves,
+                publishOffsets = publishOffsets,
+                perWaveInSlot = measuredByWaveInSlot.mapValues { (wave, wavePublications) ->
+                    DcDeliveryStats.of(
+                        publishedCount = wavePublications.size,
+                        latencies = deliveriesByWaveInSlot[wave].orEmpty().map { it.latency },
+                        expectedDeliveries = wavePublications.sumOf { expectedDeliveriesOf(it.message) },
+                        what = config.type.id
+                    )
+                }
             )
         }
     }
