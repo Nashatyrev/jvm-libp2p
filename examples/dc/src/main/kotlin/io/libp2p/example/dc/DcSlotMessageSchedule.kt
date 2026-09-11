@@ -7,28 +7,28 @@ import kotlin.random.Random
 import kotlin.time.Duration
 
 /**
- * Semantic type of a slot message. The built-ins cover the messages currently studied, while the
- * public constructor keeps the model open to new protocol messages without changing an enum, e.g.
- * `DcSlotMessageType("custody-proof")`.
+ * Semantic type of a slot message. [id] is the short name used on the wire (as the gossip topic
+ * suffix) and in every report.
+ *
+ * Declaration order is report order: anything printed per message type — the columns of
+ * [DcSlotTrafficProfile], the per-type sections of [DcAttestationReport] and [DcGroupStats] — is
+ * ordered by [Enum.ordinal], so the constants are listed in the order they occur within a slot.
  */
-data class DcSlotMessageType(val id: String) {
-    init {
-        require(ID.matches(id)) {
-            "message type id must contain only letters, digits, '.', '_' or '-', got '$id'"
-        }
-    }
+enum class DcSlotMessageType(val id: String) {
+    BLOCK("block"),
+    PAYLOAD("payload"),
+    PAYLOAD_CHUNK("payload-c"),
+    BLOB_COLUMN("blob"),
+    GOLDFISH_ATTESTATION("ac-vote"),
+    FFG_ATTESTATION("ffg-vote");
 
     override fun toString(): String = id
 
     companion object {
-        private val ID = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
+        private val BY_ID = values().associateBy { it.id }
 
-        val BLOCK = DcSlotMessageType("block")
-        val BLOB_COLUMN = DcSlotMessageType("blob")
-        val PAYLOAD = DcSlotMessageType("payload")
-        val PAYLOAD_CHUNK = DcSlotMessageType("chunk")
-        val GOLDFISH_ATTESTATION = DcSlotMessageType("ac-vote")
-        val FFG_ATTESTATION = DcSlotMessageType("ffg-vote")
+        /** The type with this [id], or null if no constant uses it. */
+        fun byId(id: String): DcSlotMessageType? = BY_ID[id]
     }
 }
 
@@ -92,14 +92,12 @@ sealed class DcSlotMessageTopics {
          * Recovers the [DcSlotMessageType] a wire topic string belongs to — the inverse of [topic],
          * for code that only has the topic (e.g. [GossipByteCounter], reading a topic ID off an
          * inbound RPC with no other context on what published it). Null for anything not shaped like
-         * one of our own topics, including a subnet suffix that fails [DcSlotMessageType]'s own id
-         * validation.
+         * one of our own topics, including a prefixed topic whose type segment names no constant.
          */
         fun typeOf(topic: String): DcSlotMessageType? {
             if (!topic.startsWith(TOPIC_PREFIX)) return null
             val rest = topic.removePrefix(TOPIC_PREFIX)
-            val typeId = rest.substringBefore('/')
-            return runCatching { DcSlotMessageType(typeId) }.getOrNull()
+            return DcSlotMessageType.byId(rest.substringBefore('/'))
         }
     }
 }

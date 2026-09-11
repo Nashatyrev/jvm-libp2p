@@ -100,7 +100,8 @@ data class DcSlotTrafficProfile(
             "slot traffic profile (bytes/node/slot): bucket=$bucketDuration slotDuration=$slotDuration " +
                 "slots=$slotsMeasured nodes=$nodeCount"
         )
-        val types = (uniqueMessageBytesPerNode.keys + duplicateMessageBytesPerNode.keys).distinct().sortedBy { it.id }
+        // Columns follow DcSlotMessageType declaration order, i.e. slot order.
+        val types = (uniqueMessageBytesPerNode.keys + duplicateMessageBytesPerNode.keys).distinct().sorted()
         val columns = types.flatMap { listOf("${it.id}$UNIQUE_SUFFIX", "${it.id}$DUPLICATE_SUFFIX") } +
             CONTROL_COLUMN +
             TRANSPORT_OVERHEAD_COLUMN

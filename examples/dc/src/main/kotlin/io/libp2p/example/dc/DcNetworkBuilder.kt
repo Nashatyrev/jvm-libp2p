@@ -213,7 +213,7 @@ data class DcNetwork<R>(
         val subnetsByType = subnetSubscriptions().groupBy { it.messageType }
         appendLine(
             "nodes=$nodeCount validators=$validatorCount " +
-                "subnets=" + subnetsByType.entries.sortedBy { it.key.id }
+                "subnets=" + subnetsByType.entries.sortedBy { it.key }
                     .joinToString { (type, ids) -> "${type.id}=${ids.size}" }
         )
         groupNames().forEach { groupName ->

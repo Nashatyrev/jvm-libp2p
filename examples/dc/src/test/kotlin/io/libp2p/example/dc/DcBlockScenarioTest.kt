@@ -152,12 +152,15 @@ class DcBlockScenarioTest {
     }
 
     @Test
-    fun `message types are extensible and one issuance config is allowed per type`() {
-        val custom = DcSlotMessageType("custody-proof")
-        assertThat(DcSlotMessageTopics.Global.topic(custom, null).topic)
-            .isEqualTo("/dc/custody-proof")
-        assertThat(DcSlotMessageTopics.Subnets(8).topic(custom, 3).topic)
-            .isEqualTo("/dc/custody-proof/3")
+    fun `every message type namespaces its topics and allows one issuance config`() {
+        DcSlotMessageType.values().forEach { type ->
+            assertThat(DcSlotMessageTopics.Global.topic(type, null).topic)
+                .isEqualTo("/dc/${type.id}")
+            assertThat(DcSlotMessageTopics.Subnets(8).topic(type, 3).topic)
+                .isEqualTo("/dc/${type.id}/3")
+        }
+        assertThat(DcSlotMessageType.values().map { it.id }.distinct())
+            .hasSize(DcSlotMessageType.values().size)
 
         assertThatThrownBy {
             DcAttestationConfig(
@@ -181,7 +184,7 @@ class DcBlockScenarioTest {
 
         assertThatThrownBy {
             DcSlotMessageSchedule.create(network, listOf(30.seconds), config)
-        }.hasMessageContaining("chunk subnet topics have no subscribers: [0, 1, 2, 3]")
+        }.hasMessageContaining("${DcSlotMessageType.PAYLOAD_CHUNK} subnet topics have no subscribers: [0, 1, 2, 3]")
     }
 
     @Test

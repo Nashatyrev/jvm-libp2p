@@ -301,7 +301,9 @@ data class DcAttestationReport(
                 )
             }
         mesh?.let { append(it) }
-        messages.values.forEach { append(it) }
+        // In DcSlotMessageType declaration order rather than config order, so two runs that list
+        // their messages differently still report them the same way.
+        messages.toSortedMap().values.forEach { append(it) }
         slotTraffic?.let { append(it) }
         append(groups)
     }

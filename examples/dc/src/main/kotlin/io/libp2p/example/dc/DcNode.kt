@@ -72,7 +72,7 @@ data class DcNode<R>(
         val link = if (hasAsymmetricLink) "$bandwidth down/$uploadBandwidth up" else "$bandwidth"
         val group = groupName?.let { "$it, " } ?: ""
         val messageSubnets = slotMessageSubnetIds.entries
-            .sortedBy { it.key.id }
+            .sortedBy { it.key }
             .joinToString { (type, ids) -> "${type.id}=${ids.sorted()}" }
         val extra = if (messageSubnets.isEmpty()) "" else ", subnets={$messageSubnets}"
         return "$id[$group$region, $link, validators=$validatorCount, peers=$peerCount$extra]"

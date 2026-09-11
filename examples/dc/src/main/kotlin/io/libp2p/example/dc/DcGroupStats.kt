@@ -13,8 +13,8 @@ import io.libp2p.quicsim.sim.SimNodeId
  * of the group so groups of different sizes can be compared directly.
  *
  * [messagesReceived] carries one [DcDeliveryStats] per configured [DcSlotMessageType] — block,
- * payload, blob column, FFG attestation, or a custom type — counted at the *receiving* node, so it
- * reports what this group observed rather than what it published.
+ * payload, blob column, FFG attestation — counted at the *receiving* node, so it reports what this
+ * group observed rather than what it published.
  */
 data class DcGroupStats(
     val groupName: String,
@@ -67,7 +67,7 @@ data class DcGroupStats(
                     perNode(gossipControlBytesReceived)
                 )
         )
-        messagesReceived.toSortedMap(compareBy { it.id }).forEach { (type, stats) ->
+        messagesReceived.toSortedMap().forEach { (type, stats) ->
             append("  received $type: $stats".trimEnd().replace("\n", "\n  "))
             appendLine()
         }

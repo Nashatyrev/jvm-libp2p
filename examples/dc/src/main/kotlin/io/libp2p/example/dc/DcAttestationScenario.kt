@@ -77,8 +77,8 @@ data class DcBlockConfig(
 }
 
 /**
- * A repeated-wave run of independently typed block, payload, column, FFG-attestation, or custom
- * messages. Every entry in [DcAttestationConfig.messages] is expanded over the compact wave
+ * A repeated-wave run of independently typed block, payload, column and FFG-attestation messages.
+ * Every entry in [DcAttestationConfig.messages] is expanded over the compact wave
  * definition, so callers configure a message once rather than describing each wave separately.
  *
  * [warmup] exists because gossipsub needs time to form its meshes; attesting before that measures

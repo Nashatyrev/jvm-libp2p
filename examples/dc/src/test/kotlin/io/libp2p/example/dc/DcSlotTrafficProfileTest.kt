@@ -362,6 +362,32 @@ class DcSlotTrafficProfileTest {
         assertThat(text.lines().filter { it.isNotBlank() }).hasSize(2 + profile.bucketCount)
     }
 
+    @Test
+    fun `columns follow DcSlotMessageType declaration order, not the order types were counted in`() {
+        val buckets = listOf(0L)
+        // Deliberately back to front relative to the enum.
+        val byType = DcSlotMessageType.values().reversed().associateWith { buckets }
+        val profile = DcSlotTrafficProfile(
+            bucketDuration = 100.milliseconds,
+            slotDuration = 100.milliseconds,
+            slotsMeasured = 1,
+            nodeCount = 1,
+            uniqueMessageBytesPerNode = byType,
+            duplicateMessageBytesPerNode = byType,
+            controlBytesPerNode = buckets,
+            transportOverheadBytesPerNode = buckets
+        )
+
+        val expected = DcSlotMessageType.values().flatMap {
+            listOf(
+                "${it.id}${DcSlotTrafficProfile.UNIQUE_SUFFIX}",
+                "${it.id}${DcSlotTrafficProfile.DUPLICATE_SUFFIX}"
+            )
+        } + DcSlotTrafficProfile.CONTROL_COLUMN + DcSlotTrafficProfile.TRANSPORT_OVERHEAD_COLUMN
+        val header = profile.toString().lines()[1].trim().split(Regex("\\s+"))
+        assertThat(header).containsExactlyElementsOf(listOf("t(ms)") + expected)
+    }
+
     // --- end to end ---------------------------------------------------------------------------------
 
     @Test
