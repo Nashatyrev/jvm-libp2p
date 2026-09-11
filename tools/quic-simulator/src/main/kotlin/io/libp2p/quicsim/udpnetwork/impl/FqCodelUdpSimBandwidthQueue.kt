@@ -6,6 +6,7 @@ import io.libp2p.quicsim.udpnetwork.UdpSimNetworkDefaults
 import io.libp2p.quicsim.udpnetwork.udpSimBytes
 import io.libp2p.quicsim.udpnetwork.udpSimFlowKey
 import io.netty.channel.socket.DatagramPacket
+import io.netty.util.ReferenceCountUtil
 import java.util.ArrayDeque
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -121,7 +122,7 @@ class FqCodelUdpSimBandwidthQueue(
         while (flow.packets.isNotEmpty()) {
             val sojourn = deliverAt - flow.packets.peekFirst().enqueuedAt
             if (sojourn > maxQueueWaitTime) {
-                flow.packets.removeFirst()
+                dropPacket(flow.packets.removeFirst().packet)
                 flow.firstAboveTargetAt = null
                 continue
             }
@@ -140,9 +141,14 @@ class FqCodelUdpSimBandwidthQueue(
                 return
             }
 
-            flow.packets.removeFirst()
+            dropPacket(flow.packets.removeFirst().packet)
             flow.firstAboveTargetAt = deliverAt + interval
         }
+    }
+
+    private fun dropPacket(packet: DatagramPacket) {
+        // Dropped by the qdisc: the packet never reaches a receiver, so the simulator owns its last reference.
+        ReferenceCountUtil.safeRelease(packet)
     }
 
     private fun drainReady(): List<DatagramPacket> {

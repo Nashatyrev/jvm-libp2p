@@ -4,6 +4,7 @@ import io.libp2p.quicsim.udpnetwork.Bandwidth
 import io.libp2p.quicsim.udpnetwork.UdpSimBandwidthQueue
 import io.libp2p.quicsim.udpnetwork.udpSimBytes
 import io.netty.channel.socket.DatagramPacket
+import io.netty.util.ReferenceCountUtil
 import java.util.ArrayDeque
 import kotlin.math.sqrt
 import kotlin.time.Duration
@@ -62,6 +63,8 @@ class CodelUdpSimBandwidthQueue(
             if (queue.size < limitPackets) {
                 queue += PacketEntry(packet, currentTime)
                 totalBytesStored += packet.udpSimBytes()
+            } else {
+                dropPacket(packet)
             }
         }
     }
@@ -105,7 +108,7 @@ class CodelUdpSimBandwidthQueue(
                 mode = Mode.STORE
                 null
             }
-            item.okToDrop && mode == Mode.STORE -> dropFromStoreMode(now)
+            item.okToDrop && mode == Mode.STORE -> dropFromStoreMode(now, item.packet)
             item.okToDrop && mode == Mode.DROP -> dropFromDropMode(now, item.packet)
             else -> {
                 mode = Mode.STORE
@@ -115,8 +118,8 @@ class CodelUdpSimBandwidthQueue(
         return packet
     }
 
-    private fun dropFromStoreMode(now: Duration): DatagramPacket? {
-        dropPacket()
+    private fun dropFromStoreMode(now: Duration, droppedPacket: DatagramPacket): DatagramPacket? {
+        dropPacket(droppedPacket)
         val nextItem = codelPop(now)
         mode = Mode.DROP
 
@@ -135,7 +138,7 @@ class CodelUdpSimBandwidthQueue(
     private fun dropFromDropMode(now: Duration, packet: DatagramPacket): DatagramPacket? {
         var item: CodelPopItem? = CodelPopItem(packet, okToDrop = true)
         while (item != null && mode == Mode.DROP && shouldDrop(now)) {
-            dropPacket()
+            dropPacket(item.packet)
             currentDropCount++
 
             item = codelPop(now)
@@ -190,8 +193,9 @@ class CodelUdpSimBandwidthQueue(
         return time + incrementNanos.nanoseconds
     }
 
-    private fun dropPacket() {
-        // Dropped by CoDel.
+    private fun dropPacket(packet: DatagramPacket) {
+        // Dropped by CoDel: the packet never reaches a receiver, so the simulator owns its last reference.
+        ReferenceCountUtil.safeRelease(packet)
     }
 
     private fun drainReady(): List<DatagramPacket> {
