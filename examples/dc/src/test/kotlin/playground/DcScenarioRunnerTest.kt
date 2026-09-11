@@ -99,7 +99,7 @@ class DcScenarioRunnerTest {
                 ),
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.PAYLOAD_CHUNK,
-                    sizeBytes = 128 * 1024 / 64,
+                    sizeBytes = 1024 * 1024 / 64,
                     publishOffset = 1.seconds,
                     publisherGroups = setOf("validator-pools"),
                     publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
@@ -109,7 +109,7 @@ class DcScenarioRunnerTest {
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.BLOB_COLUMN,
                     // Scenario assumption: one 8 KiB sidecar per DA column.
-                    sizeBytes = 8 * 1024,
+                    sizeBytes = 32 * 1024,
                     publishOffset = 1.seconds,
                     publisherGroups = setOf("validator-pools"),
                     publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,

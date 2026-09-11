@@ -69,9 +69,14 @@ data class DcSlotProfileParams(
  *  - [controlBytesPerNode]: the rest of what gossip put on the wire for these bytes — subscriptions,
  *    GRAFT/PRUNE/IHAVE/IWANT, and RPC framing. One column, not per type, since control traffic is not
  *    about any particular message.
- *  - [transportOverheadBytesPerNode]: raw UDP bytes received minus the three gossip figures above —
- *    QUIC/libp2p's own framing, handshakes, ACKs and retransmits, the traffic gossip's own byte
- *    accounting never sees.
+ *  - [transportBytesPerNode]: raw inbound UDP bytes, with no attempt to net them against the gossip
+ *    figures above. A per-bucket "UDP minus gossip" subtraction looks appealing but is not
+ *    meaningful: gossip bytes are only counted once a full RPC has been reassembled from its QUIC
+ *    packets, while UDP bytes are counted per packet as they arrive, so a large message spread over
+ *    several packets shows its UDP bytes several buckets before the one gossip byte count that
+ *    covers all of them — making a subtracted "overhead" figure swing wildly bucket to bucket
+ *    without meaning anything. This column is simply the wire truth for the bucket, comparable
+ *    against the gossip columns by eye but not netted against them.
  *
  * Every figure is bytes per node per slot: summed over every measured slot and every receiving node,
  * divided by [nodeCount] and [slotsMeasured] — the same "per network node" convention the rest of the
@@ -87,7 +92,7 @@ data class DcSlotTrafficProfile(
     val uniqueMessageBytesPerNode: Map<DcSlotMessageType, List<Long>>,
     val duplicateMessageBytesPerNode: Map<DcSlotMessageType, List<Long>>,
     val controlBytesPerNode: List<Long>,
-    val transportOverheadBytesPerNode: List<Long>
+    val transportBytesPerNode: List<Long>
 ) {
     val bucketCount: Int get() = controlBytesPerNode.size
 
@@ -104,14 +109,14 @@ data class DcSlotTrafficProfile(
         val types = (uniqueMessageBytesPerNode.keys + duplicateMessageBytesPerNode.keys).distinct().sorted()
         val columns = types.flatMap { listOf("${it.id}$UNIQUE_SUFFIX", "${it.id}$DUPLICATE_SUFFIX") } +
             CONTROL_COLUMN +
-            TRANSPORT_OVERHEAD_COLUMN
+            TRANSPORT_COLUMN
         val zeros = List(bucketCount) { 0L }
         val series = types.flatMap { type ->
             listOf(
                 "${type.id}$UNIQUE_SUFFIX" to (uniqueMessageBytesPerNode[type] ?: zeros),
                 "${type.id}$DUPLICATE_SUFFIX" to (duplicateMessageBytesPerNode[type] ?: zeros)
             )
-        }.toMap() + (CONTROL_COLUMN to controlBytesPerNode) + (TRANSPORT_OVERHEAD_COLUMN to transportOverheadBytesPerNode)
+        }.toMap() + (CONTROL_COLUMN to controlBytesPerNode) + (TRANSPORT_COLUMN to transportBytesPerNode)
         val widths = columns.associateWith { maxOf(it.length, VALUE_WIDTH) }
         appendLine(
             "%${TIME_WIDTH}s".format("t(ms)") +
@@ -133,7 +138,7 @@ data class DcSlotTrafficProfile(
         const val UNIQUE_SUFFIX = "-uniq"
         const val DUPLICATE_SUFFIX = "-dup"
         const val CONTROL_COLUMN = "control"
-        const val TRANSPORT_OVERHEAD_COLUMN = "transport-overhead"
+        const val TRANSPORT_COLUMN = "transport"
 
         /** Every point in a 12s slot at the default 100ms resolution: 120 buckets. */
         val DEFAULT_BUCKET_DURATION: Duration = DcSlotProfileParams.DEFAULT_BUCKET_DURATION
@@ -178,17 +183,6 @@ data class DcSlotTrafficProfile(
                     params.bucketOf(event.at)?.let { bucket -> rawUdpBytes[bucket] = rawUdpBytes[bucket] + event.bytes }
                 }
 
-            // Overhead is what UDP carried beyond gossip's own accounting. Bucket-boundary effects
-            // (a datagram batching bytes whose RPCs are individually counted a moment either side of
-            // it) can occasionally put a sliver of gossip bytes in a different bucket than the UDP
-            // packet that carried them; coerced to non-negative rather than shown as a deficit.
-            val rawOverheadBytes = LongArray(bucketCount) { bucket ->
-                val gossipBytes = rawControlBytes[bucket] +
-                    rawUniqueBytes.values.sumOf { it[bucket] } +
-                    rawDuplicateBytes.values.sumOf { it[bucket] }
-                (rawUdpBytes[bucket] - gossipBytes).coerceAtLeast(0)
-            }
-
             val denom = nodeCount.toDouble() * slotsMeasured
             fun average(raw: LongArray): List<Long> = raw.map { ceil(it / denom).toLong() }
 
@@ -200,7 +194,7 @@ data class DcSlotTrafficProfile(
                 uniqueMessageBytesPerNode = rawUniqueBytes.mapValues { (_, raw) -> average(raw) },
                 duplicateMessageBytesPerNode = rawDuplicateBytes.mapValues { (_, raw) -> average(raw) },
                 controlBytesPerNode = average(rawControlBytes),
-                transportOverheadBytesPerNode = average(rawOverheadBytes)
+                transportBytesPerNode = average(rawUdpBytes)
             )
         }
 

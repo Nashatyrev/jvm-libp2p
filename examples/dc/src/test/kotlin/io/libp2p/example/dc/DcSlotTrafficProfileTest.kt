@@ -251,7 +251,7 @@ class DcSlotTrafficProfileTest {
     }
 
     @Test
-    fun `transport overhead is inbound UDP bytes beyond what gossip itself accounts for`() {
+    fun `transport is the raw inbound UDP byte count, not netted against gossip's own accounting`() {
         val p = params()
         val counter = GossipByteCounter(p).also { it.currentTimeSupplier = { 50.milliseconds } }
         counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
@@ -265,11 +265,16 @@ class DcSlotTrafficProfileTest {
             slotsMeasured = 1
         )
 
-        assertThat(profile.transportOverheadBytesPerNode[0]).isEqualTo(40L)
+        assertThat(profile.transportBytesPerNode[0]).isEqualTo(gossipBytes + 40)
     }
 
     @Test
-    fun `overhead never reads negative when boundary effects put UDP bytes just under gossip's own count`() {
+    fun `transport is unaffected even when UDP bytes are smaller than gossip's own count for the bucket`() {
+        // Netting UDP against gossip bytes used to make this bucket read as a (clamped) zero
+        // overhead; transport is now just the wire truth, so it reads as the raw UDP byte count
+        // regardless of what gossip separately counted -- see DcSlotTrafficProfile's class doc for
+        // why netting the two is not meaningful (gossip and UDP bucket the same bytes at different
+        // times for a multi-packet message).
         val p = params()
         val counter = GossipByteCounter(p).also { it.currentTimeSupplier = { 50.milliseconds } }
         counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
@@ -282,11 +287,11 @@ class DcSlotTrafficProfileTest {
             slotsMeasured = 1
         )
 
-        assertThat(profile.transportOverheadBytesPerNode[0]).isZero()
+        assertThat(profile.transportBytesPerNode[0]).isEqualTo(1L)
     }
 
     @Test
-    fun `outbound UDP events are not counted as inbound overhead`() {
+    fun `outbound UDP events are not counted as inbound transport bytes`() {
         val p = params()
         val profile = DcSlotTrafficProfile.of(
             gossipCounters = emptyList(),
@@ -296,13 +301,13 @@ class DcSlotTrafficProfileTest {
             slotsMeasured = 1
         )
 
-        assertThat(profile.transportOverheadBytesPerNode).allMatch { it == 0L }
+        assertThat(profile.transportBytesPerNode).allMatch { it == 0L }
     }
 
     @Test
     fun `a fractional average rounds up rather than truncating`() {
         val p = params()
-        // 1 byte of overhead spread over 10 nodes and 1 slot = 0.1 bytes/node/slot, must read as 1.
+        // 1 byte spread over 10 nodes and 1 slot = 0.1 bytes/node/slot, must read as 1.
         val counters = List(10) { GossipByteCounter(p) }
         val profile = DcSlotTrafficProfile.of(
             gossipCounters = counters,
@@ -312,7 +317,7 @@ class DcSlotTrafficProfileTest {
             slotsMeasured = 1
         )
 
-        assertThat(profile.transportOverheadBytesPerNode[0]).isEqualTo(1L)
+        assertThat(profile.transportBytesPerNode[0]).isEqualTo(1L)
     }
 
     @Test
@@ -329,7 +334,7 @@ class DcSlotTrafficProfileTest {
         assertThat(profile.uniqueMessageBytesPerNode).isEmpty()
         assertThat(profile.duplicateMessageBytesPerNode).isEmpty()
         assertThat(profile.controlBytesPerNode).allMatch { it == 0L }
-        // control/transport-overhead still print -- only the per-type message columns are omitted.
+        // control/transport still print -- only the per-type message columns are omitted.
         assertThat(profile.toString())
             .contains(DcSlotTrafficProfile.CONTROL_COLUMN)
             .doesNotContain(
@@ -340,7 +345,7 @@ class DcSlotTrafficProfileTest {
     }
 
     @Test
-    fun `the table has one row per bucket and unique plus duplicate columns per type, plus control and overhead`() {
+    fun `the table has one row per bucket and unique plus duplicate columns per type, plus control and transport`() {
         val p = params(bucketDuration = 100.milliseconds, slotDuration = 500.milliseconds)
         val counter = GossipByteCounter(p).also { it.currentTimeSupplier = { 200.milliseconds } }
         counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 1000))
@@ -358,7 +363,7 @@ class DcSlotTrafficProfileTest {
             .contains("block${DcSlotTrafficProfile.UNIQUE_SUFFIX}")
             .contains("block${DcSlotTrafficProfile.DUPLICATE_SUFFIX}")
             .contains(DcSlotTrafficProfile.CONTROL_COLUMN)
-            .contains(DcSlotTrafficProfile.TRANSPORT_OVERHEAD_COLUMN)
+            .contains(DcSlotTrafficProfile.TRANSPORT_COLUMN)
         assertThat(text.lines().filter { it.isNotBlank() }).hasSize(2 + profile.bucketCount)
     }
 
@@ -375,7 +380,7 @@ class DcSlotTrafficProfileTest {
             uniqueMessageBytesPerNode = byType,
             duplicateMessageBytesPerNode = byType,
             controlBytesPerNode = buckets,
-            transportOverheadBytesPerNode = buckets
+            transportBytesPerNode = buckets
         )
 
         val expected = DcSlotMessageType.values().flatMap {
@@ -383,7 +388,7 @@ class DcSlotTrafficProfileTest {
                 "${it.id}${DcSlotTrafficProfile.UNIQUE_SUFFIX}",
                 "${it.id}${DcSlotTrafficProfile.DUPLICATE_SUFFIX}"
             )
-        } + DcSlotTrafficProfile.CONTROL_COLUMN + DcSlotTrafficProfile.TRANSPORT_OVERHEAD_COLUMN
+        } + DcSlotTrafficProfile.CONTROL_COLUMN + DcSlotTrafficProfile.TRANSPORT_COLUMN
         val header = profile.toString().lines()[1].trim().split(Regex("\\s+"))
         assertThat(header).containsExactlyElementsOf(listOf("t(ms)") + expected)
     }
@@ -391,7 +396,7 @@ class DcSlotTrafficProfileTest {
     // --- end to end ---------------------------------------------------------------------------------
 
     @Test
-    fun `a full run reports unique, duplicate, control and transport-overhead columns`() {
+    fun `a full run reports unique, duplicate, control and transport columns`() {
         val network = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 2)
             .addGroup(count = 12) {
                 spreadOverRegions()
@@ -434,8 +439,8 @@ class DcSlotTrafficProfileTest {
         assertThat(profile.controlBytesPerNode.sum())
             .describedAs("gossip mesh maintenance produces control traffic over the run")
             .isGreaterThan(0L)
-        assertThat(profile.transportOverheadBytesPerNode.sum())
-            .describedAs("QUIC/libp2p always carries some bytes beyond the gossip payload")
+        assertThat(profile.transportBytesPerNode.sum())
+            .describedAs("nodes received traffic over the run, so raw inbound UDP bytes are nonzero")
             .isGreaterThan(0L)
     }
 
