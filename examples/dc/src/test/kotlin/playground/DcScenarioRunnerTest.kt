@@ -90,6 +90,16 @@ class DcScenarioRunnerTest {
 //            .gossipSize(0)
             .build()
 
+        val ffgVotesWaves = (0 until 12).map { waveIdx ->
+            DcSlotMessageConfig(
+                type = DcSlotMessageType.FFG_ATTESTATION,
+                sizeBytes = 240,
+                publishOffset = waveIdx.seconds,
+                publisherSelection = DcPublisherSelection.ALL_VALIDATORS,
+                topics = DcSlotMessageTopics.Subnets(64)
+            )
+        }
+
         val attestationConfig = DcAttestationConfig(
             waveCount = 1,
             settle = 30.seconds,
@@ -121,14 +131,8 @@ class DcScenarioRunnerTest {
                     messagesPerSlot = 128,
                     topics = DcSlotMessageTopics.Subnets(128)
                 ),
-                DcSlotMessageConfig(
-                    type = DcSlotMessageType.FFG_ATTESTATION,
-                    sizeBytes = 240,
-                    publishOffset = 3.seconds,
-                    publisherSelection = DcPublisherSelection.ALL_VALIDATORS,
-                    topics = DcSlotMessageTopics.Subnets(64)
-                )
-            ),
+            )
+                    + ffgVotesWaves,
             gossipParams = gossipParams,
             randomSeed = 1
         )
