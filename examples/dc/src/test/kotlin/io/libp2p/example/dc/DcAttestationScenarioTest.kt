@@ -31,28 +31,28 @@ class DcAttestationScenarioTest {
             }
             .build()
 
-    /** FFG attestations drawn as [attestersPerWave] distinct nodes per wave, over [subnetCount] subnets. */
-    private fun ffgMessages(attestersPerWave: Int, subnetCount: Int) = listOf(
+    /** FFG attestations drawn as [attestersPerSlot] distinct nodes per slot, over [subnetCount] subnets. */
+    private fun ffgMessages(attestersPerSlot: Int, subnetCount: Int) = listOf(
         DcSlotMessageConfig(
             type = DcSlotMessageType.FFG_ATTESTATION,
             sizeBytes = 240,
             publisherSelection = DcPublisherSelection.RANDOM_NODES,
-            messagesPerSlot = attestersPerWave,
+            messagesPerSlot = attestersPerSlot,
             topics = DcSlotMessageTopics.Subnets(subnetCount)
         )
     )
 
     @Test
-    fun `attestation waves reach every subscriber and report latency percentiles`() {
+    fun `attestations reach every subscriber and report latency percentiles`() {
         val network = population(nodeCount = 40, subnetCount = 4, subnetsPerNode = 2, peers = 10)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
-        val attestersPerWave = 8
+        val attestersPerSlot = 8
         val config = DcAttestationConfig(
-            waveCount = 2,
+            slotCount = 2,
             warmup = 30.seconds,
-            waveInterval = 12.seconds,
+            slotInterval = 12.seconds,
             settle = 12.seconds,
-            messages = ffgMessages(attestersPerWave, subnetCount = 4),
+            messages = ffgMessages(attestersPerSlot, subnetCount = 4),
             randomSeed = 7
         )
 
@@ -62,7 +62,7 @@ class DcAttestationScenarioTest {
         assertThat(report.messages).containsKey(DcSlotMessageType.FFG_ATTESTATION)
         assertThat(report.messages.getValue(DcSlotMessageType.FFG_ATTESTATION).overall)
             .isEqualTo(report.overall)
-        assertThat(report.overall.publishedCount).isEqualTo(config.waveCount * attestersPerWave)
+        assertThat(report.overall.publishedCount).isEqualTo(config.slotCount * attestersPerSlot)
         assertThat(report.overall.deliveryRatio)
             .describedAs("delivery ratio; percentiles are meaningless if attestations went missing")
             .isEqualTo(1.0)
@@ -70,59 +70,59 @@ class DcAttestationScenarioTest {
         assertThat(report.overall.p50!!).isLessThanOrEqualTo(report.overall.p95!!)
         assertThat(report.overall.p95!!).isLessThanOrEqualTo(report.overall.p99!!)
         assertThat(report.overall.p99!!).isLessThanOrEqualTo(config.settle)
-        assertThat(report.perWave.keys).containsExactly(0, 1)
+        assertThat(report.perSlot.keys).containsExactly(0, 1)
 
-        // Publish bytes are attributed to a wave by reading the wave index back out of the payload.
-        // Requiring the per-wave figures to add up to the aggregate proves every publish message
+        // Publish bytes are attributed to a slot by reading the slot index back out of the payload.
+        // Requiring the per-slot figures to add up to the aggregate proves every publish message
         // was recognised: an unparsed payload would be silently dropped from the breakdown.
-        assertThat(report.gossipPublishBytesReceivedByWave.keys).containsExactlyInAnyOrder(0, 1)
-        assertThat(report.gossipPublishBytesReceivedByWave.values.sum())
+        assertThat(report.gossipPublishBytesReceivedBySlot.keys).containsExactlyInAnyOrder(0, 1)
+        assertThat(report.gossipPublishBytesReceivedBySlot.values.sum())
             .isEqualTo(report.gossipPublishBytesReceived)
-        assertThat(report.gossipPublishBytesSentByWave.values.sum())
+        assertThat(report.gossipPublishBytesSentBySlot.values.sum())
             .isEqualTo(report.gossipPublishBytesSent)
     }
 
     @Test
-    fun `warmupWaves excludes the leading waves from the headline figures`() {
+    fun `warmupSlots excludes the leading slots from the headline figures`() {
         val network = population(nodeCount = 40, subnetCount = 4, subnetsPerNode = 2, peers = 10)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val base = DcAttestationConfig(
-            waveCount = 4,
-            warmupWaves = 0,
-            messages = ffgMessages(attestersPerWave = 8, subnetCount = 4),
+            slotCount = 4,
+            warmupSlots = 0,
+            messages = ffgMessages(attestersPerSlot = 8, subnetCount = 4),
             randomSeed = 7
         )
         val all = DcAttestationScenario.run(network, graph, base)
-        val measured = DcAttestationScenario.run(network, graph, base.copy(warmupWaves = 2))
+        val measured = DcAttestationScenario.run(network, graph, base.copy(warmupSlots = 2))
 
-        // Every wave is still reported; only the aggregate narrows.
-        assertThat(measured.perWave.keys).containsExactlyInAnyOrderElementsOf(all.perWave.keys)
-        assertThat(measured.measuredWaves).containsExactly(2, 3)
+        // Every slot is still reported; only the aggregate narrows.
+        assertThat(measured.perSlot.keys).containsExactlyInAnyOrderElementsOf(all.perSlot.keys)
+        assertThat(measured.measuredSlots).containsExactly(2, 3)
 
-        // The headline now covers exactly the deliveries of waves 2-3.
-        val tailDeliveries = (2..3).sumOf { all.perWave.getValue(it).actualDeliveries }
+        // The headline now covers exactly the deliveries of slots 2-3.
+        val tailDeliveries = (2..3).sumOf { all.perSlot.getValue(it).actualDeliveries }
         assertThat(measured.overall.actualDeliveries).isEqualTo(tailDeliveries)
         assertThat(measured.overall.actualDeliveries).isLessThan(all.overall.actualDeliveries)
         assertThat(measured.overall.deliveryRatio).isEqualTo(1.0)
 
-        // Duplication has to narrow with it: counting all-wave messages against measured-wave
-        // deliveries would inflate it by roughly the ratio of excluded waves.
+        // Duplication has to narrow with it: counting all-slot messages against measured-slot
+        // deliveries would inflate it by roughly the ratio of excluded slots.
         assertThat(measured.duplicationFactor)
-            .describedAs("duplication over waves 2-3")
+            .describedAs("duplication over slots 2-3")
             .isCloseTo(all.duplicationFactor, org.assertj.core.data.Offset.offset(0.5))
         assertThat(measured.measuredPublishBytesReceived)
             .isLessThan(all.gossipPublishBytesReceived)
     }
 
     @Test
-    fun `warmupWaves must leave a wave to measure`() {
+    fun `warmupSlots must leave a slot to measure`() {
         assertThatThrownBy {
             DcAttestationConfig(
-                waveCount = 3,
-                warmupWaves = 3,
-                messages = ffgMessages(attestersPerWave = 1, subnetCount = 1)
+                slotCount = 3,
+                warmupSlots = 3,
+                messages = ffgMessages(attestersPerSlot = 1, subnetCount = 1)
             )
-        }.hasMessageContaining("must leave at least one measured wave")
+        }.hasMessageContaining("must leave at least one measured slot")
     }
 
     @Test
@@ -130,10 +130,10 @@ class DcAttestationScenarioTest {
         val network = population(nodeCount = 24, subnetCount = 4, subnetsPerNode = 2, peers = 8)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 3)
         val config = DcAttestationConfig(
-            waveCount = 1,
+            slotCount = 1,
             warmup = 30.seconds,
             settle = 12.seconds,
-            messages = ffgMessages(attestersPerWave = 4, subnetCount = 4),
+            messages = ffgMessages(attestersPerSlot = 4, subnetCount = 4),
             randomSeed = 11
         )
 
@@ -150,7 +150,7 @@ class DcAttestationScenarioTest {
         val network = population(nodeCount = 40, subnetCount = 8, subnetsPerNode = 2, peers = 10)
         val schedule = DcSlotMessageSchedule.create(
             network = network,
-            waves = DcSlotMessageWaves(count = 3, first = 30.seconds, interval = 12.seconds),
+            slots = DcSlotCadence(count = 3, first = 30.seconds, interval = 12.seconds),
             config = DcSlotMessageConfig(
                 type = DcSlotMessageType.FFG_ATTESTATION,
                 sizeBytes = 240,
@@ -188,7 +188,7 @@ class DcAttestationScenarioTest {
         )
         val schedule = DcSlotMessageSchedule.create(
             network = network,
-            waves = DcSlotMessageWaves(count = 3, first = 30.seconds, interval = 12.seconds),
+            slots = DcSlotCadence(count = 3, first = 30.seconds, interval = 12.seconds),
             config = DcSlotMessageConfig(
                 type = DcSlotMessageType.FFG_ATTESTATION,
                 sizeBytes = 240,
@@ -360,8 +360,8 @@ class DcAttestationScenarioTest {
     fun `one type issued at several offsets gets a schedule per wave, numbered by offset`() {
         val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
         val config = DcAttestationConfig(
-            waveCount = 2,
-            waveInterval = 12.seconds,
+            slotCount = 2,
+            slotInterval = 12.seconds,
             // Listed back to front, to show wave numbering follows the offset rather than the order.
             messages = ffgWaves(waves = 3, subnetCount = 4).reversed()
         )
@@ -372,7 +372,7 @@ class DcAttestationScenarioTest {
         assertThat(schedules.map { it.config.publishOffset })
             .describedAs("schedules stay in listed order, so per-schedule seeds do not shift")
             .containsExactly(2.seconds, 1.seconds, 0.seconds)
-        assertThat(schedules.map { schedule -> schedule.messages.map { it.waveIndexInSlot }.distinct() })
+        assertThat(schedules.map { schedule -> schedule.messages.map { it.waveIndex }.distinct() })
             .describedAs("wave index follows the offset into the slot, earliest first")
             .containsExactly(listOf(2), listOf(1), listOf(0))
         // Every wave covers the same real slots, so the slot index stays the slot number.
@@ -381,7 +381,7 @@ class DcAttestationScenarioTest {
         schedules.forEach { schedule ->
             schedule.messages.forEach { message ->
                 assertThat(schedule.timeOf(message))
-                    .isEqualTo(config.waveTimes[message.slotIndex] + schedule.config.publishOffset)
+                    .isEqualTo(config.slotTimes[message.slotIndex] + schedule.config.publishOffset)
             }
         }
     }
@@ -390,8 +390,8 @@ class DcAttestationScenarioTest {
     fun `message ids do not overlap between the waves of one type`() {
         val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
         val config = DcAttestationConfig(
-            waveCount = 2,
-            waveInterval = 12.seconds,
+            slotCount = 2,
+            slotInterval = 12.seconds,
             messages = ffgWaves(waves = 4, subnetCount = 4)
         )
 
@@ -409,8 +409,8 @@ class DcAttestationScenarioTest {
         val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val config = DcAttestationConfig(
-            waveCount = 1,
-            waveInterval = 12.seconds,
+            slotCount = 1,
+            slotInterval = 12.seconds,
             messages = ffgWaves(waves = 12, subnetCount = 4)
         )
 
@@ -425,8 +425,8 @@ class DcAttestationScenarioTest {
         val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val config = DcAttestationConfig(
-            waveCount = 1,
-            waveInterval = 12.seconds,
+            slotCount = 1,
+            slotInterval = 12.seconds,
             settle = 12.seconds,
             messages = ffgWaves(waves = 3, subnetCount = 4),
             randomSeed = 7
@@ -436,8 +436,8 @@ class DcAttestationScenarioTest {
 
         val ffg = report.messages.getValue(DcSlotMessageType.FFG_ATTESTATION)
         assertThat(ffg.publishOffsets).containsExactly(0.seconds, 1.seconds, 2.seconds)
-        assertThat(ffg.perWaveInSlot.keys).containsExactlyInAnyOrder(0, 1, 2)
-        assertThat(ffg.perWaveInSlot.values.map { it.publishedCount })
+        assertThat(ffg.perWave.keys).containsExactlyInAnyOrder(0, 1, 2)
+        assertThat(ffg.perWave.values.map { it.publishedCount })
             .describedAs("two messages per wave, one slot")
             .containsOnly(2)
         assertThat(ffg.overall.publishedCount)
@@ -446,8 +446,8 @@ class DcAttestationScenarioTest {
         // The whole point of the per-type subscribe: one delivery recorded per message per
         // subscriber, not one per wave-schedule.
         assertThat(ffg.overall.deliveryRatio).isEqualTo(1.0)
-        assertThat(ffg.perWaveInSlot.values.map { it.deliveryRatio }).containsOnly(1.0)
-        assertThat(ffg.perWaveInSlot.values.sumOf { it.actualDeliveries })
+        assertThat(ffg.perWave.values.map { it.deliveryRatio }).containsOnly(1.0)
+        assertThat(ffg.perWave.values.sumOf { it.actualDeliveries })
             .isEqualTo(ffg.overall.actualDeliveries)
     }
 }

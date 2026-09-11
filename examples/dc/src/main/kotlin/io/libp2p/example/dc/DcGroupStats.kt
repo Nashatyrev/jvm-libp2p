@@ -123,7 +123,7 @@ data class DcGroupReport(
             inboundEvents: List<DatagramPacketTraceEvent> = emptyList(),
             slotProfileParams: DcSlotProfileParams? = null,
             slotsMeasured: Int = 0,
-            warmupWaves: Int = 0
+            warmupSlots: Int = 0
         ): DcGroupReport {
             val nodesByGroup = network.nodes.groupBy { it.groupName ?: DcGroupStats.UNNAMED }
             if (nodesByGroup.keys == setOf(DcGroupStats.UNNAMED)) return DcGroupReport(emptyMap())
@@ -152,8 +152,8 @@ data class DcGroupReport(
 
             messagesByType.forEach { (type, publishedAndDelivered) ->
                 val (published, deliveries) = publishedAndDelivered
-                val measuredPublished = published.filter { it.message.slotIndex >= warmupWaves }
-                val measuredDeliveries = deliveries.filter { it.slotIndex >= warmupWaves }
+                val measuredPublished = published.filter { it.message.slotIndex >= warmupSlots }
+                val measuredDeliveries = deliveries.filter { it.slotIndex >= warmupSlots }
 
                 measuredPublished.forEach { publication ->
                     val (counts, ids) = subscribersOfCached(publication.message)

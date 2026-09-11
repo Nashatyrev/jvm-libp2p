@@ -13,7 +13,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Block issuance: one block per wave — a wave being a slot — of a fixed [sizeBytes], published
+ * Block issuance: one block per slot, of a fixed [sizeBytes], published
  * [publishOffset] into the slot on the global block topic every node subscribes to.
  *
  * [publishOffset] is what makes a block land part way through a slot instead of exactly on its
@@ -77,32 +77,36 @@ data class DcBlockConfig(
 }
 
 /**
- * A repeated-wave run of independently typed block, payload, column and FFG-attestation messages.
- * Every entry in [DcAttestationConfig.messages] is expanded over the compact wave
- * definition, so callers configure a message once rather than describing each wave separately.
+ * A repeated-slot run of independently typed block, payload, column and FFG-attestation messages.
+ * Every entry in [DcAttestationConfig.messages] is expanded over the compact slot cadence, so
+ * callers configure a message once rather than describing each slot separately.
+ *
+ * A type may also be listed more than once, at different [DcSlotMessageConfig.publishOffset]s, to
+ * issue it as several *waves* within each slot — "slot" being the repeating cycle, "wave" one
+ * issuance inside it.
  *
  * [warmup] exists because gossipsub needs time to form its meshes; attesting before that measures
  * mesh construction rather than dissemination. [settle] is how long the run keeps going after the
- * last wave, and therefore the longest latency the run is able to observe — anything slower is
+ * last slot, and therefore the longest latency the run is able to observe — anything slower is
  * counted as an undelivered attestation instead of a large number.
  */
 data class DcAttestationConfig(
-    val waveCount: Int = 3,
+    val slotCount: Int = 3,
     val warmup: Duration = 30.seconds,
-    val waveInterval: Duration = 12.seconds,
+    val slotInterval: Duration = 12.seconds,
     val settle: Duration = 12.seconds,
     /**
-     * Leading waves left out of the headline figures in [DcAttestationReport.overall].
+     * Leading slots left out of the headline figures in [DcAttestationReport.overall].
      *
-     * QUIC congestion windows start small and meshes are still settling, so the first waves deliver
+     * QUIC congestion windows start small and meshes are still settling, so the first slots deliver
      * the same bytes more slowly than a running network would — measured at 2-3x the steady-state
-     * p99 and up to 4x the steady-state max. They stay in [DcAttestationReport.perWave] so the
+     * p99 and up to 4x the steady-state max. They stay in [DcAttestationReport.perSlot] so the
      * ramp is still visible; they are only excluded from the aggregate.
      */
-    val warmupWaves: Int = 0,
+    val warmupSlots: Int = 0,
     /** Block issuance, or null for a run that publishes attestations only. */
     val blocks: DcBlockConfig? = null,
-    /** Global or subnet-scoped message kinds issued in every wave. */
+    /** Global or subnet-scoped message kinds issued in every slot. */
     val messages: List<DcSlotMessageConfig> = emptyList(),
     /** Bucket width of [DcAttestationReport.slotTraffic], the per-message-type intra-slot profile. */
     val slotTrafficBucketDuration: Duration = 100.milliseconds,
@@ -110,8 +114,8 @@ data class DcAttestationConfig(
     val randomSeed: Long = 0
 ) {
     init {
-        require(warmupWaves in 0 until waveCount) {
-            "warmupWaves must leave at least one measured wave, got $warmupWaves of $waveCount"
+        require(warmupSlots in 0 until slotCount) {
+            "warmupSlots must leave at least one measured slot, got $warmupSlots of $slotCount"
         }
         require(slotTrafficBucketDuration.isPositive()) {
             "slotTrafficBucketDuration must be > 0, got $slotTrafficBucketDuration"
@@ -126,11 +130,11 @@ data class DcAttestationConfig(
         }
         require(configs.any { it.type == DcSlotMessageType.FFG_ATTESTATION }) {
             "messages must include a DcSlotMessageType.FFG_ATTESTATION entry -- " +
-                "DcAttestationReport.overall/perWave are its headline figures"
+                "DcAttestationReport.overall/perSlot are its headline figures"
         }
         configs.forEach { message ->
-            require(message.publishOffset < waveInterval) {
-                "${message.type} publishOffset must be less than the $waveInterval waveInterval, " +
+            require(message.publishOffset < slotInterval) {
+                "${message.type} publishOffset must be less than the $slotInterval slotInterval, " +
                     "got ${message.publishOffset}"
             }
             val maxSize = DcSlotMessageConfig.maxSizeBytes(gossipParams)
@@ -142,22 +146,22 @@ data class DcAttestationConfig(
         }
     }
 
-    /** Wave indices whose deliveries count toward the headline figures. */
-    val measuredWaves: IntRange get() = warmupWaves until waveCount
+    /** Slot indices whose deliveries count toward the headline figures. */
+    val measuredSlots: IntRange get() = warmupSlots until slotCount
 
-    /** Compact repetition shared by all message configs; callers never list individual waves. */
-    val waves: DcSlotMessageWaves get() = DcSlotMessageWaves(waveCount, warmup, waveInterval)
-    val waveTimes: List<Duration>
-        get() = waves.times
+    /** Compact repetition shared by all message configs; callers never list individual slots. */
+    val slots: DcSlotCadence get() = DcSlotCadence(slotCount, warmup, slotInterval)
+    val slotTimes: List<Duration>
+        get() = slots.times
 
     /**
      * Moment every node stops, and the cut-off beyond which a delivery is counted as missing.
      *
-     * Measured from the last thing published rather than from the last wave time, so a block
+     * Measured from the last thing published rather than from the last slot time, so a block
      * published part way into the final slot still gets the full [settle] window to arrive.
      */
     val completeAt: Duration
-        get() = waveTimes.last() +
+        get() = slotTimes.last() +
             (allMessageConfigs.maxOfOrNull { it.publishOffset } ?: Duration.ZERO) + settle
 
     internal val allMessageConfigs: List<DcSlotMessageConfig>
@@ -211,10 +215,10 @@ class DcAttestationNodeProgramFactory<R>(
 
     /** Shared by every node's [GossipByteCounter], so they all bucket wire bytes the same way. */
     private val slotProfileParams = DcSlotProfileParams(
-        anchor = config.waveTimes.first(),
-        slotDuration = config.waveInterval,
+        anchor = config.slotTimes.first(),
+        slotDuration = config.slotInterval,
         bucketDuration = config.slotTrafficBucketDuration,
-        warmupWaves = config.warmupWaves
+        warmupSlots = config.warmupSlots
     )
 
     /**
@@ -244,7 +248,7 @@ class DcAttestationNodeProgramFactory<R>(
                 deliveries = recorder.deliveries(),
                 expectedDeliveriesOf = ::expectedDeliveriesOf,
                 config = schedules.first().config,
-                warmupWaves = config.warmupWaves,
+                warmupSlots = config.warmupSlots,
                 publishOffsets = schedules.map { it.config.publishOffset }.sorted()
             )
         }
@@ -253,7 +257,7 @@ class DcAttestationNodeProgramFactory<R>(
             val recorder = messageRecorders.getValue(type)
             recorder.published() to recorder.deliveries()
         }
-        val slotsMeasured = config.measuredWaves.count()
+        val slotsMeasured = config.measuredSlots.count()
         val groups = DcGroupReport.of(
             network = network,
             trafficPerGroup = traffic.perGroup,
@@ -264,7 +268,7 @@ class DcAttestationNodeProgramFactory<R>(
             inboundEvents = events,
             slotProfileParams = slotProfileParams,
             slotsMeasured = slotsMeasured,
-            warmupWaves = config.warmupWaves
+            warmupSlots = config.warmupSlots
         )
         val slotTraffic = DcSlotTrafficProfile.of(
             gossipCounters = nodePrograms.map { it.gossipByteCounter },
@@ -275,19 +279,19 @@ class DcAttestationNodeProgramFactory<R>(
         )
         return DcAttestationReport(
             overall = ffgReport.overall,
-            perWave = ffgReport.perSlot,
+            perSlot = ffgReport.perSlot,
             traffic = traffic,
             gossipBytesSent = nodePrograms.sumOf { it.gossipByteCounter.bytesWritten },
             gossipBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.bytesRead },
             gossipPublishBytesSent = nodePrograms.sumOf { it.gossipByteCounter.publishBytesWritten },
             gossipPublishBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.publishBytesRead },
-            gossipPublishBytesSentByWave = nodePrograms.sumByWave { it.publishBytesWrittenByWave },
-            gossipPublishBytesReceivedByWave = nodePrograms.sumByWave { it.publishBytesReadByWave },
+            gossipPublishBytesSentBySlot = nodePrograms.sumBySlot { it.publishBytesWrittenBySlot },
+            gossipPublishBytesReceivedBySlot = nodePrograms.sumBySlot { it.publishBytesReadBySlot },
             gossipPublishMessagesSent = nodePrograms.sumOf { it.gossipByteCounter.publishMessagesWritten },
             gossipPublishMessagesReceived = nodePrograms.sumOf { it.gossipByteCounter.publishMessagesRead },
-            gossipPublishMessagesSentByWave = nodePrograms.sumByWave { it.publishMessagesWrittenByWave },
-            gossipPublishMessagesReceivedByWave = nodePrograms.sumByWave { it.publishMessagesReadByWave },
-            warmupWaves = config.warmupWaves,
+            gossipPublishMessagesSentBySlot = nodePrograms.sumBySlot { it.publishMessagesWrittenBySlot },
+            gossipPublishMessagesReceivedBySlot = nodePrograms.sumBySlot { it.publishMessagesReadBySlot },
+            warmupSlots = config.warmupSlots,
             mesh = DcMeshStats.of(nodePrograms.map { it.finalMeshSizes }),
             messages = reports,
             groups = groups,
@@ -296,14 +300,14 @@ class DcAttestationNodeProgramFactory<R>(
     }
 }
 
-/** Totals each node's per-wave byte counts into one map keyed by wave index. */
-private fun List<DcAttestationNodeProgram>.sumByWave(
+/** Totals each node's per-slot byte counts into one map keyed by slot index. */
+private fun List<DcAttestationNodeProgram>.sumBySlot(
     counts: (GossipByteCounter) -> Map<Int, Long>
 ): Map<Int, Long> {
     val totals = mutableMapOf<Int, Long>()
     forEach { program ->
-        counts(program.gossipByteCounter).forEach { (wave, bytes) ->
-            totals[wave] = (totals[wave] ?: 0) + bytes
+        counts(program.gossipByteCounter).forEach { (slot, bytes) ->
+            totals[slot] = (totals[slot] ?: 0) + bytes
         }
     }
     return totals
@@ -350,7 +354,7 @@ object DcAttestationScenario {
                 "-${type.id}${first.messagesPerSlot}x${first.sizeBytes}B$timing-$topics"
             }
         return QuicScenario(
-            name = "dc-attestations-${network.nodeCount}n-${config.waveCount}waves$messageSuffix",
+            name = "dc-attestations-${network.nodeCount}n-${config.slotCount}slots$messageSuffix",
             network = network.topology,
             maxRunDuration = config.maxRunDuration,
             createNodeProgramFactory = {
@@ -376,7 +380,7 @@ object DcAttestationScenario {
         // Waves of one type are numbered by their offset into the slot, earliest first, whatever
         // order the configs were listed in. The schedules themselves stay in listed order, so the
         // per-schedule random seeds below do not shift when a wave is added.
-        val waveIndexOf = configs.groupBy { it.type }
+        val slotIndexOf = configs.groupBy { it.type }
             .flatMap { (_, ofType) ->
                 ofType.sortedBy { it.publishOffset }.mapIndexed { wave, message -> message to wave }
             }
@@ -385,11 +389,11 @@ object DcAttestationScenario {
         return configs.mapIndexed { index, message ->
             DcSlotMessageSchedule.create(
                 network = network,
-                waves = config.waves,
+                slots = config.slots,
                 config = message,
                 randomSeed = config.randomSeed + index,
                 firstMessageId = nextMessageId,
-                waveIndexInSlot = waveIndexOf.getValue(message)
+                waveIndex = slotIndexOf.getValue(message)
             ).also { nextMessageId += it.messages.size }
         }
     }
@@ -414,7 +418,7 @@ object DcAttestationScenario {
         ).run(of(network, graph, config, messageSchedules))
         val traffic = DcTrafficReport.of(
             events = traceRecorder.events(),
-            waveTimes = config.waveTimes,
+            slotTimes = config.slotTimes,
             completeAt = config.completeAt,
             nodeCount = network.nodeCount,
             groupNodes = groupNodesOf(network)

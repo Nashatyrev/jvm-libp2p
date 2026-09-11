@@ -19,20 +19,20 @@ data class DcSlotProfileParams(
     val anchor: Duration,
     val slotDuration: Duration,
     val bucketDuration: Duration = DEFAULT_BUCKET_DURATION,
-    val warmupWaves: Int = 0
+    val warmupSlots: Int = 0
 ) {
     init {
         require(slotDuration.isPositive()) { "slotDuration must be > 0, got $slotDuration" }
         require(bucketDuration.isPositive()) { "bucketDuration must be > 0, got $bucketDuration" }
-        require(warmupWaves >= 0) { "warmupWaves must be >= 0, got $warmupWaves" }
+        require(warmupSlots >= 0) { "warmupSlots must be >= 0, got $warmupSlots" }
     }
 
     val bucketCount: Int
         get() = ceil(slotDuration.inWholeNanoseconds.toDouble() / bucketDuration.inWholeNanoseconds).toInt()
 
     /**
-     * Bucket index `now` falls into, or null before [anchor] or within [warmupWaves] — mesh
-     * formation and the excluded leading waves are not part of the steady-state picture this
+     * Bucket index `now` falls into, or null before [anchor] or within [warmupSlots] — mesh
+     * formation and the excluded leading slots are not part of the steady-state picture this
      * profile is for. [io.libp2p.example.dc.GossipByteCounter] and the UDP-side bucketing in
      * [DcSlotTrafficProfile.of] both call this, so the two attribute a byte to the same bucket.
      */
@@ -40,8 +40,8 @@ data class DcSlotProfileParams(
         if (now < anchor) return null
         val elapsedNanos = (now - anchor).inWholeNanoseconds
         val slotNanos = slotDuration.inWholeNanoseconds
-        val waveIndex = elapsedNanos / slotNanos
-        if (waveIndex < warmupWaves) return null
+        val slotIndex = elapsedNanos / slotNanos
+        if (slotIndex < warmupSlots) return null
         val bucketNanos = bucketDuration.inWholeNanoseconds
         return ((elapsedNanos % slotNanos) / bucketNanos).toInt().coerceIn(0, bucketCount - 1)
     }

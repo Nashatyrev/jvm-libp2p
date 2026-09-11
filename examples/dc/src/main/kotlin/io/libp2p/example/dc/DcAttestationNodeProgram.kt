@@ -121,7 +121,7 @@ class DcAttestationNodeProgram(
         messageRecorders.getValue(type).recordDelivered(
             DcSlotMessageDelivery(
                 messageId = header.id,
-                slotIndex = header.waveIndex,
+                slotIndex = header.slotIndex,
                 receiverNodeId = simNodeId,
                 latency = simContext.timer.elapsedTime() - header.publishedAt
             )
@@ -154,7 +154,7 @@ class DcAttestationNodeProgram(
                     payload(
                         kind = DcMessageKind.SLOT_MESSAGE,
                         id = message.id,
-                        waveIndex = message.slotIndex,
+                        slotIndex = message.slotIndex,
                         subnetId = message.subnetId ?: DcMessagePayload.NO_SUBNET,
                         publishedAt = publishedAt,
                         sizeBytes = messageSchedule.config.sizeBytes
@@ -174,7 +174,7 @@ class DcAttestationNodeProgram(
     private fun payload(
         kind: DcMessageKind,
         id: Int,
-        waveIndex: Int,
+        slotIndex: Int,
         subnetId: Int,
         publishedAt: Duration,
         sizeBytes: Int
@@ -182,7 +182,7 @@ class DcAttestationNodeProgram(
         DcMessagePayload.encode(
             kind = kind,
             id = id,
-            waveIndex = waveIndex,
+            slotIndex = slotIndex,
             subnetId = subnetId,
             publishedAt = publishedAt,
             sizeBytes = sizeBytes,

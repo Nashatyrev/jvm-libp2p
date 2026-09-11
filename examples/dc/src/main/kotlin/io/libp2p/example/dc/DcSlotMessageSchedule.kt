@@ -32,8 +32,8 @@ enum class DcSlotMessageType(val id: String) {
     }
 }
 
-/** A compact repeated-wave definition shared by every configured slot-message type. */
-data class DcSlotMessageWaves(
+/** A compact repeated-slot cadence shared by every configured slot-message type. */
+data class DcSlotCadence(
     val count: Int,
     val first: Duration,
     val interval: Duration
@@ -114,7 +114,7 @@ enum class DcPublisherSelection {
     /** As [RANDOM_NODE], but the draw is weighted by validator count; nodes with none are excluded. */
     VALIDATOR_WEIGHTED,
 
-    /** Every validator publishes one message in every wave; a node publishes once per validator. */
+    /** Every validator publishes one message in every slot; a node publishes once per validator. */
     ALL_VALIDATORS,
 
     /**
@@ -197,7 +197,7 @@ data class DcSlotMessage(
      * rather than carried on the wire: [DcSlotMessageReport] joins deliveries back to it by
      * [id], which is why message ids have to be unique across a type's waves.
      */
-    val waveIndexInSlot: Int = 0
+    val waveIndex: Int = 0
 )
 
 data class DcSlotMessagePublication(
@@ -251,16 +251,16 @@ class DcSlotMessageSchedule(
         (slotTimes.maxOrNull() ?: Duration.ZERO) + config.publishOffset
 
     companion object {
-        /** Creates the same configured issuance in every wave without listing wave times. */
+        /** Creates the same configured issuance in every slot without listing slot times. */
         fun <R> create(
             network: DcNetwork<R>,
-            waves: DcSlotMessageWaves,
+            slots: DcSlotCadence,
             config: DcSlotMessageConfig,
             randomSeed: Long = 0,
             firstMessageId: Int = 0,
-            waveIndexInSlot: Int = 0
+            waveIndex: Int = 0
         ): DcSlotMessageSchedule =
-            create(network, waves.times, config, randomSeed, firstMessageId, waveIndexInSlot)
+            create(network, slots.times, config, randomSeed, firstMessageId, waveIndex)
 
         /**
          * [firstMessageId] is where this schedule starts numbering its messages. It matters when one
@@ -275,10 +275,10 @@ class DcSlotMessageSchedule(
             config: DcSlotMessageConfig,
             randomSeed: Long = 0,
             firstMessageId: Int = 0,
-            waveIndexInSlot: Int = 0
+            waveIndex: Int = 0
         ): DcSlotMessageSchedule {
             require(firstMessageId >= 0) { "firstMessageId must be >= 0, got $firstMessageId" }
-            require(waveIndexInSlot >= 0) { "waveIndexInSlot must be >= 0, got $waveIndexInSlot" }
+            require(waveIndex >= 0) { "waveIndex must be >= 0, got $waveIndex" }
             config.publisherGroups?.let { requested ->
                 val unknown = requested - network.groupNames()
                 require(unknown.isEmpty()) {
@@ -384,7 +384,7 @@ class DcSlotMessageSchedule(
                                     publisher.simNodeId,
                                     ownSubnetOf(publisher),
                                     config.type,
-                                    waveIndexInSlot
+                                    waveIndex
                                 )
                             }
                         }
@@ -399,7 +399,7 @@ class DcSlotMessageSchedule(
                                 publisher.simNodeId,
                                 ownSubnetOf(publisher),
                                 config.type,
-                                waveIndexInSlot
+                                waveIndex
                             )
                         }
 
@@ -413,7 +413,7 @@ class DcSlotMessageSchedule(
                                     publisher.simNodeId,
                                     ownSubnetOf(publisher),
                                     config.type,
-                                    waveIndexInSlot
+                                    waveIndex
                                 )
                             }
 
@@ -436,7 +436,7 @@ class DcSlotMessageSchedule(
                                 publisher.simNodeId,
                                 subnetId,
                                 config.type,
-                                waveIndexInSlot
+                                waveIndex
                             )
                         }
                     }

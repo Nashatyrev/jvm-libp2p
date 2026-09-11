@@ -82,9 +82,7 @@ class DcScenarioRunnerTest {
         Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
 
         val gossipParams = GossipParams.builder()
-            // Mesh-only: disables the lazy IHAVE/IWANT gossip mechanism, leaving plain mesh push
-            // (GRAFT/PRUNE) as the only way messages travel. gossipSize = 0 means no message ids are
-            // exposed for lazy gossip, so IHAVE (and therefore IWANT) never fire.
+            // Disables gossiping
 //            .DLazy(0)
 //            .gossipFactor(0.0)
 //            .gossipSize(0)
@@ -103,7 +101,7 @@ class DcScenarioRunnerTest {
         }
 
         val attestationConfig = DcAttestationConfig(
-            waveCount = 1,
+            slotCount = 1,
             settle = 30.seconds,
             messages = listOf(
                 DcSlotMessageConfig(
@@ -219,9 +217,9 @@ class DcScenarioRunnerTest {
             .build()
 
         val attestationConfig = DcAttestationConfig(
-            waveCount = 1,
+            slotCount = 1,
             // ~223MB reaches each node, and a 50 Mbit/s residential link carries 6.25MB/s, so the
-            // wave needs ~36s of link time alone. The default 12s settle would cut off around two
+            // slot needs ~36s of link time alone. The default 12s settle would cut off around two
             // thirds of it and report the shortfall as undelivered; 150s leaves room for the
             // transfer plus queueing so the latency figures mean something.
             settle = 150.seconds,
@@ -333,31 +331,31 @@ class DcScenarioRunnerTest {
             }
             .build()
 
-        // A 32nd of the validator set per wave: one slot's worth, from 32 slots per epoch.
+        // A 32nd of the validator set per slot: one slot's worth, from 32 slots per epoch.
         // Deliberately independent of subnetCount — the 32 here is slots, not subnets — so the
         // sweep publishes the same 262144 attestations at every point and only their spread over
         // subnets changes.
-        val attestersPerWave = 1024 * 1024 / 32
+        val attestersPerSlot = 1024 * 1024 / 32
         val attestationConfig = DcAttestationConfig(
-            waveCount = 8,
-            // RANDOM_VALIDATORS, not ALL_VALIDATORS: the latter ignores attestersPerWave and has
-            // all 1,048,576 validators attest in every wave, 32x a slot's worth.
+            slotCount = 8,
+            // RANDOM_VALIDATORS, not ALL_VALIDATORS: the latter ignores attestersPerSlot and has
+            // all 1,048,576 validators attest in every slot, 32x a slot's worth.
             messages = listOf(
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.FFG_ATTESTATION,
                     sizeBytes = 240,
                     publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
-                    messagesPerSlot = attestersPerWave,
+                    messagesPerSlot = attestersPerSlot,
                     topics = DcSlotMessageTopics.Subnets(subnetCount)
                 )
             ),
-            waveInterval = 1.seconds,
+            slotInterval = 1.seconds,
             settle = 30.seconds,
-            // Waves 0-3 are the transport ramping up, not the protocol: QUIC congestion windows
+            // Slots 0-3 are the transport ramping up, not the protocol: QUIC congestion windows
             // start small and the meshes are still settling, which showed up as a p99 two to three
-            // times the steady-state value and a max up to four times it. They stay in the per-wave
+            // times the steady-state value and a max up to four times it. They stay in the per-slot
             // breakdown, they just do not skew the headline numbers.
-            warmupWaves = 4,
+            warmupSlots = 4,
             gossipParams = gossipParams,
             randomSeed = 1
         )
@@ -389,7 +387,7 @@ class DcScenarioRunnerTest {
      * (DLazy = D, gossipFactor = 0.25, gossipSize = 3) rather than switched off.
      *
      * IHAVE announces the ids of everything seen over the last `gossipSize` heartbeats, so its cost
-     * scales with message rate rather than with mesh size: at one wave per second and 20-byte ids,
+     * scales with message rate rather than with mesh size: at one slot per second and 20-byte ids,
      * a single IHAVE can carry thousands of ids. The control column is what to watch.
      */
     @Test
@@ -419,10 +417,10 @@ class DcScenarioRunnerTest {
                         report.overall.p95?.inWholeMilliseconds ?: -1,
                         report.overall.p99?.inWholeMilliseconds ?: -1,
                         report.overall.max?.inWholeMilliseconds ?: -1,
-                        // Per node per wave, so the figure does not move with waveCount or
-                        // warmupWaves and stays comparable across runs.
-                        report.publishBytesReceivedPerNodePerWave / 1e6,
-                        // Control is not wave-attributed (IHAVE/IWANT carry no wave index), so this
+                        // Per node per slot, so the figure does not move with slotCount or
+                        // warmupSlots and stays comparable across runs.
+                        report.publishBytesReceivedPerNodePerSlot / 1e6,
+                        // Control is not slot-attributed (IHAVE/IWANT carry no slot index), so this
                         // is the whole-run total per node, warm-up included.
                         report.gossipControlBytesReceived.toDouble() / nodes / 1e6
                     )
@@ -442,7 +440,7 @@ class DcScenarioRunnerTest {
 
     companion object {
         private const val SWEEP_HEADER =
-            " D  subnets  meshMean  dup    deliv%   p50    p95    p99    max   MB/node/wave  ctrlMB/node"
+            " D  subnets  meshMean  dup    deliv%   p50    p95    p99    max   MB/node/slot  ctrlMB/node"
         private const val SWEEP_ROW =
             "%2d  %7d  %8.2f  %5.2fx %6.2f  %5d  %5d  %5d  %6d  %11.2f  %10.2f"
     }

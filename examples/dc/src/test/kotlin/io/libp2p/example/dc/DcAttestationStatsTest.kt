@@ -10,19 +10,19 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class DcAttestationStatsTest {
 
-    private fun delivery(id: Int, receiver: Int, latencyMs: Int, wave: Int = 0) =
+    private fun delivery(id: Int, receiver: Int, latencyMs: Int, slot: Int = 0) =
         DcSlotMessageDelivery(
             messageId = id,
-            slotIndex = wave,
+            slotIndex = slot,
             receiverNodeId = receiver,
             latency = latencyMs.milliseconds
         )
 
-    private fun message(id: Int, wave: Int = 0) =
-        DcSlotMessage(id = id, slotIndex = wave, indexInSlot = 0, publisherNodeId = 0, type = DcSlotMessageType.FFG_ATTESTATION)
+    private fun message(id: Int, slot: Int = 0) =
+        DcSlotMessage(id = id, slotIndex = slot, indexInSlot = 0, publisherNodeId = 0, type = DcSlotMessageType.FFG_ATTESTATION)
 
-    private fun publication(id: Int, wave: Int = 0, publishedAt: Duration = Duration.ZERO) =
-        DcSlotMessagePublication(message(id, wave), publishedAt)
+    private fun publication(id: Int, slot: Int = 0, publishedAt: Duration = Duration.ZERO) =
+        DcSlotMessagePublication(message(id, slot), publishedAt)
 
     private fun packet(direction: DatagramPacketTraceEvent.Direction, nodeId: Int, atMs: Int, bytes: Int) =
         DatagramPacketTraceEvent(
@@ -100,13 +100,13 @@ class DcAttestationStatsTest {
     }
 
     @Test
-    fun `breaks statistics down per wave`() {
-        val published = listOf(publication(0, wave = 0), publication(1, wave = 1))
+    fun `breaks statistics down per slot`() {
+        val published = listOf(publication(0, slot = 0), publication(1, slot = 1))
         val deliveries = listOf(
-            delivery(id = 0, receiver = 1, latencyMs = 10, wave = 0),
-            delivery(id = 0, receiver = 2, latencyMs = 30, wave = 0),
-            delivery(id = 1, receiver = 1, latencyMs = 100, wave = 1),
-            delivery(id = 1, receiver = 2, latencyMs = 300, wave = 1)
+            delivery(id = 0, receiver = 1, latencyMs = 10, slot = 0),
+            delivery(id = 0, receiver = 2, latencyMs = 30, slot = 0),
+            delivery(id = 1, receiver = 1, latencyMs = 100, slot = 1),
+            delivery(id = 1, receiver = 2, latencyMs = 300, slot = 1)
         )
         val config = DcSlotMessageConfig(DcSlotMessageType.FFG_ATTESTATION, sizeBytes = 240)
 
@@ -162,24 +162,24 @@ class DcAttestationStatsTest {
     }
 
     @Test
-    fun `traffic report buckets events into waves by time, overall spans the whole run`() {
-        val waveTimes = listOf(100.milliseconds, 200.milliseconds)
+    fun `traffic report buckets events into slots by time, overall spans the whole run`() {
+        val slotTimes = listOf(100.milliseconds, 200.milliseconds)
         val completeAt = 250.milliseconds
         val events = listOf(
-            packet(OUTBOUND, nodeId = 0, atMs = 50, bytes = 10), // warmup: before wave 0, not in any wave
-            packet(OUTBOUND, nodeId = 0, atMs = 100, bytes = 20), // wave 0
-            packet(OUTBOUND, nodeId = 0, atMs = 150, bytes = 30), // wave 0
-            packet(OUTBOUND, nodeId = 0, atMs = 200, bytes = 40), // wave 1
-            packet(OUTBOUND, nodeId = 0, atMs = 240, bytes = 50) // wave 1
+            packet(OUTBOUND, nodeId = 0, atMs = 50, bytes = 10), // warmup: before slot 0, not in any slot
+            packet(OUTBOUND, nodeId = 0, atMs = 100, bytes = 20), // slot 0
+            packet(OUTBOUND, nodeId = 0, atMs = 150, bytes = 30), // slot 0
+            packet(OUTBOUND, nodeId = 0, atMs = 200, bytes = 40), // slot 1
+            packet(OUTBOUND, nodeId = 0, atMs = 240, bytes = 50) // slot 1
         )
 
-        val report = DcTrafficReport.of(events, waveTimes, completeAt, nodeCount = 1)
+        val report = DcTrafficReport.of(events, slotTimes, completeAt, nodeCount = 1)
 
         // overall covers everything, including the warmup packet
         assertThat(report.overall.bytesSent).isEqualTo(150)
         assertThat(report.overall.packetsSent).isEqualTo(5)
-        assertThat(report.perWave.keys).containsExactly(0, 1)
-        assertThat(report.perWave.getValue(0).bytesSent).isEqualTo(50)
-        assertThat(report.perWave.getValue(1).bytesSent).isEqualTo(90)
+        assertThat(report.perSlot.keys).containsExactly(0, 1)
+        assertThat(report.perSlot.getValue(0).bytesSent).isEqualTo(50)
+        assertThat(report.perSlot.getValue(1).bytesSent).isEqualTo(90)
     }
 }

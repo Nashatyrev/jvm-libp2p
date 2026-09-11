@@ -37,17 +37,17 @@ class DcSlotTrafficProfileTest {
     }
 
     @Test
-    fun `bucketOf is null before the anchor or within the excluded warm-up waves`() {
+    fun `bucketOf is null before the anchor or within the excluded warm-up slots`() {
         val params = DcSlotProfileParams(
             anchor = 30.seconds,
             slotDuration = 12.seconds,
             bucketDuration = 100.milliseconds,
-            warmupWaves = 1
+            warmupSlots = 1
         )
 
         assertThat(params.bucketOf(29.seconds)).describedAs("before the anchor").isNull()
-        assertThat(params.bucketOf(31.seconds)).describedAs("wave 0, which is warm-up here").isNull()
-        assertThat(params.bucketOf(43.seconds)).describedAs("wave 1, past warm-up").isEqualTo(10)
+        assertThat(params.bucketOf(31.seconds)).describedAs("slot 0, which is warm-up here").isNull()
+        assertThat(params.bucketOf(43.seconds)).describedAs("slot 1, past warm-up").isEqualTo(10)
     }
 
     @Test
@@ -89,7 +89,7 @@ class DcSlotTrafficProfileTest {
         val data = DcMessagePayload.encode(
             kind = DcMessageKind.SLOT_MESSAGE,
             id = id,
-            waveIndex = 0,
+            slotIndex = 0,
             subnetId = DcMessagePayload.NO_SUBNET,
             publishedAt = Duration.ZERO,
             sizeBytes = dataSize,
@@ -408,8 +408,8 @@ class DcSlotTrafficProfileTest {
             .build()
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
         val config = DcAttestationConfig(
-            waveCount = 2,
-            waveInterval = 12.seconds,
+            slotCount = 2,
+            slotInterval = 12.seconds,
             settle = 12.seconds,
             blocks = DcBlockConfig(sizeBytes = 8 * 1024, publishOffset = 2.seconds),
             messages = listOf(
@@ -447,7 +447,7 @@ class DcSlotTrafficProfileTest {
     @Test
     fun `slotTrafficBucketDuration configures the resolution`() {
         val config = DcAttestationConfig(
-            waveInterval = 4.seconds,
+            slotInterval = 4.seconds,
             slotTrafficBucketDuration = 500.milliseconds,
             messages = listOf(DcSlotMessageConfig(type = DcSlotMessageType.FFG_ATTESTATION, sizeBytes = 240))
         )

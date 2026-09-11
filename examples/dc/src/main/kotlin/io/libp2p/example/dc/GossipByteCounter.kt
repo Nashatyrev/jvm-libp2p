@@ -20,12 +20,12 @@ import kotlin.time.Duration
  *
  * The sum + 2 (varint length prefix) equals the total stream bytes per RPC.
  *
- * Publish bytes are additionally attributed to the wave that produced them, by reading the wave
- * index out of the payload ([DcMessagePayload.waveIndexOf], which recognises every message kind, so
- * blocks are credited to their wave alongside attestations). That attribution is exact, unlike the
- * wall-clock bucketing used for UDP traffic in [DcTrafficReport] — when waves overlap (a short
- * [DcAttestationConfig.waveInterval] relative to dissemination time) a wave's bytes keep flowing long
- * after the next wave has started, so time windows credit them to the wrong wave.
+ * Publish bytes are additionally attributed to the slot that produced them, by reading the slot
+ * index out of the payload ([DcMessagePayload.slotIndexOf], which recognises every message kind, so
+ * blocks are credited to their slot alongside attestations). That attribution is exact, unlike the
+ * wall-clock bucketing used for UDP traffic in [DcTrafficReport] — when slots overlap (a short
+ * [DcAttestationConfig.slotInterval] relative to dissemination time) a slot's bytes keep flowing long
+ * after the next slot has started, so time windows credit them to the wrong slot.
  *
  * When constructed with [slotProfile], inbound reads are additionally bucketed by where in the slot
  * cycle they landed — see [DcSlotTrafficProfile] — split into per-([DcSlotMessageType], bucket)
@@ -46,8 +46,8 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
     private val _publishBytesWritten = AtomicLong(0)
     private val _controlBytesRead = AtomicLong(0)
     private val _controlBytesWritten = AtomicLong(0)
-    private val _readByWave = ConcurrentHashMap<Int, WaveCounts>()
-    private val _writtenByWave = ConcurrentHashMap<Int, WaveCounts>()
+    private val _readBySlot = ConcurrentHashMap<Int, SlotCounts>()
+    private val _writtenBySlot = ConcurrentHashMap<Int, SlotCounts>()
     private val _publishMessagesRead = AtomicLong(0)
     private val _publishMessagesWritten = AtomicLong(0)
 
@@ -76,14 +76,14 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
     val bytesRead: Long get() = publishBytesRead + controlBytesRead
     val bytesWritten: Long get() = publishBytesWritten + controlBytesWritten
 
-    /** Publish bytes per wave index. Payloads without a recognisable header are left out. */
-    val publishBytesReadByWave: Map<Int, Long> get() = _readByWave.mapValues { it.value.bytes.get() }
-    val publishBytesWrittenByWave: Map<Int, Long> get() = _writtenByWave.mapValues { it.value.bytes.get() }
+    /** Publish bytes per slot index. Payloads without a recognisable header are left out. */
+    val publishBytesReadBySlot: Map<Int, Long> get() = _readBySlot.mapValues { it.value.bytes.get() }
+    val publishBytesWrittenBySlot: Map<Int, Long> get() = _writtenBySlot.mapValues { it.value.bytes.get() }
 
-    /** Publish message counts per wave index, the numerator of a per-wave duplication factor. */
-    val publishMessagesReadByWave: Map<Int, Long> get() = _readByWave.mapValues { it.value.messages.get() }
-    val publishMessagesWrittenByWave: Map<Int, Long>
-        get() = _writtenByWave.mapValues { it.value.messages.get() }
+    /** Publish message counts per slot index, the numerator of a per-slot duplication factor. */
+    val publishMessagesReadBySlot: Map<Int, Long> get() = _readBySlot.mapValues { it.value.messages.get() }
+    val publishMessagesWrittenBySlot: Map<Int, Long>
+        get() = _writtenBySlot.mapValues { it.value.messages.get() }
 
     /**
      * Inbound publish bytes read off the wire on this node's first sighting of each message, by
@@ -107,7 +107,7 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
 
     override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
         if (msg is Rpc.RPC) {
-            count(msg, _publishBytesRead, _controlBytesRead, _readByWave, _publishMessagesRead)
+            count(msg, _publishBytesRead, _controlBytesRead, _readBySlot, _publishMessagesRead)
             countSlotProfile(msg)
         }
         super.channelRead(ctx, msg)
@@ -115,7 +115,7 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
 
     override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
         if (msg is Rpc.RPC) {
-            count(msg, _publishBytesWritten, _controlBytesWritten, _writtenByWave, _publishMessagesWritten)
+            count(msg, _publishBytesWritten, _controlBytesWritten, _writtenBySlot, _publishMessagesWritten)
         }
         super.write(ctx, msg, promise)
     }
@@ -150,8 +150,8 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
         _controlBytesReadByBucket?.get(bucket)?.addAndGet(totalBytes - publishBytes)
     }
 
-    /** Bytes and message count for one wave, so both are attributed in a single map lookup. */
-    private class WaveCounts {
+    /** Bytes and message count for one slot, so both are attributed in a single map lookup. */
+    private class SlotCounts {
         val bytes = AtomicLong(0)
         val messages = AtomicLong(0)
     }
@@ -171,15 +171,15 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
             rpc: Rpc.RPC,
             publishAcc: AtomicLong,
             controlAcc: AtomicLong,
-            byWave: ConcurrentHashMap<Int, WaveCounts>,
+            bySlot: ConcurrentHashMap<Int, SlotCounts>,
             messageAcc: AtomicLong
         ) {
             var publishBytes = 0L
             rpc.publishList.forEach { message ->
                 val size = encodedFieldSize(message)
                 publishBytes += size
-                DcMessagePayload.waveIndexOf(message.data)?.let { wave ->
-                    val counts = byWave.computeIfAbsent(wave) { WaveCounts() }
+                DcMessagePayload.slotIndexOf(message.data)?.let { slot ->
+                    val counts = bySlot.computeIfAbsent(slot) { SlotCounts() }
                     counts.bytes.addAndGet(size)
                     counts.messages.incrementAndGet()
                 }
