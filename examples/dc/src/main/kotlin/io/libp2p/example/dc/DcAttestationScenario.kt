@@ -117,8 +117,12 @@ data class DcAttestationConfig(
             "slotTrafficBucketDuration must be > 0, got $slotTrafficBucketDuration"
         }
         val configs = messages + listOfNotNull(blocks?.asSlotMessageConfig())
-        require(configs.map { it.type }.distinct().size == configs.size) {
-            "message types must be unique, got ${configs.map { it.type }}"
+        // Keyed on (type, publishOffset) rather than type alone, so one type may appear several
+        // times to issue several waves within a slot -- one entry per offset into the slot. Two
+        // entries of the same type at the same offset are still a mistake.
+        require(configs.map { it.type to it.publishOffset }.distinct().size == configs.size) {
+            "message type/publishOffset pairs must be unique, got " +
+                "${configs.map { "${it.type}@${it.publishOffset}" }}"
         }
         require(configs.any { it.type == DcSlotMessageType.FFG_ATTESTATION }) {
             "messages must include a DcSlotMessageType.FFG_ATTESTATION entry -- " +
@@ -171,11 +175,21 @@ class DcAttestationNodeProgramFactory<R>(
     private val messageSchedules: List<DcSlotMessageSchedule>
 ) : NodeProgramFactory {
 
-    val messageRecorders = messageSchedules.associate { it.config.type to DcSlotMessageRecorder() }
+    /**
+     * One recorder per message type, shared by every schedule of that type: a type issued as
+     * several waves within a slot (one schedule per [DcSlotMessageConfig.publishOffset]) reports as
+     * one merged set of publications and deliveries.
+     */
+    val messageRecorders = messageSchedules
+        .map { it.config.type }
+        .distinct()
+        .associateWith { DcSlotMessageRecorder() }
 
     init {
-        require(messageRecorders.size == messageSchedules.size) {
-            "Every slot-message schedule must have a distinct type"
+        val keys = messageSchedules.map { it.config.type to it.config.publishOffset }
+        require(keys.distinct().size == messageSchedules.size) {
+            "Every slot-message schedule must have a distinct (type, publishOffset), got " +
+                "${keys.map { (type, offset) -> "$type@$offset" }}"
         }
     }
 

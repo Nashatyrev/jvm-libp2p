@@ -152,7 +152,7 @@ class DcBlockScenarioTest {
     }
 
     @Test
-    fun `every message type namespaces its topics and allows one issuance config`() {
+    fun `every message type namespaces its topics and allows one issuance config per offset`() {
         DcSlotMessageType.values().forEach { type ->
             assertThat(DcSlotMessageTopics.Global.topic(type, null).topic)
                 .isEqualTo("/dc/${type.id}")
@@ -162,14 +162,30 @@ class DcBlockScenarioTest {
         assertThat(DcSlotMessageType.values().map { it.id }.distinct())
             .hasSize(DcSlotMessageType.values().size)
 
+        // Same type at the same offset is still a mistake: two competing issuance configs.
         assertThatThrownBy {
             DcAttestationConfig(
-                messages = listOf(
+                messages = ffgMessages(attestersPerWave = 1, subnetCount = 1) + listOf(
                     DcSlotMessageConfig(DcSlotMessageType.BLOB_COLUMN, sizeBytes = 1024),
                     DcSlotMessageConfig(DcSlotMessageType.BLOB_COLUMN, sizeBytes = 2048)
                 )
             )
-        }.hasMessageContaining("message types must be unique")
+        }.hasMessageContaining("message type/publishOffset pairs must be unique")
+
+        // Same type at different offsets is how a type issues several waves within one slot.
+        val waves = DcAttestationConfig(
+            waveInterval = 12.seconds,
+            messages = (0 until 3).map { wave ->
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.FFG_ATTESTATION,
+                    sizeBytes = 240,
+                    publishOffset = wave.seconds,
+                    topics = DcSlotMessageTopics.Subnets(1)
+                )
+            }
+        )
+        assertThat(waves.messages.map { it.publishOffset })
+            .containsExactly(0.seconds, 1.seconds, 2.seconds)
     }
 
     @Test

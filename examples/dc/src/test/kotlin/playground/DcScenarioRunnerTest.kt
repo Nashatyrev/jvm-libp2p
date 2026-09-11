@@ -90,6 +90,8 @@ class DcScenarioRunnerTest {
 //            .gossipSize(0)
             .build()
 
+        // FFG attestations vote once a second rather than once per slot: one config entry per wave,
+        // each at its own offset into the slot. Every other type stays a single message per slot.
         val ffgVotesWaves = (0 until 12).map { waveIdx ->
             DcSlotMessageConfig(
                 type = DcSlotMessageType.FFG_ATTESTATION,
@@ -130,17 +132,12 @@ class DcScenarioRunnerTest {
                     publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
                     messagesPerSlot = 128,
                     topics = DcSlotMessageTopics.Subnets(128)
-                ),
-            )
-                    + ffgVotesWaves,
+                )
+            ) + ffgVotesWaves,
             gossipParams = gossipParams,
             randomSeed = 1
         )
-        // No explicit `schedule` here: FFG attestation is configured as an ordinary message in
-        // `messages` above (ALL_VALIDATORS selection), and DcAttestationScenario.run's default
-        // schedule is null whenever `messages` already covers FFG attestation -- passing the legacy
-        // DcAttestationSchedule.allValidators(...) here as well would create a second FFG schedule
-        // and the factory rejects having more than one.
+
         val report = DcAttestationScenario.run(
             network = network,
             graph = graph,
