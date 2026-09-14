@@ -40,6 +40,13 @@ tasks.register('simulation', Test) {
   classpath = sourceSets.test.runtimeClasspath
   maxHeapSize = '300g'
   jvmArgs('-XX:MaxDirectMemorySize=200g')
+  // Lets a scenario be swept without editing it, e.g.
+  //   ./gradlew :examples:dc:simulation --tests "*large network*" -Ddc.validators=100000
+  ['dc.validators'].each { name ->
+    if (System.getProperty(name) != null) {
+      systemProperty name, System.getProperty(name)
+    }
+  }
   useJUnitPlatform {
     includeTags("simulation")
   }

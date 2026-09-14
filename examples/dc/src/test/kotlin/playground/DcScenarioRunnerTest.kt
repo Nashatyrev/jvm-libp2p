@@ -11,6 +11,7 @@ import io.libp2p.example.dc.DcSlotMessageTopics
 import io.libp2p.example.dc.DcSlotMessageType
 import io.libp2p.example.dc.peerGraph
 import io.libp2p.pubsub.gossip.GossipParams
+import io.libp2p.pubsub.gossip.builders.GossipParamsBuilder
 import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.ContinentRegion
 import org.assertj.core.api.Assertions
 import org.junit.jupiter.api.Tag
@@ -82,23 +83,8 @@ class DcScenarioRunnerTest {
         Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
 
         val gossipParams = GossipParams.builder()
-            // Disables gossiping
-//            .DLazy(0)
-//            .gossipFactor(0.0)
-//            .gossipSize(0)
+            .disableGossip()
             .build()
-
-        // FFG attestations vote once a second rather than once per slot: one config entry per wave,
-        // each at its own offset into the slot. Every other type stays a single message per slot.
-        val ffgVotesWaves = (0 until 12).map { waveIdx ->
-            DcSlotMessageConfig(
-                type = DcSlotMessageType.FFG_ATTESTATION,
-                sizeBytes = 240,
-                publishOffset = waveIdx.seconds,
-                publisherSelection = DcPublisherSelection.ALL_VALIDATORS,
-                topics = DcSlotMessageTopics.Subnets(64)
-            )
-        }
 
         val runConfig = DcRunConfig(
             slotCount = 1,
@@ -131,9 +117,134 @@ class DcScenarioRunnerTest {
                     messagesPerSlot = 128,
                     topics = DcSlotMessageTopics.Subnets(128)
                 )
-            ) + ffgVotesWaves,
+            ) + (0 until 12)
+                .map { waveIdx ->
+                    DcSlotMessageConfig(
+                        type = DcSlotMessageType.FFG_ATTESTATION,
+                        sizeBytes = 240,
+                        publishOffset = waveIdx.seconds,
+                        publisherSelection = DcPublisherSelection.ALL_VALIDATORS,
+                        topics = DcSlotMessageTopics.Subnets(64)
+                    )
+                },
             gossipParams = gossipParams,
             randomSeed = 1
+        )
+
+        val report = DcScenario.run(
+            network = network,
+            graph = graph,
+            config = runConfig
+        )
+        println(report)
+    }
+
+
+    @Test
+    fun `large network`() {
+
+        val validatorCount = System.getProperty("dc.validators")?.toInt() ?: 1_000_000
+        val ffgSlots = 4
+        val ffgWavesPerSlot = 12
+        val ffgSubnetsTotal = 64
+        val ffgResidentialSubnets = 1
+
+        val network = DcNetworkBuilder
+            .world(
+                subnetCounts = mapOf(
+                    DcSlotMessageType.PAYLOAD_CHUNK to 64,
+                    DcSlotMessageType.BLOB_COLUMN to 128,
+                    DcSlotMessageType.FFG_ATTESTATION to ffgSubnetsTotal
+                )
+            )
+            .defaults {
+                // Spread payload chunks across their own 64 meshes.
+                allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK)
+            }
+            .addGroup(count = 200) {
+                name = "validator-pools"
+                regionWeights = mapOf(
+                    ContinentRegion.EUROPE to 0.4,
+                    ContinentRegion.US_EAST to 0.4,
+                    ContinentRegion.US_WEST to 0.2,
+                )
+                bandwidth = Bandwidths.DATACENTER
+                validators = validatorCount / 1000
+                peers = 200
+
+                allMessageSubnets(DcSlotMessageType.BLOB_COLUMN)
+                allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION)
+            }
+            .addGroup(count = 800) {
+                // business
+                name = "home"
+                spreadOverRegions()
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = validatorCount / 1000
+                peers = 100
+
+                // Model the current validator custody requirement: eight of 128 DA columns per node.
+                randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, count = 8)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = ffgResidentialSubnets)
+            }
+            .build()
+
+
+        val ffgAttestationsPerWave = network.validatorCount / ffgSlots / ffgWavesPerSlot
+
+        val graph = network
+            .peerGraph(
+                minPeersPerSubnet = 8,
+            )
+        Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
+
+        val gossipParams = GossipParams.builder()
+//            .disableGossip()
+            .build()
+
+        val runConfig = DcRunConfig(
+            slotCount = 1,
+            settle = 30.seconds,
+            messages = listOf<DcSlotMessageConfig>(
+//                DcSlotMessageConfig(
+//                    type = DcSlotMessageType.BLOCK,
+//                    sizeBytes = 8 * 1024,
+//                    publishOffset = 0.seconds,
+//                    publisherGroups = setOf("validator-pools"),
+//                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+//                    topics = DcSlotMessageTopics.Global
+//                ),
+//                DcSlotMessageConfig(
+//                    type = DcSlotMessageType.PAYLOAD_CHUNK,
+//                    sizeBytes = 128 * 1024 / 64,
+//                    publishOffset = 1.seconds,
+//                    publisherGroups = setOf("validator-pools"),
+//                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+//                    messagesPerSlot = 64,
+//                    topics = DcSlotMessageTopics.Subnets(64)
+//                ),
+//                DcSlotMessageConfig(
+//                    type = DcSlotMessageType.BLOB_COLUMN,
+//                    // Scenario assumption: one 8 KiB sidecar per DA column.
+//                    sizeBytes = 4 * 1024,
+//                    publishOffset = 1.seconds,
+//                    publisherGroups = setOf("validator-pools"),
+//                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+//                    messagesPerSlot = 128,
+//                    topics = DcSlotMessageTopics.Subnets(128)
+//                )
+            ) + (0 until ffgWavesPerSlot)
+                .map { waveIdx ->
+                    DcSlotMessageConfig(
+                        type = DcSlotMessageType.FFG_ATTESTATION,
+                        sizeBytes = 240,
+                        publishOffset = waveIdx.seconds,
+                        publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                        messagesPerSlot = ffgAttestationsPerWave,
+                        topics = DcSlotMessageTopics.Subnets(64)
+                    )
+                },
+            gossipParams = gossipParams,
         )
 
         val report = DcScenario.run(
@@ -443,5 +554,12 @@ class DcScenarioRunnerTest {
             " D  subnets  meshMean  dup    deliv%   p50    p95    p99    max   MB/node/slot  ctrlMB/node"
         private const val SWEEP_ROW =
             "%2d  %7d  %8.2f  %5.2fx %6.2f  %5d  %5d  %5d  %6d  %11.2f  %10.2f"
+
+        fun GossipParamsBuilder.disableGossip() = also {
+            this
+                .DLazy(0)
+                .gossipFactor(0.0)
+                .gossipSize(0)
+        }
     }
 }
