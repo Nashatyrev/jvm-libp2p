@@ -168,7 +168,7 @@ class DcScenarioRunnerTest {
                     ContinentRegion.US_EAST to 0.4,
                     ContinentRegion.US_WEST to 0.2,
                 )
-                bandwidth = Bandwidths.DATACENTER
+                bandwidth = Bandwidths.gbitPerSecond(10)
                 validators = validatorCount / 1000
                 peers = 200
 
@@ -199,7 +199,7 @@ class DcScenarioRunnerTest {
         Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
 
         val gossipParams = GossipParams.builder()
-//            .disableGossip()
+            .disableGossip()
             .build()
 
         val runConfig = DcRunConfig(
