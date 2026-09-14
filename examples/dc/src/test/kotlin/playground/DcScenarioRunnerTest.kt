@@ -139,10 +139,8 @@ class DcScenarioRunnerTest {
         println(report)
     }
 
-
     @Test
     fun `large network`() {
-
         val validatorCount = System.getProperty("dc.validators")?.toInt() ?: 1_000_000
         val ffgSlots = 4
         val ffgWavesPerSlot = 12
@@ -188,7 +186,6 @@ class DcScenarioRunnerTest {
                 randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = ffgResidentialSubnets)
             }
             .build()
-
 
         val ffgAttestationsPerWave = network.validatorCount / ffgSlots / ffgWavesPerSlot
 
@@ -239,7 +236,7 @@ class DcScenarioRunnerTest {
                         type = DcSlotMessageType.FFG_ATTESTATION,
                         sizeBytes = 240,
                         publishOffset = waveIdx.seconds,
-                        publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                        publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
                         messagesPerSlot = ffgAttestationsPerWave,
                         topics = DcSlotMessageTopics.Subnets(64)
                     )
