@@ -29,6 +29,13 @@ data class DcGroupStats(
     val gossipPublishBytesSent: Long,
     val gossipPublishBytesReceived: Long,
     val messagesReceived: Map<DcSlotMessageType, DcDeliveryStats>,
+    /**
+     * [messagesReceived] split by the wave within the slot that issued the message, for a type
+     * configured as several waves — so a group's latency can be read per wave rather than pooled
+     * across all of them. Keyed by type, then by [DcSlotMessage.waveIndex]; holds a single entry per
+     * type for a single-wave type, where it says the same thing as [messagesReceived].
+     */
+    val messagesReceivedPerWave: Map<DcSlotMessageType, Map<Int, DcDeliveryStats>> = emptyMap(),
     val mesh: DcMeshStats?,
     /** This group's own slot traffic profile — see [DcSlotTrafficProfile] — null if it could not be built. */
     val slotTraffic: DcSlotTrafficProfile? = null
@@ -70,6 +77,16 @@ data class DcGroupStats(
         messagesReceived.toSortedMap().forEach { (type, stats) ->
             append("  received $type: $stats".trimEnd().replace("\n", "\n  "))
             appendLine()
+            val perWave = messagesReceivedPerWave[type].orEmpty()
+            if (perWave.size > 1) {
+                perWave.toSortedMap().forEach { (wave, waveStats) ->
+                    append(
+                        "    received $type wave $wave of ${perWave.size}: $waveStats"
+                            .trimEnd().replace("\n", "\n    ")
+                    )
+                    appendLine()
+                }
+            }
         }
         mesh?.let { append("  " + it.toString().trimEnd().replace("\n", "\n  ") + "\n") }
         slotTraffic?.let { append("  " + it.toString().trimEnd().replace("\n", "\n  ") + "\n") }
@@ -149,28 +166,48 @@ data class DcGroupReport(
             val messagesReceivedByGroup = nodesByGroup.keys.associateWith { mutableMapOf<DcSlotMessageType, MutableList<kotlin.time.Duration>>() }
             val publishedCountByGroupAndType = nodesByGroup.keys.associateWith { mutableMapOf<DcSlotMessageType, Int>() }
             val expectedByGroupAndType = nodesByGroup.keys.associateWith { mutableMapOf<DcSlotMessageType, Int>() }
+            // Same three figures again, split by the wave within the slot that issued the message.
+            val receivedByGroupTypeWave =
+                nodesByGroup.keys.associateWith { mutableMapOf<Pair<DcSlotMessageType, Int>, MutableList<kotlin.time.Duration>>() }
+            val publishedByGroupTypeWave = nodesByGroup.keys.associateWith { mutableMapOf<Pair<DcSlotMessageType, Int>, Int>() }
+            val expectedByGroupTypeWave = nodesByGroup.keys.associateWith { mutableMapOf<Pair<DcSlotMessageType, Int>, Int>() }
+            val wavesPerType = mutableMapOf<DcSlotMessageType, MutableSet<Int>>()
 
             messagesByType.forEach { (type, publishedAndDelivered) ->
                 val (published, deliveries) = publishedAndDelivered
                 val measuredPublished = published.filter { it.message.slotIndex >= warmupSlots }
                 val measuredDeliveries = deliveries.filter { it.slotIndex >= warmupSlots }
+                // Deliveries carry only the message id, so the wave is looked up from the publisher
+                // side -- sound because ids are unique across a type's waves, see
+                // DcSlotMessageSchedule.create's firstMessageId.
+                val waveOfMessageId = measuredPublished.associate { it.message.id to it.message.waveIndex }
 
                 measuredPublished.forEach { publication ->
                     val (counts, ids) = subscribersOfCached(publication.message)
                     val publisherGroup = groupOfNode.getValue(publication.message.publisherNodeId)
                     val publisherCounted = publication.message.publisherNodeId in ids
+                    val wave = publication.message.waveIndex
+                    wavesPerType.getOrPut(type) { mutableSetOf() } += wave
                     counts.forEach { (group, count) ->
                         val expected = count - if (publisherCounted && group == publisherGroup) 1 else 0
                         val byType = expectedByGroupAndType.getValue(group)
                         byType[type] = (byType[type] ?: 0) + expected
+                        val byWave = expectedByGroupTypeWave.getValue(group)
+                        byWave[type to wave] = (byWave[type to wave] ?: 0) + expected
                     }
                     val byType = publishedCountByGroupAndType.getValue(publisherGroup)
                     byType[type] = (byType[type] ?: 0) + 1
+                    val byWave = publishedByGroupTypeWave.getValue(publisherGroup)
+                    byWave[type to wave] = (byWave[type to wave] ?: 0) + 1
                 }
                 measuredDeliveries.forEach { delivery ->
                     val group = groupOfNode.getValue(delivery.receiverNodeId)
                     messagesReceivedByGroup.getValue(group)
                         .getOrPut(type) { mutableListOf() } += delivery.latency
+                    waveOfMessageId[delivery.messageId]?.let { wave ->
+                        receivedByGroupTypeWave.getValue(group)
+                            .getOrPut(type to wave) { mutableListOf() } += delivery.latency
+                    }
                 }
             }
 
@@ -195,6 +232,16 @@ data class DcGroupReport(
                             expectedDeliveries = expectedByGroupAndType.getValue(groupName)[type] ?: 0,
                             what = type.id
                         )
+                    },
+                    messagesReceivedPerWave = messagesByType.keys.associateWith { type ->
+                        wavesPerType[type].orEmpty().sorted().associateWith { wave ->
+                            DcDeliveryStats.of(
+                                publishedCount = publishedByGroupTypeWave.getValue(groupName)[type to wave] ?: 0,
+                                latencies = receivedByGroupTypeWave.getValue(groupName)[type to wave].orEmpty(),
+                                expectedDeliveries = expectedByGroupTypeWave.getValue(groupName)[type to wave] ?: 0,
+                                what = type.id
+                            )
+                        }
                     },
                     mesh = nodeIds.mapNotNull { meshSizes[it] }
                         .takeIf { it.isNotEmpty() }

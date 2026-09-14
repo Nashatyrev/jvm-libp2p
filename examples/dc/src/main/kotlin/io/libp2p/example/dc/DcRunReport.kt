@@ -16,6 +16,7 @@ data class DcDeliveryStats(
     val expectedDeliveries: Int,
     val actualDeliveries: Int,
     val p50: Duration?,
+    val p90: Duration?,
     val p95: Duration?,
     val p99: Duration?,
     val min: Duration?,
@@ -35,7 +36,7 @@ data class DcDeliveryStats(
                 "(${"%.2f".format(deliveryRatio * 100)}%)"
         )
         appendLine(
-            "latency: p50=${p50.ms()} p95=${p95.ms()} p99=${p99.ms()} " +
+            "latency: p50=${p50.ms()} p90=${p90.ms()} p95=${p95.ms()} p99=${p99.ms()} " +
                 "min=${min.ms()} max=${max.ms()} mean=${mean.ms()}"
         )
     }
@@ -60,6 +61,7 @@ data class DcDeliveryStats(
                 expectedDeliveries = expectedDeliveries,
                 actualDeliveries = sorted.size,
                 p50 = sorted.percentile(0.50),
+                p90 = sorted.percentile(0.90),
                 p95 = sorted.percentile(0.95),
                 p99 = sorted.percentile(0.99),
                 min = sorted.firstOrNull(),
