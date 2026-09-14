@@ -38,8 +38,11 @@ tasks.register('simulation', Test) {
   group = 'verification'
   testClassesDirs = sourceSets.test.output.classesDirs
   classpath = sourceSets.test.runtimeClasspath
-  maxHeapSize = '300g'
-  jvmArgs('-XX:MaxDirectMemorySize=200g')
+  // The 512 GB box is the real ceiling. A 1M-validator run died with the 300g heap 99.85% full
+  // and 427 full GCs while 200g of direct memory went largely unused, so the split moves toward
+  // the heap: 400g + 60g leaves headroom for G1's own structures on a heap that size.
+  maxHeapSize = '400g'
+  jvmArgs('-XX:MaxDirectMemorySize=60g')
   // Lets a scenario be swept without editing it, e.g.
   //   ./gradlew :examples:dc:simulation --tests "*large network*" -Ddc.validators=100000
   ['dc.validators'].each { name ->
