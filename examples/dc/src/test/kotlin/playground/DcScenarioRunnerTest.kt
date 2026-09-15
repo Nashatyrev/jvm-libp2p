@@ -146,6 +146,9 @@ class DcScenarioRunnerTest {
         val ffgWavesPerSlot = 12
         val ffgSubnetsTotal = 64
         val ffgResidentialSubnets = 1
+        // Models aggregation: N times fewer attestations, each N times larger, so the bytes
+        // published per wave are unchanged and only the message count drops. 1 = no aggregation.
+        val ffgCompression = System.getProperty("dc.ffgCompression")?.toInt() ?: 1
 
         val network = DcNetworkBuilder
             .world(
@@ -187,7 +190,8 @@ class DcScenarioRunnerTest {
             }
             .build()
 
-        val ffgAttestationsPerWave = network.validatorCount / ffgSlots / ffgWavesPerSlot
+        val ffgAttestationsPerWave =
+            network.validatorCount / ffgSlots / ffgWavesPerSlot / ffgCompression
 
         val graph = network
             .peerGraph(
@@ -234,7 +238,7 @@ class DcScenarioRunnerTest {
                 .map { waveIdx ->
                     DcSlotMessageConfig(
                         type = DcSlotMessageType.FFG_ATTESTATION,
-                        sizeBytes = 240,
+                        sizeBytes = 240 * ffgCompression,
                         publishOffset = waveIdx.seconds,
                         publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
                         messagesPerSlot = ffgAttestationsPerWave,
