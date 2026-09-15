@@ -92,6 +92,20 @@ data class DcSubnetSubscription(
 }
 
 /** Convenience constructors for [Bandwidth] in the units people actually quote links in. */
+/**
+ * An access link, which need not be symmetric.
+ *
+ * Upload is the direction that matters for gossip — a node forwards each message to every mesh peer
+ * but only receives it once per peer that already has it — so a consumer connection's narrower
+ * upstream is not a detail that can be averaged away.
+ */
+data class DcLink(val download: Bandwidth, val upload: Bandwidth = download) {
+    val isSymmetric: Boolean get() = download.bytesPerSecond == upload.bytesPerSecond
+
+    override fun toString(): String =
+        if (isSymmetric) download.toString() else "$download down/$upload up"
+}
+
 object Bandwidths {
     private const val BITS_PER_BYTE = 8L
 
@@ -101,12 +115,18 @@ object Bandwidths {
 
     fun bytesPerSecond(bytesPerSecond: Long): Bandwidth = Bandwidth(bytesPerSecond)
 
-    /** Typical home connection. */
-    val RESIDENTIAL: Bandwidth = mbitPerSecond(50)
+    /** A symmetric link at [rate], the shape a well provisioned host has. */
+    fun symmetric(rate: Bandwidth): DcLink = DcLink(rate)
+
+    /**
+     * Typical home connection: 50 Mbit/s down, 25 Mbit/s up — the asymmetry the Ethereum
+     * specification assumes for an attesting validator's link.
+     */
+    val RESIDENTIAL: DcLink = DcLink(mbitPerSecond(50), mbitPerSecond(25))
 
     /** Typical small VPS / cloud instance. */
-    val VPS: Bandwidth = mbitPerSecond(500)
+    val VPS: DcLink = symmetric(mbitPerSecond(500))
 
     /** Well provisioned data centre node, e.g. a large staking operator. */
-    val DATACENTER: Bandwidth = gbitPerSecond(1)
+    val DATACENTER: DcLink = symmetric(gbitPerSecond(1))
 }

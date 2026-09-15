@@ -115,9 +115,12 @@ class DcNetworkBuilder<R>(
         val group = currentDefaults.copyAsTemplate().apply(configure).validated()
         val groupRegions = group.regionsFor(count)
         val groupValidators = group.validatorsFor(count)
-        val bandwidthBytesPerSecond = requireNotNull(group.bandwidth).bytesPerSecond
+        val link = requireNotNull(group.bandwidth) { "bandwidth is required" }
+        val bandwidthBytesPerSecond = link.download.bytesPerSecond
+        // An explicit uploadBandwidth still wins, so a group can narrow one profile's upstream
+        // without inventing a whole link.
         val uploadBandwidthBytesPerSecond =
-            group.uploadBandwidth?.bytesPerSecond ?: bandwidthBytesPerSecond
+            (group.uploadBandwidth ?: link.upload).bytesPerSecond
 
         repeat(count) { index ->
             val simNodeId = nodes.size

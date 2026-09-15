@@ -33,7 +33,7 @@ class DcNetworkBuilderTest {
         assertThat(network.nodesIn(EUROPE)).hasSize(4)
         assertThat(network.validatorsIn(ASIA)).isEqualTo(20)
         assertThat(network.nodesIn(EUROPE).map { it.bandwidthBytesPerSecond }.distinct())
-            .containsExactly(Bandwidths.DATACENTER.bytesPerSecond)
+            .containsExactly(Bandwidths.DATACENTER.download.bytesPerSecond)
         // sim node ids are dense and index-aligned with the node list
         assertThat(network.nodes.map { it.simNodeId }).isEqualTo((0 until 6).toList())
         assertThat(network.node(0).id).isEqualTo("node-0")
@@ -138,7 +138,7 @@ class DcNetworkBuilderTest {
                 .hasSize(1)
         }
         assertThat(network.topology.links.filter { it.from == network.node(0).id }.map { it.bandwidthBytesPerSecond })
-            .containsExactly(Bandwidths.DATACENTER.bytesPerSecond)
+            .containsExactly(Bandwidths.DATACENTER.download.bytesPerSecond)
     }
 
     @Test
@@ -352,7 +352,7 @@ class DcNetworkBuilderTest {
         assertThat(inherited.map { it.region }.distinct()).containsExactly(ASIA)
         assertThat(inherited.map { it.peerCount }.distinct()).containsExactly(12)
         assertThat(inherited.map { it.bandwidthBytesPerSecond }.distinct())
-            .containsExactly(Bandwidths.RESIDENTIAL.bytesPerSecond)
+            .containsExactly(Bandwidths.RESIDENTIAL.download.bytesPerSecond)
         assertThat(inherited.map { it.subnetIdsFor(ffg) }.distinct()).containsExactly(setOf(3))
 
         val overridden = network.nodes.drop(30)
@@ -376,7 +376,7 @@ class DcNetworkBuilderTest {
         assertThat(network.nodes.map { it.peerCount }.distinct()).containsExactly(7)
         assertThat(network.nodes.map { it.validatorCount }.distinct()).containsExactly(3)
         assertThat(network.nodes.map { it.bandwidthBytesPerSecond }.distinct())
-            .containsExactly(Bandwidths.VPS.bytesPerSecond)
+            .containsExactly(Bandwidths.VPS.download.bytesPerSecond)
     }
 
     @Test

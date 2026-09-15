@@ -247,7 +247,7 @@ class DcScenarioTest {
         val network = DcNetworkBuilder.world(randomSeed = 1)
             .addGroup(count = 4) {
                 spreadOverRegions()
-                bandwidth = down
+                bandwidth = Bandwidths.symmetric(down)
                 uploadBandwidth = up
                 validators = 1
                 peers = 2
@@ -276,13 +276,36 @@ class DcScenarioTest {
     }
 
     @Test
-    fun `omitting uploadBandwidth keeps the link symmetric`() {
-        val network = population(nodeCount = 4, subnetCount = 2, subnetsPerNode = 1, peers = 2)
+    fun `omitting uploadBandwidth keeps a symmetric profile symmetric`() {
+        val network = DcNetworkBuilder.world(randomSeed = 1)
+            .addGroup(count = 4) {
+                spreadOverRegions()
+                bandwidth = Bandwidths.DATACENTER
+                validators = 1
+                peers = 2
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 1, of = 2)
+            }
+            .build()
 
         network.nodes.forEach { node ->
             assertThat(node.uploadBandwidthBytesPerSecond).isEqualTo(node.bandwidthBytesPerSecond)
             assertThat(node.hasAsymmetricLink).isFalse()
         }
+    }
+
+    @Test
+    fun `RESIDENTIAL carries the spec's asymmetric attester link`() {
+        val network = population(nodeCount = 4, subnetCount = 2, subnetsPerNode = 1, peers = 2)
+
+        // 50 Mbit/s down, 25 Mbit/s up -- what the Ethereum spec assumes of an attesting
+        // validator's connection, and asymmetric without anyone asking for it.
+        network.nodes.forEach { node ->
+            assertThat(node.bandwidthBytesPerSecond).isEqualTo(50_000_000L / 8)
+            assertThat(node.uploadBandwidthBytesPerSecond).isEqualTo(25_000_000L / 8)
+            assertThat(node.hasAsymmetricLink).isTrue()
+        }
+        assertThat(Bandwidths.RESIDENTIAL.isSymmetric).isFalse()
+        assertThat(Bandwidths.DATACENTER.isSymmetric).isTrue()
     }
 
     @Test

@@ -49,7 +49,7 @@ class DcNodeGroup<R> internal constructor(
     var name: String? = null
 
     /** Access link rate of every node in the group. Required. */
-    var bandwidth: Bandwidth? = null
+    var bandwidth: DcLink? = null
 
     /**
      * Upload rate of every node in the group. Leave null for a symmetric link at [bandwidth].
