@@ -155,6 +155,10 @@ class DcScenarioRunnerTest {
         // Models aggregation: N times fewer attestations, each N times larger, so the bytes
         // published per wave are unchanged and only the message count drops. 1 = no aggregation.
         val ffgCompression = System.getProperty("dc.ffgCompression")?.toInt() ?: 1
+        // Extra slots exist to be thrown away: by default every slot but the last is warm-up, so the
+        // headline figures describe a network that has already carried a slot's worth of traffic.
+        val slotCount = System.getProperty("dc.slots")?.toInt() ?: 1
+        val warmupSlots = System.getProperty("dc.warmupSlots")?.toInt() ?: (slotCount - 1)
 
         val network = DcNetworkBuilder
             .world(
@@ -210,7 +214,8 @@ class DcScenarioRunnerTest {
             .build()
 
         val runConfig = DcRunConfig(
-            slotCount = 1,
+            slotCount = slotCount,
+            warmupSlots = warmupSlots,
             messages = listOf<DcSlotMessageConfig>(
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.BLOCK,
