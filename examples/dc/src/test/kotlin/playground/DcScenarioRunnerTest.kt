@@ -142,10 +142,16 @@ class DcScenarioRunnerTest {
     @Test
     fun `large network`() {
         val validatorCount = System.getProperty("dc.validators")?.toInt() ?: 1_000_000
+        val slotDuration = 12.seconds
         val ffgSlots = 4
         val ffgWavesPerSlot = 12
         val ffgSubnetsTotal = 64
         val ffgResidentialSubnets = 1
+        val blockSize = 8 * 1024
+        val blockPayloadSize = 1024 * 1024
+        val numberOfBlobs = 21
+        val blobsSize = 128 * 1024 * 2 * numberOfBlobs
+        val blobColumnSize = blobsSize / 128
         // Models aggregation: N times fewer attestations, each N times larger, so the bytes
         // published per wave are unchanged and only the message count drops. 1 = no aggregation.
         val ffgCompression = System.getProperty("dc.ffgCompression")?.toInt() ?: 1
@@ -200,7 +206,7 @@ class DcScenarioRunnerTest {
         Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
 
         val gossipParams = GossipParams.builder()
-//            .disableGossip()
+            .disableGossip()
             .build()
 
         val runConfig = DcRunConfig(
@@ -208,7 +214,7 @@ class DcScenarioRunnerTest {
             messages = listOf<DcSlotMessageConfig>(
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.BLOCK,
-                    sizeBytes = 8 * 1024,
+                    sizeBytes = blockSize,
                     publishOffset = 0.seconds,
                     publisherGroups = setOf("validator-pools"),
                     publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
@@ -216,7 +222,7 @@ class DcScenarioRunnerTest {
                 ),
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.PAYLOAD_CHUNK,
-                    sizeBytes = 128 * 1024 / 64,
+                    sizeBytes = blockPayloadSize / 64,
                     publishOffset = 1.seconds,
                     publisherGroups = setOf("validator-pools"),
                     publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
@@ -226,7 +232,7 @@ class DcScenarioRunnerTest {
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.BLOB_COLUMN,
                     // Scenario assumption: one 8 KiB sidecar per DA column.
-                    sizeBytes = 4 * 1024,
+                    sizeBytes = blobColumnSize,
                     publishOffset = 1.seconds,
                     publisherGroups = setOf("validator-pools"),
                     publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
@@ -238,7 +244,7 @@ class DcScenarioRunnerTest {
                     DcSlotMessageConfig(
                         type = DcSlotMessageType.FFG_ATTESTATION,
                         sizeBytes = 240 * ffgCompression,
-                        publishOffset = waveIdx.seconds,
+                        publishOffset = (slotDuration / ffgWavesPerSlot) * waveIdx,
                         publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
                         messagesPerSlot = ffgAttestationsPerWave,
                         topics = DcSlotMessageTopics.Subnets(64)
