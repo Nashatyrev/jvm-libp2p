@@ -289,6 +289,9 @@ class DcNodeProgramFactory<R>(
             traffic = traffic,
             gossipBytesSent = nodePrograms.sumOf { it.gossipByteCounter.bytesWritten },
             gossipBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.bytesRead },
+            controlBreakdown = nodePrograms.fold(DcControlBreakdown.EMPTY) { acc, program ->
+                acc + program.gossipByteCounter.controlBreakdownRead
+            },
             gossipPublishBytesSent = nodePrograms.sumOf { it.gossipByteCounter.publishBytesWritten },
             gossipPublishBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.publishBytesRead },
             gossipPublishBytesSentBySlot = nodePrograms.sumBySlot { it.publishBytesWrittenBySlot },

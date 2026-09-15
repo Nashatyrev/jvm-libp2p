@@ -56,6 +56,7 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
     private val _controlBytesReadByBucket: Array<AtomicLong>? = slotProfile?.let { params ->
         Array(params.bucketCount) { AtomicLong(0) }
     }
+    private val _controlBreakdownRead = ControlAccumulator()
 
     /** (type, message id) pairs this node has already seen, so a later copy is marked a duplicate. */
     private val _seenMessages = ConcurrentHashMap.newKeySet<Pair<DcSlotMessageType, Int>>()
@@ -105,9 +106,18 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
     val controlBytesReadByBucket: List<Long>
         get() = _controlBytesReadByBucket?.map { it.get() } ?: emptyList()
 
+    /**
+     * Inbound [controlBytesRead] split by what it was spent on, since "control" otherwise lumps
+     * together things with very different scaling: IHAVE/IWANT grow with the number of messages
+     * published, GRAFT/PRUNE with mesh churn, and subscriptions are paid once per topic at startup.
+     * [DcControlBreakdown.framing] is what is left of the RPC once every field is accounted for.
+     */
+    val controlBreakdownRead: DcControlBreakdown get() = _controlBreakdownRead.snapshot(controlBytesRead)
+
     override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
         if (msg is Rpc.RPC) {
             count(msg, _publishBytesRead, _controlBytesRead, _readBySlot, _publishMessagesRead)
+            _controlBreakdownRead.add(msg)
             countSlotProfile(msg)
         }
         super.channelRead(ctx, msg)
@@ -154,6 +164,52 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
     private class SlotCounts {
         val bytes = AtomicLong(0)
         val messages = AtomicLong(0)
+    }
+
+    /**
+     * Running total of each control field's encoded size, and of how many IHAVE/IWANT message ids
+     * were announced or asked for — the id count is what actually scales with published messages,
+     * and it is not recoverable from the byte total once ids of different lengths are mixed.
+     */
+    private class ControlAccumulator {
+        val subscriptions = AtomicLong(0)
+        val ihave = AtomicLong(0)
+        val iwant = AtomicLong(0)
+        val graft = AtomicLong(0)
+        val prune = AtomicLong(0)
+        val ihaveIds = AtomicLong(0)
+        val iwantIds = AtomicLong(0)
+
+        fun add(rpc: Rpc.RPC) {
+            rpc.subscriptionsList.forEach { subscriptions.addAndGet(encodedFieldSize(it)) }
+            if (!rpc.hasControl()) return
+            val control = rpc.control
+            control.ihaveList.forEach {
+                ihave.addAndGet(encodedFieldSize(it))
+                ihaveIds.addAndGet(it.messageIDsCount.toLong())
+            }
+            control.iwantList.forEach {
+                iwant.addAndGet(encodedFieldSize(it))
+                iwantIds.addAndGet(it.messageIDsCount.toLong())
+            }
+            control.graftList.forEach { graft.addAndGet(encodedFieldSize(it)) }
+            control.pruneList.forEach { prune.addAndGet(encodedFieldSize(it)) }
+        }
+
+        /**
+         * [total] is the authoritative control figure [count] already produced; framing is whatever
+         * it holds beyond the fields above, so the parts always add up to it exactly.
+         */
+        fun snapshot(total: Long) = DcControlBreakdown(
+            subscriptionBytes = subscriptions.get(),
+            ihaveBytes = ihave.get(),
+            iwantBytes = iwant.get(),
+            graftBytes = graft.get(),
+            pruneBytes = prune.get(),
+            ihaveMessageIds = ihaveIds.get(),
+            iwantMessageIds = iwantIds.get(),
+            totalBytes = total
+        )
     }
 
     companion object {

@@ -38,7 +38,9 @@ data class DcGroupStats(
     val messagesReceivedPerWave: Map<DcSlotMessageType, Map<Int, DcDeliveryStats>> = emptyMap(),
     val mesh: DcMeshStats?,
     /** This group's own slot traffic profile — see [DcSlotTrafficProfile] — null if it could not be built. */
-    val slotTraffic: DcSlotTrafficProfile? = null
+    val slotTraffic: DcSlotTrafficProfile? = null,
+    /** What this group's [gossipControlBytesReceived] was spent on; see [DcControlBreakdown]. */
+    val controlBreakdown: DcControlBreakdown = DcControlBreakdown.EMPTY
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
     val gossipControlBytesReceived: Long get() = gossipBytesReceived - gossipPublishBytesReceived
@@ -74,6 +76,7 @@ data class DcGroupStats(
                     perNode(gossipControlBytesReceived)
                 )
         )
+        appendLine("  " + controlBreakdown.render(nodeCount))
         messagesReceived.toSortedMap().forEach { (type, stats) ->
             append("  received $type: $stats".trimEnd().replace("\n", "\n  "))
             appendLine()
@@ -223,6 +226,9 @@ data class DcGroupReport(
                         ?: DcTrafficStats(groupNodes.size, 0, 0, 0, 0),
                     gossipBytesSent = nodeIds.sumOf { gossipCounters[it]?.bytesWritten ?: 0 },
                     gossipBytesReceived = nodeIds.sumOf { gossipCounters[it]?.bytesRead ?: 0 },
+                    controlBreakdown = nodeIds.fold(DcControlBreakdown.EMPTY) { acc, id ->
+                        acc + (gossipCounters[id]?.controlBreakdownRead ?: DcControlBreakdown.EMPTY)
+                    },
                     gossipPublishBytesSent = nodeIds.sumOf { gossipCounters[it]?.publishBytesWritten ?: 0 },
                     gossipPublishBytesReceived = nodeIds.sumOf { gossipCounters[it]?.publishBytesRead ?: 0 },
                     messagesReceived = messagesByType.keys.associateWith { type ->

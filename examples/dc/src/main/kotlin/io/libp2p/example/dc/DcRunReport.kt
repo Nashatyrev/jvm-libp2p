@@ -225,7 +225,9 @@ data class DcRunReport(
     /** Per-group breakdown; empty unless a group in the network was named. See [DcNodeGroup.name]. */
     val groups: DcGroupReport = DcGroupReport(emptyMap()),
     /** Where in the slot each message type's bytes land; see [DcRunConfig.slotTrafficBucketDuration]. */
-    val slotTraffic: DcSlotTrafficProfile? = null
+    val slotTraffic: DcSlotTrafficProfile? = null,
+    /** What [gossipControlBytesReceived] was spent on; see [DcControlBreakdown]. */
+    val controlBreakdown: DcControlBreakdown = DcControlBreakdown.EMPTY
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
     val gossipControlBytesReceived: Long get() = gossipBytesReceived - gossipPublishBytesReceived
@@ -318,6 +320,7 @@ data class DcRunReport(
                     gossipControlBytesReceived
                 )
         )
+        appendLine(controlBreakdown.render(nodeCount))
         appendLine(
             "gossip duplication ($scope): %.2fx (%d publish msgs recv / %d deliveries); %.0fB per message"
                 .format(
