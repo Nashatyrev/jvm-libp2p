@@ -1,6 +1,7 @@
 package io.libp2p.example.dc
 
 import io.libp2p.quicsim.runner.DatagramPacketTraceEvent
+import io.libp2p.quicsim.runner.DatagramTrafficAggregate
 import kotlin.math.ceil
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -153,6 +154,37 @@ data class DcSlotTrafficProfile(
          * counters were themselves constructed with — [io.libp2p.example.dc.DcNodeProgram]
          * guarantees this by deriving both from the same [DcRunConfig].
          */
+        /**
+         * Same profile from a [DatagramTrafficAggregate] instead of retained events — the path a real
+         * run takes. [nodeIds] narrows it to one group's nodes, null meaning the whole network.
+         *
+         * The aggregate's grid and [params] must share a bucket resolution, since each of its buckets
+         * is folded whole into the slot-cycle bucket its start time falls in.
+         */
+        fun of(
+            gossipCounters: Collection<GossipByteCounter>,
+            traffic: DatagramTrafficAggregate,
+            nodeIds: Set<Int>?,
+            params: DcSlotProfileParams,
+            nodeCount: Int,
+            slotsMeasured: Int
+        ): DcSlotTrafficProfile {
+            require(traffic.bucketDuration == params.bucketDuration) {
+                "aggregate bucketDuration ${traffic.bucketDuration} must match the profile's " +
+                    "${params.bucketDuration}, or its buckets cannot be folded into slot positions"
+            }
+            val folded = LongArray(params.bucketCount)
+            val perBucket = traffic.inboundBytesPerBucket(nodeIds)
+            perBucket.forEachIndexed { bucket, value ->
+                if (value != 0L) {
+                    params.bucketOf(traffic.bucketStart(bucket))?.let { slotBucket ->
+                        folded[slotBucket] = folded[slotBucket] + value
+                    }
+                }
+            }
+            return build(gossipCounters, folded, params, nodeCount, slotsMeasured)
+        }
+
         fun of(
             gossipCounters: Collection<GossipByteCounter>,
             inboundEvents: List<DatagramPacketTraceEvent>,
@@ -160,10 +192,27 @@ data class DcSlotTrafficProfile(
             nodeCount: Int,
             slotsMeasured: Int
         ): DcSlotTrafficProfile {
+            val rawUdpBytes = LongArray(params.bucketCount)
+            inboundEvents
+                .asSequence()
+                .filter { it.direction == DatagramPacketTraceEvent.Direction.INBOUND }
+                .forEach { event ->
+                    params.bucketOf(event.at)?.let { bucket -> rawUdpBytes[bucket] = rawUdpBytes[bucket] + event.bytes }
+                }
+            return build(gossipCounters, rawUdpBytes, params, nodeCount, slotsMeasured)
+        }
+
+        /** Shared tail of both factories: fold in the gossip counters and average per node per slot. */
+        private fun build(
+            gossipCounters: Collection<GossipByteCounter>,
+            rawUdpBytes: LongArray,
+            params: DcSlotProfileParams,
+            nodeCount: Int,
+            slotsMeasured: Int
+        ): DcSlotTrafficProfile {
             require(nodeCount > 0) { "nodeCount must be > 0, got $nodeCount" }
             require(slotsMeasured > 0) { "slotsMeasured must be > 0, got $slotsMeasured" }
             val bucketCount = params.bucketCount
-
             val rawUniqueBytes = mutableMapOf<DcSlotMessageType, LongArray>()
             val rawDuplicateBytes = mutableMapOf<DcSlotMessageType, LongArray>()
             val rawControlBytes = LongArray(bucketCount)
@@ -174,15 +223,6 @@ data class DcSlotTrafficProfile(
                     rawControlBytes[bucket] = rawControlBytes[bucket] + bytes
                 }
             }
-
-            val rawUdpBytes = LongArray(bucketCount)
-            inboundEvents
-                .asSequence()
-                .filter { it.direction == DatagramPacketTraceEvent.Direction.INBOUND }
-                .forEach { event ->
-                    params.bucketOf(event.at)?.let { bucket -> rawUdpBytes[bucket] = rawUdpBytes[bucket] + event.bytes }
-                }
-
             val denom = nodeCount.toDouble() * slotsMeasured
             fun average(raw: LongArray): List<Long> = raw.map { ceil(it / denom).toLong() }
 

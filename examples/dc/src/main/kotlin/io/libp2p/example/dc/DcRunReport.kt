@@ -1,6 +1,8 @@
 package io.libp2p.example.dc
 
 import io.libp2p.quicsim.runner.DatagramPacketTraceEvent
+import io.libp2p.quicsim.runner.DatagramTotals
+import io.libp2p.quicsim.runner.DatagramTrafficAggregate
 import io.libp2p.quicsim.sim.SimNodeId
 import kotlin.time.Duration
 
@@ -393,6 +395,16 @@ data class DcTrafficStats(
             )
 
     companion object {
+        /** From a [DatagramTrafficAggregate] slice; the production path, which never holds events. */
+        fun of(totals: DatagramTotals, nodeCount: Int): DcTrafficStats = DcTrafficStats(
+            nodeCount = nodeCount,
+            packetsSent = totals.packetsSent,
+            packetsReceived = totals.packetsReceived,
+            bytesSent = totals.bytesSent,
+            bytesReceived = totals.bytesReceived
+        )
+
+        /** From retained events. Convenient for small unit tests; see the class doc for why runs do not. */
         fun of(events: List<DatagramPacketTraceEvent>, nodeCount: Int): DcTrafficStats {
             var packetsSent = 0L
             var packetsReceived = 0L
@@ -453,6 +465,34 @@ data class DcTrafficReport(
          * [groupNodes] maps each group name to the node ids in it, for the [perGroup] breakdown;
          * leave it empty for no breakdown at all.
          */
+        /**
+         * Same breakdown from a [DatagramTrafficAggregate] instead of retained events — the path a
+         * real run takes, since the events themselves do not fit in memory at scale. Slot windows
+         * are resolved to the aggregate's own bucket edges, so its resolution should divide the slot
+         * interval; the DC scenarios give it [DcRunConfig.slotTrafficBucketDuration], which does.
+         */
+        fun of(
+            traffic: DatagramTrafficAggregate,
+            slotTimes: List<Duration>,
+            completeAt: Duration,
+            nodeCount: Int,
+            groupNodes: Map<String, Set<SimNodeId>> = emptyMap()
+        ): DcTrafficReport {
+            val boundaries = slotTimes + completeAt
+            return DcTrafficReport(
+                overall = DcTrafficStats.of(traffic.totals(), nodeCount),
+                perSlot = slotTimes.indices.associateWith { slot ->
+                    DcTrafficStats.of(
+                        traffic.totals(from = boundaries[slot], until = boundaries[slot + 1]),
+                        nodeCount
+                    )
+                },
+                perGroup = groupNodes.mapValues { (_, ids) ->
+                    DcTrafficStats.of(traffic.totals(nodeIds = ids), ids.size)
+                }
+            )
+        }
+
         fun of(
             events: List<DatagramPacketTraceEvent>,
             slotTimes: List<Duration>,

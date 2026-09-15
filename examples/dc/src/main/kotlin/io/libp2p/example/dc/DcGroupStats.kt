@@ -1,6 +1,6 @@
 package io.libp2p.example.dc
 
-import io.libp2p.quicsim.runner.DatagramPacketTraceEvent
+import io.libp2p.quicsim.runner.DatagramTrafficAggregate
 import io.libp2p.quicsim.sim.SimNodeId
 
 /**
@@ -137,7 +137,7 @@ data class DcGroupReport(
             messagesByType: Map<DcSlotMessageType, Pair<List<DcSlotMessagePublication>, List<DcSlotMessageDelivery>>>,
             subscribersOf: (DcSlotMessage) -> List<DcNode<R>>,
             /** Inbound-UDP + [GossipByteCounter] material for this group's own [DcSlotTrafficProfile]. */
-            inboundEvents: List<DatagramPacketTraceEvent> = emptyList(),
+            traffic: DatagramTrafficAggregate? = null,
             slotProfileParams: DcSlotProfileParams? = null,
             slotsMeasured: Int = 0,
             warmupSlots: Int = 0
@@ -247,13 +247,16 @@ data class DcGroupReport(
                         .takeIf { it.isNotEmpty() }
                         ?.let { DcMeshStats.of(it) },
                     slotTraffic = slotProfileParams?.let { params ->
-                        DcSlotTrafficProfile.of(
-                            gossipCounters = nodeIds.mapNotNull { gossipCounters[it] },
-                            inboundEvents = inboundEvents.filter { it.nodeId in nodeIdSet },
-                            params = params,
-                            nodeCount = groupNodes.size,
-                            slotsMeasured = slotsMeasured
-                        )
+                        traffic?.let {
+                            DcSlotTrafficProfile.of(
+                                gossipCounters = nodeIds.mapNotNull { gossipCounters[it] },
+                                traffic = it,
+                                nodeIds = nodeIdSet,
+                                params = params,
+                                nodeCount = groupNodes.size,
+                                slotsMeasured = slotsMeasured
+                            )
+                        }
                     }
                 )
             }

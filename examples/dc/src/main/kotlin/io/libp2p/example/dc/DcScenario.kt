@@ -3,8 +3,7 @@ package io.libp2p.example.dc
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
-import io.libp2p.quicsim.runner.DatagramPacketTraceEvent
-import io.libp2p.quicsim.runner.RecordingDatagramPacketTraceRecorder
+import io.libp2p.quicsim.runner.DatagramTrafficAggregate
 import io.libp2p.quicsim.runner.SimulatedQuicScenarioRunner
 import io.libp2p.quicsim.scenario.QuicScenario
 import io.libp2p.quicsim.sim.SimNodeId
@@ -237,7 +236,7 @@ class DcNodeProgramFactory<R>(
     fun expectedDeliveriesOf(message: DcSlotMessage): Int =
         subscribersOf(message).count { it.simNodeId != message.publisherNodeId }
 
-    fun report(traffic: DcTrafficReport, events: List<DatagramPacketTraceEvent>): DcRunReport {
+    fun report(traffic: DcTrafficReport, datagrams: DatagramTrafficAggregate): DcRunReport {
         // One report per type, covering every wave of it: a type issued as several waves within a
         // slot has one schedule per wave, all recording into that type's single recorder.
         val schedulesByType = messageSchedules.groupBy { it.config.type }
@@ -265,14 +264,15 @@ class DcNodeProgramFactory<R>(
             meshSizes = nodePrograms.associate { it.simNodeId to it.finalMeshSizes },
             messagesByType = messagesByType,
             subscribersOf = ::subscribersOf,
-            inboundEvents = events,
+            traffic = datagrams,
             slotProfileParams = slotProfileParams,
             slotsMeasured = slotsMeasured,
             warmupSlots = config.warmupSlots
         )
         val slotTraffic = DcSlotTrafficProfile.of(
             gossipCounters = nodePrograms.map { it.gossipByteCounter },
-            inboundEvents = events,
+            traffic = datagrams,
+            nodeIds = null,
             params = slotProfileParams,
             nodeCount = network.nodeCount,
             slotsMeasured = slotsMeasured
@@ -411,18 +411,25 @@ object DcScenario {
         latencyWindowParallelism: Int = Runtime.getRuntime().availableProcessors(),
         messageSchedules: List<DcSlotMessageSchedule> = defaultMessageSchedules(network, config)
     ): DcRunReport {
-        val traceRecorder = RecordingDatagramPacketTraceRecorder()
+        // Folds each datagram into per-node, per-bucket counters instead of retaining it: a 500k
+        // run traces hundreds of millions of them, and holding the events was what put a third of a
+        // 330 GB heap out of reach. Resolution matches the slot profile's so its buckets fold whole.
+        val traceRecorder = DatagramTrafficAggregate(
+            bucketDuration = config.slotTrafficBucketDuration,
+            nodeCount = network.nodeCount,
+            runDuration = config.maxRunDuration
+        )
         val result = SimulatedQuicScenarioRunner(
             latencyWindowParallelism = latencyWindowParallelism,
             datagramPacketTraceRecorder = traceRecorder
         ).run(of(network, graph, config, messageSchedules))
         val traffic = DcTrafficReport.of(
-            events = traceRecorder.events(),
+            traffic = traceRecorder,
             slotTimes = config.slotTimes,
             completeAt = config.completeAt,
             nodeCount = network.nodeCount,
             groupNodes = groupNodesOf(network)
         )
-        return result.nodeProgramFactory.report(traffic, traceRecorder.events())
+        return result.nodeProgramFactory.report(traffic, traceRecorder)
     }
 }
