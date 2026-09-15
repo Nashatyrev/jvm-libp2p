@@ -244,17 +244,18 @@ class DcScenarioRunnerTest {
                     messagesPerSlot = 128,
                     topics = DcSlotMessageTopics.Subnets(128)
                 )
-            ) + (0 until ffgWavesPerSlot)
-                .map { waveIdx ->
-                    DcSlotMessageConfig(
-                        type = DcSlotMessageType.FFG_ATTESTATION,
-                        sizeBytes = 240 * ffgCompression,
-                        publishOffset = (slotDuration / ffgWavesPerSlot) * waveIdx,
-                        publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
-                        messagesPerSlot = ffgAttestationsPerWave,
-                        topics = DcSlotMessageTopics.Subnets(64)
-                    )
-                },
+                ),
+//                    + (0 until ffgWavesPerSlot)
+//                .map { waveIdx ->
+//                    DcSlotMessageConfig(
+//                        type = DcSlotMessageType.FFG_ATTESTATION,
+//                        sizeBytes = 240 * ffgCompression,
+//                        publishOffset = (slotDuration / ffgWavesPerSlot) * waveIdx,
+//                        publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
+//                        messagesPerSlot = ffgAttestationsPerWave,
+//                        topics = DcSlotMessageTopics.Subnets(64)
+//                    )
+//                }
             gossipParams = gossipParams,
         )
 

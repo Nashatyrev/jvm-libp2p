@@ -133,10 +133,7 @@ data class DcRunConfig(
             "message type/publishOffset pairs must be unique, got " +
                 "${configs.map { "${it.type}@${it.publishOffset}" }}"
         }
-        require(configs.any { it.type == DcSlotMessageType.FFG_ATTESTATION }) {
-            "messages must include a DcSlotMessageType.FFG_ATTESTATION entry -- " +
-                "DcRunReport.overall/perSlot are its headline figures"
-        }
+        require(configs.isNotEmpty()) { "a run must publish something; messages and blocks are both empty" }
         configs.forEach { message ->
             require(message.publishOffset < slotInterval) {
                 "${message.type} publishOffset must be less than the $slotInterval slotInterval, " +
@@ -257,7 +254,13 @@ class DcNodeProgramFactory<R>(
                 publishOffsets = schedules.map { it.config.publishOffset }.sorted()
             )
         }
-        val ffgReport = reports.getValue(DcSlotMessageType.FFG_ATTESTATION)
+        // FFG attestations are the headline figures when a run has them, being the thing most runs
+        // exist to measure; a run without them falls back to its first configured type, and says
+        // which it picked -- DcDeliveryStats carries the type id in its own output.
+        val headlineType = DcSlotMessageType.FFG_ATTESTATION
+            .takeIf { reports.containsKey(it) }
+            ?: config.allMessageConfigs.first().type
+        val headlineReport = reports.getValue(headlineType)
         val messagesByType = schedulesByType.keys.associateWith { type ->
             val recorder = messageRecorders.getValue(type)
             recorder.published() to recorder.deliveries()
@@ -284,8 +287,8 @@ class DcNodeProgramFactory<R>(
             slotsMeasured = slotsMeasured
         )
         return DcRunReport(
-            overall = ffgReport.overall,
-            perSlot = ffgReport.perSlot,
+            overall = headlineReport.overall,
+            perSlot = headlineReport.perSlot,
             traffic = traffic,
             gossipBytesSent = nodePrograms.sumOf { it.gossipByteCounter.bytesWritten },
             gossipBytesReceived = nodePrograms.sumOf { it.gossipByteCounter.bytesRead },
