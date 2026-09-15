@@ -205,7 +205,6 @@ class DcScenarioRunnerTest {
 
         val runConfig = DcRunConfig(
             slotCount = 1,
-            settle = 30.seconds,
             messages = listOf<DcSlotMessageConfig>(
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.BLOCK,

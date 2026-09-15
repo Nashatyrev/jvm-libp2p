@@ -88,12 +88,18 @@ data class DcBlockConfig(
  * mesh construction rather than dissemination. [settle] is how long the run keeps going after the
  * last slot, and therefore the longest latency the run is able to observe — anything slower is
  * counted as an undelivered message instead of a large number.
+ *
+ * Both are kept short because they cost wall clock without measuring anything: a 1M-node run spent
+ * 60 of its 71 simulated seconds outside the publishing window. 15s of warmup is ~5x how long that
+ * run took to connect every node (3.2s) and a dozen heartbeats of mesh formation; 4s of settle is
+ * ~2.5x the slowest delivery it observed (1.64s). Raise [settle] for a scenario that expects slower
+ * tails — an undersized one silently reports them as lost.
  */
 data class DcRunConfig(
     val slotCount: Int = 3,
-    val warmup: Duration = 30.seconds,
+    val warmup: Duration = 15.seconds,
     val slotInterval: Duration = 12.seconds,
-    val settle: Duration = 12.seconds,
+    val settle: Duration = 4.seconds,
     /**
      * Leading slots left out of the headline figures in [DcRunReport.overall].
      *
