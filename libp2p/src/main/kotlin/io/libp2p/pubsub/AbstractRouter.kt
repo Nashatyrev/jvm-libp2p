@@ -138,10 +138,16 @@ abstract class AbstractRouter(
         pendingMessagePromises.removeAll(peer)?.forEach {
             allSendPromise.forward(it)
         }
-        allSendPromise.whenComplete { _, _ ->
+        allSendPromise.whenComplete { _, err ->
             runOnEventThread {
                 drainingPeers -= peer
-                flushPending(peer)
+                // Only chase the rest of the queue after a send that actually went out. A failure
+                // leaves the queue as it was -- a semi-duplex peer with no outbound stream yet fails
+                // immediately without consuming anything -- so flushing again here would meet the
+                // same queue and the same missing stream, inline and forever, and the stream it is
+                // waiting on could never finish opening. The parts stay queued for the next flush:
+                // onPeerActive when the outbound stream arrives, or the next heartbeat.
+                if (err == null) flushPending(peer)
             }
         }
     }
