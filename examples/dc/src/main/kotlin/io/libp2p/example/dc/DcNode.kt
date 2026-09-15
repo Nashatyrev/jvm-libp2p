@@ -129,4 +129,6 @@ object Bandwidths {
 
     /** Well provisioned data centre node, e.g. a large staking operator. */
     val DATACENTER: DcLink = symmetric(gbitPerSecond(1))
+
+    val FAST_DATACENTER: DcLink = symmetric(gbitPerSecond(10))
 }

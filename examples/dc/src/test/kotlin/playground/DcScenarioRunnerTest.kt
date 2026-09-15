@@ -166,7 +166,7 @@ class DcScenarioRunnerTest {
                     ContinentRegion.US_EAST to 0.4,
                     ContinentRegion.US_WEST to 0.2,
                 )
-                bandwidth = Bandwidths.DATACENTER
+                bandwidth = Bandwidths.FAST_DATACENTER
                 validators = validatorCount / 1000
                 peers = 200
 
@@ -203,33 +203,33 @@ class DcScenarioRunnerTest {
             slotCount = 1,
             settle = 30.seconds,
             messages = listOf<DcSlotMessageConfig>(
-//                DcSlotMessageConfig(
-//                    type = DcSlotMessageType.BLOCK,
-//                    sizeBytes = 8 * 1024,
-//                    publishOffset = 0.seconds,
-//                    publisherGroups = setOf("validator-pools"),
-//                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
-//                    topics = DcSlotMessageTopics.Global
-//                ),
-//                DcSlotMessageConfig(
-//                    type = DcSlotMessageType.PAYLOAD_CHUNK,
-//                    sizeBytes = 128 * 1024 / 64,
-//                    publishOffset = 1.seconds,
-//                    publisherGroups = setOf("validator-pools"),
-//                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
-//                    messagesPerSlot = 64,
-//                    topics = DcSlotMessageTopics.Subnets(64)
-//                ),
-//                DcSlotMessageConfig(
-//                    type = DcSlotMessageType.BLOB_COLUMN,
-//                    // Scenario assumption: one 8 KiB sidecar per DA column.
-//                    sizeBytes = 4 * 1024,
-//                    publishOffset = 1.seconds,
-//                    publisherGroups = setOf("validator-pools"),
-//                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
-//                    messagesPerSlot = 128,
-//                    topics = DcSlotMessageTopics.Subnets(128)
-//                )
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.BLOCK,
+                    sizeBytes = 8 * 1024,
+                    publishOffset = 0.seconds,
+                    publisherGroups = setOf("validator-pools"),
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                    topics = DcSlotMessageTopics.Global
+                ),
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.PAYLOAD_CHUNK,
+                    sizeBytes = 128 * 1024 / 64,
+                    publishOffset = 1.seconds,
+                    publisherGroups = setOf("validator-pools"),
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                    messagesPerSlot = 64,
+                    topics = DcSlotMessageTopics.Subnets(64)
+                ),
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.BLOB_COLUMN,
+                    // Scenario assumption: one 8 KiB sidecar per DA column.
+                    sizeBytes = 4 * 1024,
+                    publishOffset = 1.seconds,
+                    publisherGroups = setOf("validator-pools"),
+                    publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                    messagesPerSlot = 128,
+                    topics = DcSlotMessageTopics.Subnets(128)
+                )
             ) + (0 until ffgWavesPerSlot)
                 .map { waveIdx ->
                     DcSlotMessageConfig(
