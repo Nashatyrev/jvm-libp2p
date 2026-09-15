@@ -56,8 +56,19 @@ data class DcDeliveryStats(
             latencies: List<Duration>,
             expectedDeliveries: Int,
             what: String = "messages"
+        ): DcDeliveryStats = of(publishedCount, DcLatencySamples.of(latencies), expectedDeliveries, what)
+
+        /**
+         * The path runs take. [samples] is sorted in place, so it must not be read afterwards; see
+         * [DcLatencySamples] for why the primitive buffer matters at run scale.
+         */
+        fun of(
+            publishedCount: Int,
+            samples: DcLatencySamples,
+            expectedDeliveries: Int,
+            what: String
         ): DcDeliveryStats {
-            val sorted = latencies.sorted()
+            val sorted = samples.sortedView()
             return DcDeliveryStats(
                 publishedCount = publishedCount,
                 expectedDeliveries = expectedDeliveries,
@@ -66,8 +77,8 @@ data class DcDeliveryStats(
                 p90 = sorted.percentile(0.90),
                 p95 = sorted.percentile(0.95),
                 p99 = sorted.percentile(0.99),
-                min = sorted.firstOrNull(),
-                max = sorted.lastOrNull(),
+                min = sorted.minOrNull(),
+                max = sorted.maxOrNull(),
                 mean = sorted.meanOrNull(),
                 what = what
             )
@@ -150,28 +161,42 @@ data class DcSlotMessageReport(
             warmupSlots: Int = 0,
             publishOffsets: List<Duration> = listOf(config.publishOffset)
         ): DcSlotMessageReport {
-            val deliveriesBySlot = deliveries.groupBy { it.slotIndex }
             val publicationsBySlot = published.groupBy { it.message.slotIndex }
             val measuredPublished = published.filter { it.message.slotIndex >= warmupSlots }
-            val measuredDeliveries = deliveries.filter { it.slotIndex >= warmupSlots }
             // Deliveries carry only the message id, so the wave they belong to is looked up from the
             // publisher side -- sound because ids are unique across a type's waves, see
             // DcSlotMessageSchedule.create's firstMessageId.
             val waveOfMessageId = measuredPublished.associate { it.message.id to it.message.waveIndex }
             val measuredByWave = measuredPublished.groupBy { it.message.waveIndex }
-            val deliveriesByWave = measuredDeliveries.groupBy { waveOfMessageId[it.messageId] }
+            // One pass over the deliveries, which is the only list big enough for the number of
+            // passes to matter: a 1M-validator slot delivers ~50M of them, against ~250k
+            // publications. Latencies land straight in a primitive buffer rather than being grouped
+            // into intermediate lists and boxed.
+            val measuredLatencies = DcLatencySamples()
+            val latenciesBySlot = mutableMapOf<Int, DcLatencySamples>()
+            val latenciesByWave = mutableMapOf<Int, DcLatencySamples>()
+            deliveries.forEach { delivery ->
+                val nanos = delivery.latency.inWholeNanoseconds
+                latenciesBySlot.getOrPut(delivery.slotIndex) { DcLatencySamples() }.add(nanos)
+                if (delivery.slotIndex >= warmupSlots) {
+                    measuredLatencies.add(nanos)
+                    waveOfMessageId[delivery.messageId]?.let {
+                        latenciesByWave.getOrPut(it) { DcLatencySamples() }.add(nanos)
+                    }
+                }
+            }
             return DcSlotMessageReport(
                 type = config.type,
                 overall = DcDeliveryStats.of(
                     publishedCount = measuredPublished.size,
-                    latencies = measuredDeliveries.map { it.latency },
+                    samples = measuredLatencies,
                     expectedDeliveries = measuredPublished.sumOf { expectedDeliveriesOf(it.message) },
                     what = config.type.id
                 ),
                 perSlot = publicationsBySlot.mapValues { (slot, slotPublications) ->
                     DcDeliveryStats.of(
                         publishedCount = slotPublications.size,
-                        latencies = deliveriesBySlot[slot].orEmpty().map { it.latency },
+                        samples = latenciesBySlot[slot] ?: DcLatencySamples(),
                         expectedDeliveries = slotPublications.sumOf { expectedDeliveriesOf(it.message) },
                         what = config.type.id
                     )
@@ -188,7 +213,7 @@ data class DcSlotMessageReport(
                 perWave = measuredByWave.mapValues { (wave, wavePublications) ->
                     DcDeliveryStats.of(
                         publishedCount = wavePublications.size,
-                        latencies = deliveriesByWave[wave].orEmpty().map { it.latency },
+                        samples = latenciesByWave[wave] ?: DcLatencySamples(),
                         expectedDeliveries = wavePublications.sumOf { expectedDeliveriesOf(it.message) },
                         what = config.type.id
                     )

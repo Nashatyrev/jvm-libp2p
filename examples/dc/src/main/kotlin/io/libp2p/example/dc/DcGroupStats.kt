@@ -166,12 +166,12 @@ data class DcGroupReport(
                 return counts to ids
             }
 
-            val messagesReceivedByGroup = nodesByGroup.keys.associateWith { mutableMapOf<DcSlotMessageType, MutableList<kotlin.time.Duration>>() }
+            val messagesReceivedByGroup = nodesByGroup.keys.associateWith { mutableMapOf<DcSlotMessageType, DcLatencySamples>() }
             val publishedCountByGroupAndType = nodesByGroup.keys.associateWith { mutableMapOf<DcSlotMessageType, Int>() }
             val expectedByGroupAndType = nodesByGroup.keys.associateWith { mutableMapOf<DcSlotMessageType, Int>() }
             // Same three figures again, split by the wave within the slot that issued the message.
             val receivedByGroupTypeWave =
-                nodesByGroup.keys.associateWith { mutableMapOf<Pair<DcSlotMessageType, Int>, MutableList<kotlin.time.Duration>>() }
+                nodesByGroup.keys.associateWith { mutableMapOf<Pair<DcSlotMessageType, Int>, DcLatencySamples>() }
             val publishedByGroupTypeWave = nodesByGroup.keys.associateWith { mutableMapOf<Pair<DcSlotMessageType, Int>, Int>() }
             val expectedByGroupTypeWave = nodesByGroup.keys.associateWith { mutableMapOf<Pair<DcSlotMessageType, Int>, Int>() }
             val wavesPerType = mutableMapOf<DcSlotMessageType, MutableSet<Int>>()
@@ -179,7 +179,6 @@ data class DcGroupReport(
             messagesByType.forEach { (type, publishedAndDelivered) ->
                 val (published, deliveries) = publishedAndDelivered
                 val measuredPublished = published.filter { it.message.slotIndex >= warmupSlots }
-                val measuredDeliveries = deliveries.filter { it.slotIndex >= warmupSlots }
                 // Deliveries carry only the message id, so the wave is looked up from the publisher
                 // side -- sound because ids are unique across a type's waves, see
                 // DcSlotMessageSchedule.create's firstMessageId.
@@ -203,13 +202,18 @@ data class DcGroupReport(
                     val byWave = publishedByGroupTypeWave.getValue(publisherGroup)
                     byWave[type to wave] = (byWave[type to wave] ?: 0) + 1
                 }
-                measuredDeliveries.forEach { delivery ->
+                // Deliveries are the one list big enough to be worth caring about -- ~50M for a
+                // 1M-validator slot -- so they are walked once and their latencies kept as primitive
+                // nanos rather than boxed Durations. See DcLatencySamples.
+                deliveries.forEach { delivery ->
+                    if (delivery.slotIndex < warmupSlots) return@forEach
+                    val nanos = delivery.latency.inWholeNanoseconds
                     val group = groupOfNode.getValue(delivery.receiverNodeId)
                     messagesReceivedByGroup.getValue(group)
-                        .getOrPut(type) { mutableListOf() } += delivery.latency
+                        .getOrPut(type) { DcLatencySamples() }.add(nanos)
                     waveOfMessageId[delivery.messageId]?.let { wave ->
                         receivedByGroupTypeWave.getValue(group)
-                            .getOrPut(type to wave) { mutableListOf() } += delivery.latency
+                            .getOrPut(type to wave) { DcLatencySamples() }.add(nanos)
                     }
                 }
             }
@@ -234,7 +238,7 @@ data class DcGroupReport(
                     messagesReceived = messagesByType.keys.associateWith { type ->
                         DcDeliveryStats.of(
                             publishedCount = publishedCountByGroupAndType.getValue(groupName)[type] ?: 0,
-                            latencies = messagesReceivedByGroup.getValue(groupName)[type].orEmpty(),
+                            samples = messagesReceivedByGroup.getValue(groupName)[type] ?: DcLatencySamples(),
                             expectedDeliveries = expectedByGroupAndType.getValue(groupName)[type] ?: 0,
                             what = type.id
                         )
@@ -243,7 +247,7 @@ data class DcGroupReport(
                         wavesPerType[type].orEmpty().sorted().associateWith { wave ->
                             DcDeliveryStats.of(
                                 publishedCount = publishedByGroupTypeWave.getValue(groupName)[type to wave] ?: 0,
-                                latencies = receivedByGroupTypeWave.getValue(groupName)[type to wave].orEmpty(),
+                                samples = receivedByGroupTypeWave.getValue(groupName)[type to wave] ?: DcLatencySamples(),
                                 expectedDeliveries = expectedByGroupTypeWave.getValue(groupName)[type to wave] ?: 0,
                                 what = type.id
                             )
