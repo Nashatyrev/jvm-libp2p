@@ -920,7 +920,7 @@ open class GossipRouter(
             .filterValues { !it.peerInitiated }
         if (ids.isEmpty() && localPartialGroups.isEmpty()) return
 
-        val shuffledMessageIds = ids.shuffled(random).take(params.maxIHaveLength)
+        val shuffledMessageIds = ids.shuffled(random)
         val peers = (getTopicPeers(topic) - excludePeers)
             .filter { score.score(it.peerId) >= scoreParams.gossipThreshold && !isDirect(it) }
 
@@ -928,7 +928,17 @@ open class GossipRouter(
             .take(max((params.gossipFactor * peers.size).toInt(), params.DLazy))
         val (partialPeers, fullPeers) = selectedPeers.partition { peerRequestsPartial(it.peerId, topic) }
         if (shuffledMessageIds.isNotEmpty()) {
-            fullPeers.forEach { enqueueIhave(it, shuffledMessageIds, topic) }
+            fullPeers.forEach { peer ->
+                // a message stays in the gossip window for several heartbeats and a peer may be
+                // selected on any of them: advertise only what this peer hasn't been told about yet
+                val peerMessageIds = shuffledMessageIds
+                    .filterNot { mCache.wasGossipedTo(peer.peerId, it) }
+                    .take(params.maxIHaveLength)
+                if (peerMessageIds.isNotEmpty()) {
+                    mCache.markGossipedTo(peer.peerId, peerMessageIds)
+                    enqueueIhave(peer, peerMessageIds, topic)
+                }
+            }
         }
         if (partialPeers.isNotEmpty()) {
             localPartialGroups.forEach { (key, group) ->

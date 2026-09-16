@@ -687,6 +687,9 @@ class GossipV1_1Tests : GossipTestsBase() {
 
         // connecting others
         test.connect(7..19)
+        // a message is never advertised to the same peer twice, so publish a new one to make
+        // every selected peer emit an IHAVE again
+        test.gossipRouter.publish(newMessage("topic1", 1L, "Hello-1".toByteArray()))
         // should gossip again on the next heartbeat
         test.fuzz.timeController.addTime(test.gossipRouter.params.heartbeatInterval)
 
@@ -701,6 +704,7 @@ class GossipV1_1Tests : GossipTestsBase() {
 
         // shouldn't gossip to underscored peers
         test.routers.slice(0..9).map { it.peerId }.forEach { appScore[it] = -1000.0 }
+        test.gossipRouter.publish(newMessage("topic1", 2L, "Hello-2".toByteArray()))
         // should gossip again on the next heartbeat
         test.fuzz.timeController.addTime(test.gossipRouter.params.heartbeatInterval)
 

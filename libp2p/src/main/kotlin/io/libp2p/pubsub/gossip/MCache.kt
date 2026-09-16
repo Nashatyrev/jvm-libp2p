@@ -15,6 +15,7 @@ class MCache(val gossipSize: Int, historyLength: Int) {
 
     private val messages = mutableMapOf<MessageId, PubsubMessage>()
     private val peerRequests = mutableMapOf<MessageId, MutableMap<PeerId, AtomicInteger>>()
+    private val gossipedPeers = mutableMapOf<MessageId, MutableSet<PeerId>>()
     private val history = LimitedList<MutableList<CacheEntry>>(historyLength)
         .also { it.add(mutableListOf()) }
         .also {
@@ -22,6 +23,7 @@ class MCache(val gossipSize: Int, historyLength: Int) {
                 it.forEach {
                     messages -= it.msgId
                     peerRequests -= it.msgId
+                    gossipedPeers -= it.msgId
                 }
             }
         }
@@ -42,6 +44,25 @@ class MCache(val gossipSize: Int, historyLength: Int) {
 
     fun getMessageIds(topic: Topic) =
         history.takeLast(gossipSize).flatten().filter { topic in it.topics }.map { it.msgId }.distinct()
+
+    /**
+     * Whether [msgId] was already advertised to [peer] with an IHAVE while being in the cache.
+     * The bookkeeping is dropped together with the message once it leaves the history window.
+     */
+    fun wasGossipedTo(peer: PeerId, msgId: MessageId): Boolean =
+        gossipedPeers[msgId]?.contains(peer) == true
+
+    /**
+     * Remembers that [msgIds] were advertised to [peer] so that they are not advertised again
+     * on the following heartbeats. Ids which are no longer cached are ignored.
+     */
+    fun markGossipedTo(peer: PeerId, msgIds: Collection<MessageId>) {
+        msgIds.forEach { msgId ->
+            if (msgId in messages) {
+                gossipedPeers.computeIfAbsent(msgId) { mutableSetOf() } += peer
+            }
+        }
+    }
 
     fun shift() = history.add(mutableListOf())
 
