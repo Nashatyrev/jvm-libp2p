@@ -159,6 +159,11 @@ class DcScenarioRunnerTest {
         // headline figures describe a network that has already carried a slot's worth of traffic.
         val slotCount = System.getProperty("dc.slots")?.toInt() ?: 1
         val warmupSlots = System.getProperty("dc.warmupSlots")?.toInt() ?: (slotCount - 1)
+        // Both off by default, matching how this scenario was last run by hand. Switching them
+        // from the command line is what lets the four combinations be compared without edits
+        // between runs -- the charts only line up if nothing else moved.
+        val gossipEnabled = System.getProperty("dc.gossip")?.toBoolean() ?: false
+        val ffgEnabled = System.getProperty("dc.ffg")?.toBoolean() ?: false
 
         val network = DcNetworkBuilder
             .world(
@@ -210,7 +215,7 @@ class DcScenarioRunnerTest {
         Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
 
         val gossipParams = GossipParams.builder()
-            .disableGossip()
+            .also { if (!gossipEnabled) it.disableGossip() }
             .build()
 
         val runConfig = DcRunConfig(
@@ -244,18 +249,21 @@ class DcScenarioRunnerTest {
                     messagesPerSlot = 128,
                     topics = DcSlotMessageTopics.Subnets(128)
                 )
-                ),
-//                    + (0 until ffgWavesPerSlot)
-//                .map { waveIdx ->
-//                    DcSlotMessageConfig(
-//                        type = DcSlotMessageType.FFG_ATTESTATION,
-//                        sizeBytes = 240 * ffgCompression,
-//                        publishOffset = (slotDuration / ffgWavesPerSlot) * waveIdx,
-//                        publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
-//                        messagesPerSlot = ffgAttestationsPerWave,
-//                        topics = DcSlotMessageTopics.Subnets(64)
-//                    )
-//                }
+            ) + if (!ffgEnabled) {
+                emptyList()
+            } else {
+                (0 until ffgWavesPerSlot)
+                    .map { waveIdx ->
+                        DcSlotMessageConfig(
+                            type = DcSlotMessageType.FFG_ATTESTATION,
+                            sizeBytes = 240 * ffgCompression,
+                            publishOffset = (slotDuration / ffgWavesPerSlot) * waveIdx,
+                            publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
+                            messagesPerSlot = ffgAttestationsPerWave,
+                            topics = DcSlotMessageTopics.Subnets(64)
+                        )
+                    }
+            },
             gossipParams = gossipParams,
         )
 
