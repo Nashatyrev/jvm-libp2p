@@ -20,7 +20,8 @@ enum class DcSlotMessageType(val id: String) {
     PAYLOAD_CHUNK("payload-c"),
     BLOB_COLUMN("blob"),
     GOLDFISH_ATTESTATION("ac-vote"),
-    FFG_ATTESTATION("ffg-vote");
+    FFG_ATTESTATION("ffg-vote"),
+    AGGREGATES("aggregates");
 
     override fun toString(): String = id
 
