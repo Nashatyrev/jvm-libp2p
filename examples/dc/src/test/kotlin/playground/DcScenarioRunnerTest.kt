@@ -238,59 +238,65 @@ class DcScenarioRunnerTest {
             slotCount = slotCount,
             warmupSlots = warmupSlots,
             messages =
+            listOf(
                 listOf(
-                    listOf(
-                        DcSlotMessageConfig(
-                            type = DcSlotMessageType.BLOCK,
-                            sizeBytes = blockSize,
-                            publishOffset = 0.seconds,
-                            publisherGroups = setOf("validator-pools"),
-                            publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
-                            topics = DcSlotMessageTopics.Global
-                        ),
-                        DcSlotMessageConfig(
-                            type = DcSlotMessageType.PAYLOAD_CHUNK,
-                            sizeBytes = blockPayloadSize / 64,
-                            publishOffset = 1.seconds,
-                            publisherGroups = setOf("validator-pools"),
-                            publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
-                            messagesPerSlot = 64,
-                            topics = DcSlotMessageTopics.Subnets(64)
-                        ),
-                        DcSlotMessageConfig(
-                            type = DcSlotMessageType.BLOB_COLUMN,
-                            // Scenario assumption: one 8 KiB sidecar per DA column.
-                            sizeBytes = blobColumnSize,
-                            publishOffset = 1.seconds,
-                            publisherGroups = setOf("validator-pools"),
-                            publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
-                            messagesPerSlot = 128,
-                            topics = DcSlotMessageTopics.Subnets(128)
-                        )
+                    DcSlotMessageConfig(
+                        type = DcSlotMessageType.BLOCK,
+                        sizeBytes = blockSize,
+                        publishOffset = 0.seconds,
+                        publisherGroups = setOf("validator-pools"),
+                        publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                        topics = DcSlotMessageTopics.Global
                     ),
-                    (0 until ffgWavesPerSlotIfEnabled)
-                        .map { waveIdx ->
-                            DcSlotMessageConfig(
-                                type = DcSlotMessageType.FFG_ATTESTATION,
-                                sizeBytes = ffgAttestationSize * ffgCompression,
-                                publishOffset = (slotDuration / ffgWavesPerSlot) * waveIdx,
-                                publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
-                                messagesPerSlot = ffgAttestationsPerWave,
-                                topics = DcSlotMessageTopics.Subnets(64)
-                            )
-                        },
-                    aggregateWavesIfEnabled
-                        .map { waveOffset ->
-                            DcSlotMessageConfig(
-                                type = DcSlotMessageType.AGGREGATES,
-                                sizeBytes = aggregateSize,
-                                publishOffset = waveOffset,
-                                publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
-                                messagesPerSlot = ffgSubnetsCount,
-                                topics = DcSlotMessageTopics.Global
-                            )
-                        }
-                ).flatten(),
+                    DcSlotMessageConfig(
+                        type = DcSlotMessageType.PAYLOAD_CHUNK,
+                        sizeBytes = blockPayloadSize / 64,
+                        publishOffset = 1.seconds,
+                        publisherGroups = setOf("validator-pools"),
+                        publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                        messagesPerSlot = 64,
+                        topics = DcSlotMessageTopics.Subnets(64)
+                    ),
+                    DcSlotMessageConfig(
+                        type = DcSlotMessageType.BLOB_COLUMN,
+                        // Scenario assumption: one 8 KiB sidecar per DA column.
+                        sizeBytes = blobColumnSize,
+                        publishOffset = 1.seconds,
+                        publisherGroups = setOf("validator-pools"),
+                        publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                        messagesPerSlot = 128,
+                        topics = DcSlotMessageTopics.Subnets(128)
+                    )
+                ),
+                (0 until ffgWavesPerSlotIfEnabled)
+                    .map { waveIdx ->
+                        DcSlotMessageConfig(
+                            type = DcSlotMessageType.FFG_ATTESTATION,
+                            sizeBytes = ffgAttestationSize * ffgCompression,
+                            publishOffset = (slotDuration / ffgWavesPerSlot) * waveIdx,
+                            publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
+                            messagesPerSlot = ffgAttestationsPerWave,
+                            topics = DcSlotMessageTopics.Subnets(64)
+                        )
+                    },
+                // Several entries of aggregateWaves share an offset, but a run may hold only
+                // one config per (type, offset) -- two publications at the same instant are
+                // indistinguishable anyway. Fold them into one config carrying their combined
+                // message count, so the totals are what the list asks for.
+                aggregateWavesIfEnabled
+                    .groupingBy { it }
+                    .eachCount()
+                    .map { (waveOffset, wavesAtOffset) ->
+                        DcSlotMessageConfig(
+                            type = DcSlotMessageType.AGGREGATES,
+                            sizeBytes = aggregateSize,
+                            publishOffset = waveOffset,
+                            publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
+                            messagesPerSlot = ffgSubnetsCount * wavesAtOffset,
+                            topics = DcSlotMessageTopics.Global
+                        )
+                    }
+            ).flatten(),
             gossipParams = gossipParams,
         )
 
