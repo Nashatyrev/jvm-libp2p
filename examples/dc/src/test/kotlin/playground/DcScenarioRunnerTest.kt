@@ -1,5 +1,6 @@
 package playground
 
+import io.libp2p.etc.types.millis
 import io.libp2p.example.dc.Bandwidths
 import io.libp2p.example.dc.DcNetworkBuilder
 import io.libp2p.example.dc.DcPublisherSelection
@@ -147,6 +148,11 @@ class DcScenarioRunnerTest {
         // between runs -- the charts only line up if nothing else moved.
         val gossipEnabled = System.getProperty("dc.gossip")?.toBoolean() ?: false
         val ffgEnabled = System.getProperty("dc.ffg")?.toBoolean() ?: false
+        // Mesh and heartbeat values the Ethereum consensus spec sets for mainnet, where libp2p's
+        // own defaults are D=6/DLow=4/DHigh=12/DLazy=6 and a 1s heartbeat. Both differences add
+        // load: a third more mesh degree means a third more duplicates, and a 700ms heartbeat
+        // emits gossip 43% more often. Off by default so earlier runs stay comparable.
+        val ethGossipParams = System.getProperty("dc.ethGossip")?.toBoolean() ?: false
 
         val validatorCount = System.getProperty("dc.validators")?.toInt() ?: 1_000_000
         val slotDuration = 12.seconds
@@ -229,6 +235,12 @@ class DcScenarioRunnerTest {
         Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
 
         val gossipParams = GossipParams.builder()
+            .also {
+                if (ethGossipParams) {
+                    it.D(8).DLow(6).DHigh(12).DLazy(6).heartbeatInterval(700.millis)
+                }
+            }
+            // Applied last: with gossip off, DLazy must stay 0 whatever the mesh params say.
             .also { if (!gossipEnabled) it.disableGossip() }
             .build()
 
