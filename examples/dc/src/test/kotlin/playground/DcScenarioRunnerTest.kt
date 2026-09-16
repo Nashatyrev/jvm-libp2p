@@ -2,6 +2,8 @@ package playground
 
 import io.libp2p.etc.types.millis
 import io.libp2p.example.dc.Bandwidths
+import io.libp2p.example.dc.Bandwidths.mbitPerSecond
+import io.libp2p.example.dc.DcLink
 import io.libp2p.example.dc.DcNetworkBuilder
 import io.libp2p.example.dc.DcPublisherSelection
 import io.libp2p.example.dc.DcRunConfig
@@ -153,6 +155,10 @@ class DcScenarioRunnerTest {
         // load: a third more mesh degree means a third more duplicates, and a 700ms heartbeat
         // emits gossip 43% more often. Off by default so earlier runs stay comparable.
         val ethGossipParams = System.getProperty("dc.ethGossip")?.toBoolean() ?: false
+        // Residential downlink in Mbit/s, upload at half it, keeping the 2:1 ratio the Ethereum
+        // spec uses for an attesting validator. 50 is Bandwidths.RESIDENTIAL, the default here.
+        val homeDownMbps = System.getProperty("dc.homeDownMbps")?.toLong() ?: 50L
+        val homeLink = DcLink(mbitPerSecond(homeDownMbps), mbitPerSecond(homeDownMbps / 2))
 
         val validatorCount = System.getProperty("dc.validators")?.toInt() ?: 1_000_000
         val slotDuration = 12.seconds
@@ -215,7 +221,7 @@ class DcScenarioRunnerTest {
                 // business
                 name = "home"
                 spreadOverRegions()
-                bandwidth = Bandwidths.RESIDENTIAL
+                bandwidth = homeLink
                 validators = validatorCount / 1000
                 peers = 100
 
