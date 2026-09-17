@@ -42,8 +42,13 @@ tasks.register('simulation', Test) {
   // A 1M-validator run at 300g/200g died with the heap 99.85% full and 427 full GCs; the same run
   // at 400g/60g left the heap at 56% but exhausted Netty's direct buffers. 330g/130g splits the
   // difference, keeping the total at 460g so G1's own structures still fit.
-  maxHeapSize = '330g'
-  jvmArgs('-XX:MaxDirectMemorySize=130g')
+  // Ethereum gossip params (D=8, 700ms heartbeat) and a 30 Mbit/s residential link both killed
+  // the worker outright -- no hs_err, no OutOfMemoryError, JUnit recorded the test as skipped --
+  // which is the OS reclaiming a process whose RSS had reached 503 GB of the box's 512 GB. The
+  // sum is the binding constraint, so it stays at 460g; the heap takes 30g from direct buffers,
+  // which have a known floor of 60g (that split died with a direct-buffer OOM at exactly 60 GiB).
+  maxHeapSize = '360g'
+  jvmArgs('-XX:MaxDirectMemorySize=100g')
   // Lets a scenario be swept without editing it, e.g.
   //   ./gradlew :examples:dc:simulation --tests "*large network*" -Ddc.validators=100000
   ['dc.validators', 'dc.ffgCompression', 'dc.slots', 'dc.warmupSlots', 'dc.gossip', 'dc.ffg', 'dc.ethGossip', 'dc.homeDownMbps'].each { name ->
