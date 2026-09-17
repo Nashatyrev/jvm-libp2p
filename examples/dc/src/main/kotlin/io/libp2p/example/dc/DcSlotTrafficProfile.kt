@@ -20,21 +20,40 @@ data class DcSlotProfileParams(
     val anchor: Duration,
     val slotDuration: Duration,
     val bucketDuration: Duration = DEFAULT_BUCKET_DURATION,
-    val warmupSlots: Int = 0
+    val warmupSlots: Int = 0,
+    /**
+     * How many slots the run issues, bounding the profile at the last slot's end.
+     *
+     * A run does not stop at that boundary — it keeps going for [DcRunConfig.settle] so late
+     * messages can still arrive — and without this bound that trailing time wraps onto the early
+     * buckets and is added to them. A 12s slot measured over 15s put 3s of the previous slot's
+     * tail on top of buckets 0-3s, which is what made a residential link appear to carry 140% of
+     * its capacity. Anything past the boundary is dropped instead, so every bucket holds exactly
+     * one slot's worth of arrivals per measured slot -- at the cost of the trailing tail no
+     * longer appearing in the profile at all, which leaves its totals below the run totals.
+     *
+     * Defaults to unbounded, which suits unit tests feeding a single slot; [DcScenario] always
+     * passes [DcRunConfig.slotCount].
+     */
+    val slotCount: Int = Int.MAX_VALUE
 ) {
     init {
         require(slotDuration.isPositive()) { "slotDuration must be > 0, got $slotDuration" }
         require(bucketDuration.isPositive()) { "bucketDuration must be > 0, got $bucketDuration" }
         require(warmupSlots >= 0) { "warmupSlots must be >= 0, got $warmupSlots" }
+        require(slotCount > warmupSlots) {
+            "slotCount must leave at least one measured slot, got $slotCount of $warmupSlots warmup"
+        }
     }
 
     val bucketCount: Int
         get() = ceil(slotDuration.inWholeNanoseconds.toDouble() / bucketDuration.inWholeNanoseconds).toInt()
 
     /**
-     * Bucket index `now` falls into, or null before [anchor] or within [warmupSlots] — mesh
-     * formation and the excluded leading slots are not part of the steady-state picture this
-     * profile is for. [io.libp2p.example.dc.GossipByteCounter] and the UDP-side bucketing in
+     * Bucket index `now` falls into, or null outside the measured slots — before [anchor], within
+     * [warmupSlots], or past the end of slot [slotCount]. Mesh formation and the excluded leading
+     * slots are not part of the steady-state picture this profile is for, and the trailing settle
+     * window would otherwise wrap onto the early buckets. [io.libp2p.example.dc.GossipByteCounter] and the UDP-side bucketing in
      * [DcSlotTrafficProfile.of] both call this, so the two attribute a byte to the same bucket.
      */
     fun bucketOf(now: Duration): Int? {
@@ -42,7 +61,7 @@ data class DcSlotProfileParams(
         val elapsedNanos = (now - anchor).inWholeNanoseconds
         val slotNanos = slotDuration.inWholeNanoseconds
         val slotIndex = elapsedNanos / slotNanos
-        if (slotIndex < warmupSlots) return null
+        if (slotIndex < warmupSlots || slotIndex >= slotCount) return null
         val bucketNanos = bucketDuration.inWholeNanoseconds
         return ((elapsedNanos % slotNanos) / bucketNanos).toInt().coerceIn(0, bucketCount - 1)
     }

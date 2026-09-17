@@ -51,6 +51,32 @@ class DcSlotTrafficProfileTest {
     }
 
     @Test
+    fun `bucketOf is null past the last slot, so the settle tail does not wrap onto early buckets`() {
+        // Two slots from 30s: slot 0 is warm-up, slot 1 runs 42s-54s, and the run keeps going past
+        // 54s for the settle window. Without the slotCount bound that tail folded back onto buckets
+        // 0-n and was added to them, which is what made a saturated link read as 140% of capacity.
+        val params = DcSlotProfileParams(
+            anchor = 30.seconds,
+            slotDuration = 12.seconds,
+            bucketDuration = 100.milliseconds,
+            warmupSlots = 1,
+            slotCount = 2
+        )
+
+        assertThat(params.bucketOf(42.seconds)).describedAs("start of the measured slot").isEqualTo(0)
+        assertThat(params.bucketOf(53.seconds + 900.milliseconds)).describedAs("last bucket").isEqualTo(119)
+        assertThat(params.bucketOf(54.seconds)).describedAs("first instant past the slot").isNull()
+        assertThat(params.bucketOf(56.seconds)).describedAs("settle tail").isNull()
+    }
+
+    @Test
+    fun `rejects a slotCount that leaves no measured slot`() {
+        assertThatThrownBy {
+            DcSlotProfileParams(anchor = Duration.ZERO, slotDuration = 12.seconds, warmupSlots = 2, slotCount = 2)
+        }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
     fun `rejects a non-positive bucket or slot duration`() {
         assertThatThrownBy {
             DcSlotProfileParams(anchor = Duration.ZERO, slotDuration = 12.seconds, bucketDuration = Duration.ZERO)

@@ -220,7 +220,8 @@ class DcNodeProgramFactory<R>(
         anchor = config.slotTimes.first(),
         slotDuration = config.slotInterval,
         bucketDuration = config.slotTrafficBucketDuration,
-        warmupSlots = config.warmupSlots
+        warmupSlots = config.warmupSlots,
+        slotCount = config.slotCount
     )
 
     /**
