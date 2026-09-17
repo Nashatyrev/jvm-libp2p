@@ -158,7 +158,12 @@ class DcScenarioRunnerTest {
         // Residential downlink in Mbit/s, upload at half it, keeping the 2:1 ratio the Ethereum
         // spec uses for an attesting validator. 50 is Bandwidths.RESIDENTIAL, the default here.
         val homeDownMbps = System.getProperty("dc.homeDownMbps")?.toLong() ?: 50L
-        val homeLink = DcLink(mbitPerSecond(homeDownMbps), mbitPerSecond(homeDownMbps / 2))
+        // Upload defaults to half the downlink, but is separately settable because gossipsub
+        // forwarding is byte-symmetric -- a node forwards unique x (mesh-1) and receives
+        // unique x duplication, and those are the same quantity from opposite ends -- so a 2:1
+        // link saturates its uplink at half the byte rate the downlink could absorb.
+        val homeUpMbps = System.getProperty("dc.homeUpMbps")?.toLong() ?: (homeDownMbps / 2)
+        val homeLink = DcLink(mbitPerSecond(homeDownMbps), mbitPerSecond(homeUpMbps))
 
         val validatorCount = System.getProperty("dc.validators")?.toInt() ?: 1_000_000
         val slotDuration = 12.seconds
