@@ -335,8 +335,10 @@ class DcScenarioRunnerTest {
     @Test
     fun `median network`() {
         val gossipEnabled = true
-        val ffgEnabled = true
-        val ethGossipParams = false
+        val ffgEnabled = false
+        val ethGossipParams = true
+        // 40/20 Mbps to compensate smaller number of IHAVEs
+//        val homeLink = DcLink(mbitPerSecond(40), mbitPerSecond(20))
         val homeLink = DcLink(mbitPerSecond(50), mbitPerSecond(25))
 
         val validatorCount = System.getProperty("dc.validators")?.toInt() ?: 1_000_000
@@ -380,7 +382,7 @@ class DcScenarioRunnerTest {
                 // Spread payload chunks across their own 64 meshes.
                 allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK)
             }
-            .addGroup(count = 20) {
+            .addGroup(count = 10) {
                 name = "validator-pools"
                 regionWeights = mapOf(
                     ContinentRegion.EUROPE to 0.4,
@@ -393,8 +395,10 @@ class DcScenarioRunnerTest {
 
                 allMessageSubnets(DcSlotMessageType.BLOB_COLUMN)
                 allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION)
+//                randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, 32)
+//                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, 4)
             }
-            .addGroup(count = 80) {
+            .addGroup(count = 90) {
                 // business
                 name = "home"
                 spreadOverRegions()
