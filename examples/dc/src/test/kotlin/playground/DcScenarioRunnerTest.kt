@@ -145,27 +145,12 @@ class DcScenarioRunnerTest {
 
     @Test
     fun `large network`() {
-        // Both off by default, matching how this scenario was last run by hand. Switching them
-        // from the command line is what lets the four combinations be compared without edits
-        // between runs -- the charts only line up if nothing else moved.
-        val gossipEnabled = System.getProperty("dc.gossip")?.toBoolean() ?: false
-        val ffgEnabled = System.getProperty("dc.ffg")?.toBoolean() ?: false
-        // Mesh and heartbeat values the Ethereum consensus spec sets for mainnet, where libp2p's
-        // own defaults are D=6/DLow=4/DHigh=12/DLazy=6 and a 1s heartbeat. Both differences add
-        // load: a third more mesh degree means a third more duplicates, and a 700ms heartbeat
-        // emits gossip 43% more often. Off by default so earlier runs stay comparable.
-        val ethGossipParams = System.getProperty("dc.ethGossip")?.toBoolean() ?: false
-        // Residential downlink in Mbit/s, upload at half it, keeping the 2:1 ratio the Ethereum
-        // spec uses for an attesting validator. 50 is Bandwidths.RESIDENTIAL, the default here.
-        val homeDownMbps = System.getProperty("dc.homeDownMbps")?.toLong() ?: 50L
-        // Upload defaults to half the downlink, but is separately settable because gossipsub
-        // forwarding is byte-symmetric -- a node forwards unique x (mesh-1) and receives
-        // unique x duplication, and those are the same quantity from opposite ends -- so a 2:1
-        // link saturates its uplink at half the byte rate the downlink could absorb.
-        val homeUpMbps = System.getProperty("dc.homeUpMbps")?.toLong() ?: (homeDownMbps / 2)
-        val homeLink = DcLink(mbitPerSecond(homeDownMbps), mbitPerSecond(homeUpMbps))
+        val gossipEnabled = true
+        val ffgEnabled = true
+        val ethGossipParams = true
+        val homeLink = DcLink(mbitPerSecond(50), mbitPerSecond(25))
 
-        val validatorCount = System.getProperty("dc.validators")?.toInt() ?: 1_000_000
+        val validatorCount = 1_000_000
         val slotDuration = 12.seconds
         val ffgAttestationSize = 240
         val ffgSlots = 4
@@ -208,7 +193,7 @@ class DcScenarioRunnerTest {
                 // Spread payload chunks across their own 64 meshes.
                 allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK)
             }
-            .addGroup(count = 200) {
+            .addGroup(count = 100) {
                 name = "validator-pools"
                 regionWeights = mapOf(
                     ContinentRegion.EUROPE to 0.4,
@@ -222,7 +207,19 @@ class DcScenarioRunnerTest {
                 allMessageSubnets(DcSlotMessageType.BLOB_COLUMN)
                 allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION)
             }
-            .addGroup(count = 800) {
+            .addGroup(count = 700) {
+                // business
+                name = "upper-home"
+                spreadOverRegions()
+                bandwidth = Bandwidths.VPS
+                validators = validatorCount / 1000
+                peers = 100
+
+                // Model the current validator custody requirement: eight of 128 DA columns per node.
+                randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, count = 16)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 4)
+            }
+            .addGroup(count = 200) {
                 // business
                 name = "home"
                 spreadOverRegions()
@@ -335,11 +332,11 @@ class DcScenarioRunnerTest {
     @Test
     fun `median network`() {
         val gossipEnabled = true
-        val ffgEnabled = false
+        val ffgEnabled = true
         val ethGossipParams = true
         // 40/20 Mbps to compensate smaller number of IHAVEs
 //        val homeLink = DcLink(mbitPerSecond(40), mbitPerSecond(20))
-        val homeLink = DcLink(mbitPerSecond(50), mbitPerSecond(25))
+        val homeLink = DcLink(mbitPerSecond(50), mbitPerSecond(50))
 
         val validatorCount = System.getProperty("dc.validators")?.toInt() ?: 1_000_000
         val slotDuration = 12.seconds
@@ -382,7 +379,7 @@ class DcScenarioRunnerTest {
                 // Spread payload chunks across their own 64 meshes.
                 allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK)
             }
-            .addGroup(count = 10) {
+            .addGroup(count = 100) {
                 name = "validator-pools"
                 regionWeights = mapOf(
                     ContinentRegion.EUROPE to 0.4,
@@ -390,25 +387,41 @@ class DcScenarioRunnerTest {
                     ContinentRegion.US_WEST to 0.2,
                 )
                 bandwidth = Bandwidths.FAST_DATACENTER
-                validators = validatorCount / 100
+                validators = validatorCount / 1000
                 peers = 80
 
                 allMessageSubnets(DcSlotMessageType.BLOB_COLUMN)
                 allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION)
-//                randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, 32)
-//                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, 4)
             }
-            .addGroup(count = 90) {
+//            .addGroup(count = 85) {
+//                name = "upper-home"
+//                spreadOverRegions()
+//                bandwidth = Bandwidths.VPS
+//                validators = validatorCount / 100
+//                peers = 80
+//
+//                randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, 16)
+//                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, 4)
+//            }
+            .addGroup(count = 900) {
                 // business
                 name = "home"
                 spreadOverRegions()
                 bandwidth = homeLink
-                validators = validatorCount / 100
-                peers = 30
+                // Per node, so the divisor tracks the group size: 1000 nodes keeps the network
+                // total at validatorCount rather than 10x it.
+                validators = validatorCount / 1000
+                peers = 80
 
                 // Model the current validator custody requirement: eight of 128 DA columns per node.
                 randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, count = 8)
-                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = ffgResidentialSubnets)
+                // Round-robin rather than randomMessageSubnets(1): independent assignment gives
+                // multinomial subnet sizes, and with no pools covering every subnet the smallest
+                // ones fall below minPeersPerSubnet = 8. Even assignment keeps one subnet per node
+                // while guaranteeing every subnet the same membership.
+                messageSubnetsByIndex(DcSlotMessageType.FFG_ATTESTATION) { index ->
+                    setOf(index % ffgSubnetsCount)
+                }
             }
             .build()
 
