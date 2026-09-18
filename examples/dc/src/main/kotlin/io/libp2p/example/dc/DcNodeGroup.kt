@@ -1,5 +1,6 @@
 package io.libp2p.example.dc
 
+import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.sim.SimNodeId
 import io.libp2p.quicsim.udpnetwork.Bandwidth
 import kotlin.random.Random
@@ -61,6 +62,21 @@ class DcNodeGroup<R> internal constructor(
 
     /** Gossip peers each node of the group connects to. */
     var peers: Int = DEFAULT_PEER_COUNT
+
+    /**
+     * Gossipsub parameters of every node in the group, defaulting to the library's own defaults.
+     *
+     * A node property rather than a run-wide one, because that is what it is: mesh degree is a
+     * local choice each node makes and the two ends of a connection negotiate nothing, so a home
+     * node running `D = 4` against pools running `D = 8` is a legitimate network to model. Set it
+     * in a [DcNetworkBuilder.defaults] block for the whole population, and per group where a group
+     * differs.
+     *
+     * `maxGossipMessageSize` is a limit on what a node will *accept*, so lowering it for one group
+     * is a way to make that group drop messages the rest of the network carries — see the size
+     * check in [DcScenario.of], which rejects a run publishing more than some group would take.
+     */
+    var gossipParams: GossipParams = GossipParams()
 
     // --- placement: at most one per block ------------------------------------------------------
 
@@ -163,6 +179,7 @@ class DcNodeGroup<R> internal constructor(
         it.bandwidth = bandwidth
         it.uploadBandwidth = uploadBandwidth
         it.peers = peers
+        it.gossipParams = gossipParams
     }
 
     internal fun validated(): DcNodeGroup<R> = apply {

@@ -133,7 +133,8 @@ class DcNetworkBuilder<R>(
                 validatorCount = groupValidators[index],
                 peerCount = group.peers,
                 slotMessageSubnetIds = group.messageSubnetsFor(index, simNodeId, randomSeed),
-                groupName = group.name
+                groupName = group.name,
+                gossipParams = group.gossipParams
             )
         }
     }

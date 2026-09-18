@@ -22,6 +22,12 @@ data class DcGroupStats(
     val validatorCount: Int,
     /** Distinct access links in the group, e.g. `50 Mbit/s` or `50 Mbit/s down/25 Mbit/s up`. */
     val links: List<String>,
+    /**
+     * Distinct mesh degrees the group's nodes ran with — see [DcNodeGroup.gossipParams]. On the
+     * header line because a group running `D = 4` against a network on `D = 8` makes every other
+     * figure here mean something different.
+     */
+    val meshDegrees: List<String> = emptyList(),
     /** Raw UDP traffic of the group's nodes over the whole run, including QUIC's own overhead. */
     val traffic: DcTrafficStats,
     val gossipBytesSent: Long,
@@ -51,12 +57,13 @@ data class DcGroupStats(
 
     override fun toString(): String = buildString {
         appendLine(
-            "group '%s': nodes=%d validators=%d (%.1f/node) links=%s".format(
+            "group '%s': nodes=%d validators=%d (%.1f/node) links=%s%s".format(
                 groupName,
                 nodeCount,
                 validatorCount,
                 validatorsPerNode,
-                links.joinToString()
+                links.joinToString(),
+                if (meshDegrees.isEmpty()) "" else " " + meshDegrees.joinToString(" | ")
             )
         )
         appendLine(
@@ -226,6 +233,7 @@ data class DcGroupReport(
                     nodeCount = groupNodes.size,
                     validatorCount = groupNodes.sumOf { it.validatorCount },
                     links = groupNodes.map { linkOf(it) }.distinct(),
+                    meshDegrees = groupNodes.map { meshDegreeSummary(it.gossipParams) }.distinct(),
                     traffic = trafficPerGroup[groupName]
                         ?: DcTrafficStats(groupNodes.size, 0, 0, 0, 0),
                     gossipBytesSent = nodeIds.sumOf { gossipCounters[it]?.bytesWritten ?: 0 },

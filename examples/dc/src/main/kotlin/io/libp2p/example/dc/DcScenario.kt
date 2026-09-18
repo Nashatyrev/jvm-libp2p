@@ -115,7 +115,6 @@ data class DcRunConfig(
     val messages: List<DcSlotMessageConfig> = emptyList(),
     /** Bucket width of [DcRunReport.slotTraffic], the per-message-type intra-slot profile. */
     val slotTrafficBucketDuration: Duration = 100.milliseconds,
-    val gossipParams: GossipParams = GossipParams(),
     val randomSeed: Long = 0
 ) {
     init {
@@ -139,13 +138,11 @@ data class DcRunConfig(
                 "${message.type} publishOffset must be less than the $slotInterval slotInterval, " +
                     "got ${message.publishOffset}"
             }
-            val maxSize = DcSlotMessageConfig.maxSizeBytes(gossipParams)
-            require(message.sizeBytes <= maxSize) {
-                "${message.type} sizeBytes ${message.sizeBytes} exceeds what gossipsub will carry " +
-                    "($maxSize) at maxGossipMessageSize=${gossipParams.maxGossipMessageSize}; raise " +
-                    "maxGossipMessageSize on gossipParams to publish messages this large"
-            }
         }
+        // Message sizes are not checked here: what gossipsub will carry follows from
+        // maxGossipMessageSize, which every node holds its own copy of
+        // ([DcNodeGroup.gossipParams]) and a run config cannot see. Checked against the population
+        // instead, in [DcScenario.requireMessagesFitEveryGroup].
     }
 
     /** Slot indices whose deliveries count toward the headline figures. */
@@ -211,7 +208,8 @@ class DcNodeProgramFactory<R>(
             messageSchedules = messageSchedules,
             messageRecorders = messageRecorders,
             slotProfile = slotProfileParams,
-            params = config.gossipParams,
+            // Gossip params are a property of the node, not of the run; see DcNodeGroup.gossipParams.
+            params = network.node(id).gossipParams,
             randomSeed = config.randomSeed + id
         ).also { nodePrograms += it }
 
@@ -352,6 +350,7 @@ object DcScenario {
         config: DcRunConfig = DcRunConfig(),
         messageSchedules: List<DcSlotMessageSchedule> = defaultMessageSchedules(network, config)
     ): QuicScenario<DcNodeProgramFactory<R>> {
+        requireMessagesFitEveryGroup(network, config)
         // One segment per type rather than per config, so a type issued as many waves within a slot
         // contributes "x12waves" instead of twelve near-identical segments.
         val messageSuffix = config.allMessageConfigs.groupBy { it.type }
@@ -374,6 +373,30 @@ object DcScenario {
                 DcNodeProgramFactory(network, graph, config, messageSchedules)
             }
         )
+    }
+
+    /**
+     * How large a message gossipsub will carry follows from `maxGossipMessageSize`, which each node
+     * holds its own copy of ([DcNodeGroup.gossipParams]) — so the limit is a property of the
+     * population, not of [DcRunConfig], and is checked here rather than in the config's own `init`.
+     * A group that would drop every payload chunk fails the run instead of reporting the chunks as
+     * undelivered.
+     */
+    private fun <R> requireMessagesFitEveryGroup(network: DcNetwork<R>, config: DcRunConfig) {
+        network.nodes
+            .map { (it.groupName ?: DcGroupStats.UNNAMED) to it.gossipParams }
+            .distinct()
+            .forEach { (groupName, params) ->
+                val maxSize = DcSlotMessageConfig.maxSizeBytes(params)
+                config.allMessageConfigs.forEach { message ->
+                    require(message.sizeBytes <= maxSize) {
+                        "${message.type} sizeBytes ${message.sizeBytes} exceeds what gossipsub will " +
+                            "carry for group '$groupName' ($maxSize) at " +
+                            "maxGossipMessageSize=${params.maxGossipMessageSize}; raise " +
+                            "maxGossipMessageSize on that group's gossipParams"
+                    }
+                }
+            }
     }
 
     /**

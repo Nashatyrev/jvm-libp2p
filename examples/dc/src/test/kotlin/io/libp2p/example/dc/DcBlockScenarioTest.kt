@@ -331,20 +331,32 @@ class DcBlockScenarioTest {
         // The default maxGossipMessageSize is exactly 1 MiB, so a 1 MiB block cannot fit: gossipsub
         // reserves a 1% margin when splitting RPCs and the frame decoder drops anything above the
         // limit. Failing here beats a run in which no block ever arrives.
-        assertThatThrownBy {
-            DcRunConfig(
-                messages = ffgMessages(attestersPerSlot = 1, subnetCount = 1),
-                blocks = DcBlockConfig(sizeBytes = 1 shl 20)
-            )
-        }.hasMessageContaining("exceeds what gossipsub will carry")
-
-        val roomier = GossipParams.builder().maxGossipMessageSize(4 shl 20).build()
+        //
+        // The limit lives on the nodes rather than on the run -- see DcNodeGroup.gossipParams -- so
+        // it is the population that decides, and the check happens where both are known.
         val config = DcRunConfig(
             messages = ffgMessages(attestersPerSlot = 1, subnetCount = 1),
-            blocks = DcBlockConfig(sizeBytes = 1 shl 20),
-            gossipParams = roomier
+            blocks = DcBlockConfig(sizeBytes = 1 shl 20)
         )
-        assertThat(config.blocks!!.sizeBytes).isEqualTo(1 shl 20)
+        val defaultLimit = population(nodeCount = 4, subnetCount = 2, peers = 2)
+        val graph = defaultLimit.peerGraph(minPeersPerSubnet = 2, randomSeed = 1)
+
+        assertThatThrownBy { DcScenario.of(defaultLimit, graph, config) }
+            .hasMessageContaining("exceeds what gossipsub will carry")
+
+        val roomier = DcNetworkBuilder.world(randomSeed = 1, subnetCount = 2)
+            .addGroup(count = 4) {
+                spreadOverRegions()
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1
+                peers = 2
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 2, of = 2)
+                gossipParams = GossipParams.builder().maxGossipMessageSize(4 shl 20).build()
+            }
+            .build()
+
+        assertThat(DcScenario.of(roomier, roomier.peerGraph(minPeersPerSubnet = 2, randomSeed = 1), config).nodeCount)
+            .isEqualTo(4)
     }
 
     @Test

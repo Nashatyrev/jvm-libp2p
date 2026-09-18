@@ -1,5 +1,6 @@
 package io.libp2p.example.dc
 
+import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.sim.SimNodeId
 import io.libp2p.quicsim.udpnetwork.Bandwidth
 
@@ -46,7 +47,9 @@ data class DcNode<R>(
      * block or payload publishers out of the staking pools only, say — without having to know which
      * node ids the builder happened to assign.
      */
-    val groupName: String? = null
+    val groupName: String? = null,
+    /** Gossipsub parameters this node runs with — see [DcNodeGroup.gossipParams]. */
+    val gossipParams: GossipParams = GossipParams()
 ) {
     val bandwidth: Bandwidth get() = Bandwidth(bandwidthBytesPerSecond)
 
@@ -75,9 +78,19 @@ data class DcNode<R>(
             .sortedBy { it.key }
             .joinToString { (type, ids) -> "${type.id}=${ids.sorted()}" }
         val extra = if (messageSubnets.isEmpty()) "" else ", subnets={$messageSubnets}"
-        return "$id[$group$region, $link, validators=$validatorCount, peers=$peerCount$extra]"
+        val gossip = ", ${meshDegreeSummary(gossipParams)}"
+        return "$id[$group$region, $link, validators=$validatorCount, peers=$peerCount$gossip$extra]"
     }
 }
+
+/**
+ * The mesh degrees of [params] on one line — the fields a scenario is likely to vary between
+ * groups, and the ones that change what a node does with its peers. Everything else about
+ * [GossipParams] stays out of it, since a report line naming forty fields is a report line nobody
+ * reads.
+ */
+internal fun meshDegreeSummary(params: GossipParams): String =
+    "D=${params.D} DLow=${params.DLow} DHigh=${params.DHigh} DLazy=${params.DLazy}"
 
 /** One logical subnet. Numeric ids are namespaced by the message-type family. */
 data class DcSubnetSubscription(

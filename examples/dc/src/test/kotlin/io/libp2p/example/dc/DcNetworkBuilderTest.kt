@@ -1,5 +1,6 @@
 package io.libp2p.example.dc
 
+import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.ContinentRegion
 import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.ContinentRegion.ASIA
 import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.ContinentRegion.EUROPE
@@ -360,6 +361,24 @@ class DcNetworkBuilderTest {
         assertThat(overridden.map { it.peerCount }.distinct()).containsExactly(40)
         assertThat(overridden.map { it.validatorCount }.distinct()).containsExactly(100)
         assertThat(overridden.map { it.subnetIdsFor(ffg) }.distinct()).containsExactly(setOf(7, 8))
+    }
+
+    @Test
+    fun `gossip params follow the group that set them`() {
+        val smallMesh = GossipParams.builder().D(4).DLow(3).DHigh(6).DLazy(3).build()
+        val network = DcNetworkBuilder.world()
+            .defaults { bandwidth = Bandwidths.VPS }
+            .addGroup(count = 2) { name = "pools" }
+            .addGroup(count = 3) {
+                name = "home"
+                gossipParams = smallMesh
+            }
+            .build()
+
+        assertThat(network.nodesInGroup("pools").map { it.gossipParams }.distinct())
+            .describedAs("a group that sets nothing gets the library defaults")
+            .containsExactly(GossipParams())
+        assertThat(network.nodesInGroup("home").map { it.gossipParams }.distinct()).containsExactly(smallMesh)
     }
 
     @Test

@@ -428,6 +428,82 @@ class DcScenarioTest {
     }
 
     @Test
+    fun `a group's own gossip params reach its node programs and the report`() {
+        val smallMesh = GossipParams.builder().D(4).DLow(3).DHigh(6).DLazy(3).build()
+        val network = DcNetworkBuilder.world(randomSeed = 1)
+            .defaults {
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1
+                peers = 6
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 2, of = 4)
+            }
+            .addGroup(count = 6) {
+                name = "pools"
+                gossipParams = GossipParams.builder().D(8).DLow(6).DHigh(12).DLazy(6).build()
+            }
+            .addGroup(count = 6) {
+                name = "home"
+                gossipParams = smallMesh
+            }
+            .build()
+        val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
+        val config = DcRunConfig(
+            slotCount = 1,
+            slotInterval = 12.seconds,
+            messages = ffgMessages(attestersPerSlot = 2, subnetCount = 4)
+        )
+
+        val factory = DcScenario.of(network, graph, config).createNodeProgramFactory()
+        val paramsOf = { simNodeId: Int -> (factory.createNode(simNodeId) as DcNodeProgram).params }
+
+        assertThat(paramsOf(0).D).describedAs("each node runs its own group's params").isEqualTo(8)
+        assertThat(paramsOf(6)).isEqualTo(smallMesh)
+
+        val report = DcScenario.run(network, graph, config)
+        assertThat(report.groups["home"]?.meshDegrees)
+            .containsExactly("D=4 DLow=3 DHigh=6 DLazy=3")
+        assertThat(report.groups["pools"]?.meshDegrees)
+            .containsExactly("D=8 DLow=6 DHigh=12 DLazy=6")
+    }
+
+    @Test
+    fun `a group's gossip params are checked against the messages the run publishes`() {
+        val tinyLimit = GossipParams.builder().D(4).maxGossipMessageSize(1024).build()
+        val network = DcNetworkBuilder.world(randomSeed = 1)
+            .defaults {
+                bandwidth = Bandwidths.RESIDENTIAL
+                validators = 1
+                peers = 6
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 2, of = 4)
+            }
+            .addGroup(count = 6) { name = "pools" }
+            .addGroup(count = 6) {
+                name = "home"
+                gossipParams = tinyLimit
+            }
+            .build()
+        val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)
+        val config = DcRunConfig(
+            slotCount = 1,
+            slotInterval = 12.seconds,
+            messages = listOf(
+                DcSlotMessageConfig(
+                    type = DcSlotMessageType.FFG_ATTESTATION,
+                    sizeBytes = 8 * 1024,
+                    publisherSelection = DcPublisherSelection.RANDOM_NODES,
+                    messagesPerSlot = 2,
+                    topics = DcSlotMessageTopics.Subnets(4)
+                )
+            )
+        )
+
+        assertThatThrownBy { DcScenario.of(network, graph, config) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("group 'home'")
+            .hasMessageContaining("maxGossipMessageSize=1024")
+    }
+
+    @Test
     fun `the scenario name reports a wave count instead of one segment per wave`() {
         val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 5)

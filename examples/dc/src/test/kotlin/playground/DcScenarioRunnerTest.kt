@@ -7,7 +7,6 @@ import io.libp2p.example.dc.DcLink
 import io.libp2p.example.dc.DcNetworkBuilder
 import io.libp2p.example.dc.DcPublisherSelection
 import io.libp2p.example.dc.DcRunConfig
-import io.libp2p.example.dc.DcRunReport
 import io.libp2p.example.dc.DcScenario
 import io.libp2p.example.dc.DcSlotMessageConfig
 import io.libp2p.example.dc.DcSlotMessageTopics
@@ -53,6 +52,7 @@ class DcScenarioRunnerTest {
             .defaults {
                 // Spread payload chunks across their own 64 meshes.
                 allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK)
+                gossipParams = GossipParams.builder().disableGossip().build()
             }
             .addGroup(count = 10) {
                 // validator pools
@@ -85,10 +85,6 @@ class DcScenarioRunnerTest {
 
         val graph = network.peerGraph(minPeersPerSubnet = 2, randomSeed = 1)
         Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
-
-        val gossipParams = GossipParams.builder()
-            .disableGossip()
-            .build()
 
         val runConfig = DcRunConfig(
             slotCount = 1,
@@ -131,7 +127,6 @@ class DcScenarioRunnerTest {
                         topics = DcSlotMessageTopics.Subnets(64)
                     )
                 },
-            gossipParams = gossipParams,
             randomSeed = 1
         )
 
@@ -149,6 +144,24 @@ class DcScenarioRunnerTest {
         val ffgEnabled = true
         val ethGossipParams = true
         val homeLink = DcLink(mbitPerSecond(50), mbitPerSecond(25))
+
+        // Mesh degree is a local choice each node makes, so groups may run different ones and still
+        // interoperate. Built from one factory so a group's params differ from the run's default in
+        // the degrees alone, and both follow the gossip switches above.
+        fun meshParams(d: Int, dLow: Int, dHigh: Int, dLazy: Int) = GossipParams.builder()
+            .also {
+                if (ethGossipParams) {
+                    it.D(d).DLow(dLow).DHigh(dHigh).DLazy(dLazy).heartbeatInterval(700.millis)
+                }
+            }
+            // Applied last: with gossip off, DLazy must stay 0 whatever the mesh params say.
+            .also { if (!gossipEnabled) it.disableGossip() }
+            .build()
+
+        // The eth ladder, halved, for the 50/25 tier only: its downlink is the one that saturates,
+        // and most of what fills it is duplicate copies arriving from mesh peers. mid-home stays on
+        // the default ladder as the control.
+        val homeGossipParams = meshParams(d = 4, dLow = 3, dHigh = 6, dLazy = 3)
 
         val validatorCount = 1_000_000
         val slotDuration = 12.seconds
@@ -192,6 +205,8 @@ class DcScenarioRunnerTest {
             .defaults {
                 // Spread payload chunks across their own 64 meshes.
                 allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK)
+                // Every group but the 50/25 tier below runs the eth ladder.
+                gossipParams = meshParams(d = 8, dLow = 6, dHigh = 12, dLazy = 6)
             }
             .addGroup(count = 100) {
                 name = "validator-pools"
@@ -250,6 +265,7 @@ class DcScenarioRunnerTest {
                 bandwidth = homeLink
                 validators = validatorCount / 1000
                 peers = 100
+                gossipParams = homeGossipParams
 
                 // Model the current validator custody requirement: eight of 128 DA columns per node.
                 randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, count = 8)
@@ -265,16 +281,6 @@ class DcScenarioRunnerTest {
                 minPeersPerSubnet = 8,
             )
         Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
-
-        val gossipParams = GossipParams.builder()
-            .also {
-                if (ethGossipParams) {
-                    it.D(8).DLow(6).DHigh(12).DLazy(6).heartbeatInterval(700.millis)
-                }
-            }
-            // Applied last: with gossip off, DLazy must stay 0 whatever the mesh params say.
-            .also { if (!gossipEnabled) it.disableGossip() }
-            .build()
 
         val ffgWavesPerSlotIfEnabled = if (ffgEnabled) ffgWavesPerSlot else 0
         val aggregateWavesIfEnabled = if (ffgEnabled) aggregateWaves else emptyList()
@@ -341,7 +347,6 @@ class DcScenarioRunnerTest {
                         )
                     }
             ).flatten(),
-            gossipParams = gossipParams,
         )
 
         val report = DcScenario.run(
@@ -352,7 +357,6 @@ class DcScenarioRunnerTest {
         println(report)
     }
 
-
     @Test
     fun `median network`() {
         val gossipEnabled = true
@@ -361,6 +365,17 @@ class DcScenarioRunnerTest {
         // 40/20 Mbps to compensate smaller number of IHAVEs
 //        val homeLink = DcLink(mbitPerSecond(40), mbitPerSecond(20))
         val homeLink = DcLink(mbitPerSecond(50), mbitPerSecond(50))
+
+        // Gossip params belong to the node, so they go on the groups below rather than on the run.
+        val nodeGossipParams = GossipParams.builder()
+            .also {
+                if (ethGossipParams) {
+                    it.D(8).DLow(6).DHigh(12).DLazy(6).heartbeatInterval(700.millis)
+                }
+            }
+            // Applied last: with gossip off, DLazy must stay 0 whatever the mesh params say.
+            .also { if (!gossipEnabled) it.disableGossip() }
+            .build()
 
         val validatorCount = System.getProperty("dc.validators")?.toInt() ?: 1_000_000
         val slotDuration = 12.seconds
@@ -402,6 +417,7 @@ class DcScenarioRunnerTest {
             .defaults {
                 // Spread payload chunks across their own 64 meshes.
                 allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK)
+                gossipParams = nodeGossipParams
             }
             .addGroup(count = 100) {
                 name = "validator-pools"
@@ -458,82 +474,71 @@ class DcScenarioRunnerTest {
             )
         Assertions.assertThat(graph.subnetDeficiencies()).isEmpty()
 
-        val gossipParams = GossipParams.builder()
-            .also {
-                if (ethGossipParams) {
-                    it.D(8).DLow(6).DHigh(12).DLazy(6).heartbeatInterval(700.millis)
-                }
-            }
-            // Applied last: with gossip off, DLazy must stay 0 whatever the mesh params say.
-            .also { if (!gossipEnabled) it.disableGossip() }
-            .build()
-
         val ffgWavesPerSlotIfEnabled = if (ffgEnabled) ffgWavesPerSlot else 0
         val aggregateWavesIfEnabled = if (ffgEnabled) aggregateWaves else emptyList()
         val runConfig = DcRunConfig(
             slotCount = slotCount,
             warmupSlots = warmupSlots,
             messages =
+            listOf(
                 listOf(
-                    listOf(
-                        DcSlotMessageConfig(
-                            type = DcSlotMessageType.BLOCK,
-                            sizeBytes = blockSize,
-                            publishOffset = 0.seconds,
-                            publisherGroups = setOf("validator-pools"),
-                            publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
-                            topics = DcSlotMessageTopics.Global
-                        ),
-                        DcSlotMessageConfig(
-                            type = DcSlotMessageType.PAYLOAD_CHUNK,
-                            sizeBytes = blockPayloadSize / 64,
-                            publishOffset = 1.seconds,
-                            publisherGroups = setOf("validator-pools"),
-                            publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
-                            messagesPerSlot = 64,
-                            topics = DcSlotMessageTopics.Subnets(64)
-                        ),
-                        DcSlotMessageConfig(
-                            type = DcSlotMessageType.BLOB_COLUMN,
-                            // Scenario assumption: one 8 KiB sidecar per DA column.
-                            sizeBytes = blobColumnSize,
-                            publishOffset = 1.seconds,
-                            publisherGroups = setOf("validator-pools"),
-                            publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
-                            messagesPerSlot = 128,
-                            topics = DcSlotMessageTopics.Subnets(128)
-                        )
+                    DcSlotMessageConfig(
+                        type = DcSlotMessageType.BLOCK,
+                        sizeBytes = blockSize,
+                        publishOffset = 0.seconds,
+                        publisherGroups = setOf("validator-pools"),
+                        publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                        topics = DcSlotMessageTopics.Global
                     ),
-                    (0 until ffgWavesPerSlotIfEnabled)
-                        .map { waveIdx ->
-                            DcSlotMessageConfig(
-                                type = DcSlotMessageType.FFG_ATTESTATION,
-                                sizeBytes = ffgAttestationSize * ffgCompression,
-                                publishOffset = (slotDuration / ffgWavesPerSlot) * waveIdx,
-                                publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
-                                messagesPerSlot = ffgAttestationsPerWave,
-                                topics = DcSlotMessageTopics.Subnets(64)
-                            )
-                        },
-                    // Several entries of aggregateWaves share an offset, but a run may hold only
-                    // one config per (type, offset) -- two publications at the same instant are
-                    // indistinguishable anyway. Fold them into one config carrying their combined
-                    // message count, so the totals are what the list asks for.
-                    aggregateWavesIfEnabled
-                        .groupingBy { it }
-                        .eachCount()
-                        .map { (waveOffset, wavesAtOffset) ->
-                            DcSlotMessageConfig(
-                                type = DcSlotMessageType.AGGREGATES,
-                                sizeBytes = aggregateSize,
-                                publishOffset = waveOffset,
-                                publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
-                                messagesPerSlot = ffgSubnetsCount * wavesAtOffset,
-                                topics = DcSlotMessageTopics.Global
-                            )
-                        }
-                ).flatten(),
-            gossipParams = gossipParams,
+                    DcSlotMessageConfig(
+                        type = DcSlotMessageType.PAYLOAD_CHUNK,
+                        sizeBytes = blockPayloadSize / 64,
+                        publishOffset = 1.seconds,
+                        publisherGroups = setOf("validator-pools"),
+                        publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                        messagesPerSlot = 64,
+                        topics = DcSlotMessageTopics.Subnets(64)
+                    ),
+                    DcSlotMessageConfig(
+                        type = DcSlotMessageType.BLOB_COLUMN,
+                        // Scenario assumption: one 8 KiB sidecar per DA column.
+                        sizeBytes = blobColumnSize,
+                        publishOffset = 1.seconds,
+                        publisherGroups = setOf("validator-pools"),
+                        publisherSelection = DcPublisherSelection.VALIDATOR_WEIGHTED,
+                        messagesPerSlot = 128,
+                        topics = DcSlotMessageTopics.Subnets(128)
+                    )
+                ),
+                (0 until ffgWavesPerSlotIfEnabled)
+                    .map { waveIdx ->
+                        DcSlotMessageConfig(
+                            type = DcSlotMessageType.FFG_ATTESTATION,
+                            sizeBytes = ffgAttestationSize * ffgCompression,
+                            publishOffset = (slotDuration / ffgWavesPerSlot) * waveIdx,
+                            publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
+                            messagesPerSlot = ffgAttestationsPerWave,
+                            topics = DcSlotMessageTopics.Subnets(64)
+                        )
+                    },
+                // Several entries of aggregateWaves share an offset, but a run may hold only
+                // one config per (type, offset) -- two publications at the same instant are
+                // indistinguishable anyway. Fold them into one config carrying their combined
+                // message count, so the totals are what the list asks for.
+                aggregateWavesIfEnabled
+                    .groupingBy { it }
+                    .eachCount()
+                    .map { (waveOffset, wavesAtOffset) ->
+                        DcSlotMessageConfig(
+                            type = DcSlotMessageType.AGGREGATES,
+                            sizeBytes = aggregateSize,
+                            publishOffset = waveOffset,
+                            publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
+                            messagesPerSlot = ffgSubnetsCount * wavesAtOffset,
+                            topics = DcSlotMessageTopics.Global
+                        )
+                    }
+            ).flatten(),
         )
 
         val report = DcScenario.run(
