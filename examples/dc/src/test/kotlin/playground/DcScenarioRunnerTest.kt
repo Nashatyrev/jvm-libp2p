@@ -207,9 +207,9 @@ class DcScenarioRunnerTest {
                 allMessageSubnets(DcSlotMessageType.BLOB_COLUMN)
                 allMessageSubnets(DcSlotMessageType.FFG_ATTESTATION)
             }
-            .addGroup(count = 700) {
+            .addGroup(count = 600) {
                 // business
-                name = "upper-home"
+                name = "vps"
                 spreadOverRegions()
                 bandwidth = Bandwidths.VPS
                 validators = validatorCount / 1000
@@ -219,7 +219,31 @@ class DcScenarioRunnerTest {
                 randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, count = 16)
                 randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 4)
             }
-            .addGroup(count = 200) {
+            .addGroup(count = 100) {
+                // business
+                name = "upper-home"
+                spreadOverRegions()
+                bandwidth = DcLink(mbitPerSecond(200), mbitPerSecond(100))
+                validators = validatorCount / 1000
+                peers = 100
+
+                // Model the current validator custody requirement: eight of 128 DA columns per node.
+                randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, count = 8)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = ffgResidentialSubnets)
+            }
+            .addGroup(count = 100) {
+                // business
+                name = "mid-home"
+                spreadOverRegions()
+                bandwidth = DcLink(mbitPerSecond(100), mbitPerSecond(50))
+                validators = validatorCount / 1000
+                peers = 100
+
+                // Model the current validator custody requirement: eight of 128 DA columns per node.
+                randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, count = 8)
+                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = ffgResidentialSubnets)
+            }
+            .addGroup(count = 100) {
                 // business
                 name = "home"
                 spreadOverRegions()
