@@ -461,9 +461,9 @@ class DcScenarioTest {
 
         val report = DcScenario.run(network, graph, config)
         assertThat(report.groups["home"]?.meshDegrees)
-            .containsExactly("D=4 DLow=3 DHigh=6 DLazy=3")
+            .containsExactly("D=4 DLow=3 DHigh=6 DLazy=3 iwant=all_announcers")
         assertThat(report.groups["pools"]?.meshDegrees)
-            .containsExactly("D=8 DLow=6 DHigh=12 DLazy=6")
+            .containsExactly("D=8 DLow=6 DHigh=12 DLazy=6 iwant=all_announcers")
     }
 
     @Test

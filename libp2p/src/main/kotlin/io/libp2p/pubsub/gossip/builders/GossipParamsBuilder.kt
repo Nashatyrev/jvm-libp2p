@@ -2,6 +2,7 @@ package io.libp2p.pubsub.gossip.builders
 
 import io.libp2p.core.PeerId
 import io.libp2p.pubsub.gossip.GossipParams
+import io.libp2p.pubsub.gossip.IWantPolicy
 import io.libp2p.pubsub.gossip.defaultDHigh
 import io.libp2p.pubsub.gossip.defaultDLazy
 import io.libp2p.pubsub.gossip.defaultDLow
@@ -78,7 +79,15 @@ class GossipParamsBuilder {
 
     private var iDontWantTTL: Duration? = null
 
-    private var iWantRequestsEnabled: Boolean? = null
+    private var iWantPolicy: IWantPolicy? = null
+
+    private var pullRequestsPerMessage: Int? = null
+
+    private var pullRetryTimeout: Duration? = null
+
+    private var pullBrokenPromiseTimeout: Duration? = null
+
+    private var pullParkDuration: Duration? = null
 
     init {
         val source = GossipParams()
@@ -111,7 +120,11 @@ class GossipParamsBuilder {
         this.maxIDontWantMessageIds = source.maxIDontWantMessageIds
         this.iDontWantMinMessageSizeThreshold = source.iDontWantMinMessageSizeThreshold
         this.iDontWantTTL = source.iDontWantTTL
-        this.iWantRequestsEnabled = source.iWantRequestsEnabled
+        this.iWantPolicy = source.iWantPolicy
+        this.pullRequestsPerMessage = source.pullRequestsPerMessage
+        this.pullRetryTimeout = source.pullRetryTimeout
+        this.pullBrokenPromiseTimeout = source.pullBrokenPromiseTimeout
+        this.pullParkDuration = source.pullParkDuration
     }
 
     fun D(value: Int): GossipParamsBuilder = apply { D = value }
@@ -190,7 +203,15 @@ class GossipParamsBuilder {
 
     fun iDontWantTTL(value: Duration): GossipParamsBuilder = apply { iDontWantTTL = value }
 
-    fun iWantRequestsEnabled(value: Boolean): GossipParamsBuilder = apply { iWantRequestsEnabled = value }
+    fun iWantPolicy(value: IWantPolicy): GossipParamsBuilder = apply { iWantPolicy = value }
+
+    fun pullRequestsPerMessage(value: Int): GossipParamsBuilder = apply { pullRequestsPerMessage = value }
+
+    fun pullRetryTimeout(value: Duration): GossipParamsBuilder = apply { pullRetryTimeout = value }
+
+    fun pullBrokenPromiseTimeout(value: Duration): GossipParamsBuilder = apply { pullBrokenPromiseTimeout = value }
+
+    fun pullParkDuration(value: Duration): GossipParamsBuilder = apply { pullParkDuration = value }
 
     fun build(): GossipParams {
         calculateMissing()
@@ -230,7 +251,11 @@ class GossipParamsBuilder {
             maxIDontWantMessageIds = maxIDontWantMessageIds!!,
             iDontWantMinMessageSizeThreshold = iDontWantMinMessageSizeThreshold!!,
             iDontWantTTL = iDontWantTTL!!,
-            iWantRequestsEnabled = iWantRequestsEnabled!!
+            iWantPolicy = iWantPolicy!!,
+            pullRequestsPerMessage = pullRequestsPerMessage!!,
+            pullRetryTimeout = pullRetryTimeout!!,
+            pullBrokenPromiseTimeout = pullBrokenPromiseTimeout!!,
+            pullParkDuration = pullParkDuration!!
         )
     }
 
@@ -271,6 +296,10 @@ class GossipParamsBuilder {
         check(maxIDontWantMessageIds != null, { "maxIDontWantMessageIds must not be null" })
         check(iDontWantMinMessageSizeThreshold != null, { "iDontWantMinMessageSizeThreshold must not be null" })
         check(iDontWantTTL != null, { "iDontWantTTL must not be null" })
-        check(iWantRequestsEnabled != null, { "iWantRequestsEnabled must not be null" })
+        check(iWantPolicy != null, { "iWantPolicy must not be null" })
+        check(pullRequestsPerMessage != null, { "pullRequestsPerMessage must not be null" })
+        check(pullRetryTimeout != null, { "pullRetryTimeout must not be null" })
+        check(pullBrokenPromiseTimeout != null, { "pullBrokenPromiseTimeout must not be null" })
+        check(pullParkDuration != null, { "pullParkDuration must not be null" })
     }
 }

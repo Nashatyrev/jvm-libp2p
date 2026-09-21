@@ -46,7 +46,12 @@ data class DcGroupStats(
     /** This group's own slot traffic profile — see [DcSlotTrafficProfile] — null if it could not be built. */
     val slotTraffic: DcSlotTrafficProfile? = null,
     /** What this group's [gossipControlBytesReceived] was spent on; see [DcControlBreakdown]. */
-    val controlBreakdown: DcControlBreakdown = DcControlBreakdown.EMPTY
+    val controlBreakdown: DcControlBreakdown = DcControlBreakdown.EMPTY,
+    /**
+     * The same for [gossipControlBytesSent]. Its `requested` count is how many message ids this
+     * group's nodes asked for with IWANT -- the received side only says how often they were asked.
+     */
+    val controlBreakdownSent: DcControlBreakdown = DcControlBreakdown.EMPTY
 ) {
     val gossipControlBytesSent: Long get() = gossipBytesSent - gossipPublishBytesSent
     val gossipControlBytesReceived: Long get() = gossipBytesReceived - gossipPublishBytesReceived
@@ -84,6 +89,7 @@ data class DcGroupStats(
                 )
         )
         appendLine("  " + controlBreakdown.render(nodeCount))
+        appendLine("  " + controlBreakdownSent.render(nodeCount, label = "gossip control sent"))
         messagesReceived.toSortedMap().forEach { (type, stats) ->
             append("  received $type: $stats".trimEnd().replace("\n", "\n  "))
             appendLine()
@@ -240,6 +246,9 @@ data class DcGroupReport(
                     gossipBytesReceived = nodeIds.sumOf { gossipCounters[it]?.bytesRead ?: 0 },
                     controlBreakdown = nodeIds.fold(DcControlBreakdown.EMPTY) { acc, id ->
                         acc + (gossipCounters[id]?.controlBreakdownRead ?: DcControlBreakdown.EMPTY)
+                    },
+                    controlBreakdownSent = nodeIds.fold(DcControlBreakdown.EMPTY) { acc, id ->
+                        acc + (gossipCounters[id]?.controlBreakdownWritten ?: DcControlBreakdown.EMPTY)
                     },
                     gossipPublishBytesSent = nodeIds.sumOf { gossipCounters[it]?.publishBytesWritten ?: 0 },
                     gossipPublishBytesReceived = nodeIds.sumOf { gossipCounters[it]?.publishBytesRead ?: 0 },

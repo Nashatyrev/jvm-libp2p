@@ -40,7 +40,7 @@ data class DcControlBreakdown(
     )
 
     /** One line per run or group: each part as a share of [totalBytes], largest first. */
-    fun render(nodeCount: Int): String {
+    fun render(nodeCount: Int, label: String = "gossip control breakdown"): String {
         val parts = listOf(
             "ihave" to ihaveBytes,
             "iwant" to iwantBytes,
@@ -52,7 +52,7 @@ data class DcControlBreakdown(
         val shares = parts.joinToString(" ") { (name, bytes) ->
             "$name=%.1f%%".format(if (totalBytes == 0L) 0.0 else bytes * 100.0 / totalBytes)
         }
-        return "gossip control breakdown: %.0f B/node %s; ids announced/node=%.0f requested/node=%.0f"
+        return "$label: %.0f B/node %s; ids announced/node=%.0f requested/node=%.0f"
             .format(
                 totalBytes.toDouble() / nodeCount,
                 shares,

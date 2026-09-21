@@ -57,6 +57,7 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
         Array(params.bucketCount) { AtomicLong(0) }
     }
     private val _controlBreakdownRead = ControlAccumulator()
+    private val _controlBreakdownWritten = ControlAccumulator()
 
     /** (type, message id) pairs this node has already seen, so a later copy is marked a duplicate. */
     private val _seenMessages = ConcurrentHashMap.newKeySet<Pair<DcSlotMessageType, Int>>()
@@ -114,6 +115,13 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
      */
     val controlBreakdownRead: DcControlBreakdown get() = _controlBreakdownRead.snapshot(controlBytesRead)
 
+    /**
+     * The same split for what this node *sent*. Network-wide the two agree, but per group they
+     * do not: the IWANT ids a slow node requests land as inbound IWANTs at its faster peers, so
+     * only the sent side says how much a group is asking for.
+     */
+    val controlBreakdownWritten: DcControlBreakdown get() = _controlBreakdownWritten.snapshot(controlBytesWritten)
+
     override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
         if (msg is Rpc.RPC) {
             count(msg, _publishBytesRead, _controlBytesRead, _readBySlot, _publishMessagesRead)
@@ -126,6 +134,7 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
     override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
         if (msg is Rpc.RPC) {
             count(msg, _publishBytesWritten, _controlBytesWritten, _writtenBySlot, _publishMessagesWritten)
+            _controlBreakdownWritten.add(msg)
         }
         super.write(ctx, msg, promise)
     }

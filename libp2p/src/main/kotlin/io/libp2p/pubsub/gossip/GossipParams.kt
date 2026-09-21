@@ -27,6 +27,32 @@ const val NEVER_FLOOD_PUBLISH = 0
 const val ALWAYS_FLOOD_PUBLISH = Int.MAX_VALUE
 
 /**
+ * What a router does with an IHAVE advertising a message it has not seen.
+ *
+ * The follow-up has historically been unconditional: every peer that advertises an id we have not
+ * seen *yet* is asked for it, with no check for a request already in flight. A node whose mesh
+ * deliveries run late therefore asks many peers for the same message and receives that many
+ * copies -- and the later it is, the more IHAVEs beat the message, so a congested link makes
+ * itself more congested.
+ */
+enum class IWantPolicy {
+    /** Ask every announcer. The original behaviour; kept as the default. */
+    ALL_ANNOUNCERS,
+
+    /**
+     * "Disciplined pulls", after ethresear.ch/t/26025 §2.2: keep an offer table of who has
+     * announced each id, ask [GossipParams.pullRequestsPerMessage] of them, move on to the next
+     * announcer after [GossipParams.pullRetryTimeout] without a delivery, and park a peer for
+     * [GossipParams.pullParkDuration] if it has still not delivered after
+     * [GossipParams.pullBrokenPromiseTimeout]. A late answer to a timed-out request is still taken.
+     */
+    DISCIPLINED,
+
+    /** Never ask. Messages arrive by mesh forwarding only; a measurement setting, not a proposal. */
+    NONE
+}
+
+/**
  * Parameters of Gossip 1.1 router
  */
 data class GossipParams(
@@ -259,21 +285,43 @@ data class GossipParams(
     val iDontWantTTL: Duration = 3.seconds,
 
     /**
-     * When false, an IHAVE advertisement for an unknown message is not followed up with an IWANT
-     * request, so the message is only ever received by mesh forwarding.
+     * How an IHAVE advertisement for a message we have not seen is followed up. See [IWantPolicy].
      *
-     * Serving *inbound* IWANT requests is unaffected; this only controls whether this router asks.
-     *
-     * Exists because the follow-up is unconditional: every peer that advertises an id we have not
-     * seen *yet* is asked for it, with no check for requests already in flight, so a node slow
-     * enough that IHAVEs outrun its mesh deliveries asks many peers for the same message and
-     * receives that many copies. Turning it off measures how much of a run's duplicate traffic
-     * that accounts for.
+     * Serving *inbound* IWANT requests is unaffected; this only controls whether and how this
+     * router asks.
      */
-    val iWantRequestsEnabled: Boolean = true
+    val iWantPolicy: IWantPolicy = IWantPolicy.ALL_ANNOUNCERS,
+
+    /**
+     * [IWantPolicy.DISCIPLINED] only: how many announcers are asked for a message at once. One by
+     * default -- the whole point is not to receive a copy per announcer.
+     */
+    val pullRequestsPerMessage: Int = 1,
+
+    /**
+     * [IWantPolicy.DISCIPLINED] only: how long an IWANT is given before we move on and ask the next
+     * announcer. The first request may still be answered after this; that is fine.
+     */
+    val pullRetryTimeout: Duration = 200.millis,
+
+    /**
+     * [IWantPolicy.DISCIPLINED] only: how long an IWANT is given before the peer is judged to have
+     * broken its promise and is parked for [pullParkDuration]. Must be at least [pullRetryTimeout].
+     */
+    val pullBrokenPromiseTimeout: Duration = 400.millis,
+
+    /**
+     * [IWantPolicy.DISCIPLINED] only: how long a peer that broke a promise is left out of the
+     * announcers we are willing to ask.
+     */
+    val pullParkDuration: Duration = 30.seconds
 
 ) {
     init {
+        check(pullRequestsPerMessage >= 1, "pullRequestsPerMessage should be >= 1")
+        check(!pullRetryTimeout.isNegative && !pullRetryTimeout.isZero, "pullRetryTimeout should be > 0")
+        check(pullBrokenPromiseTimeout >= pullRetryTimeout, "pullBrokenPromiseTimeout should be >= pullRetryTimeout")
+        check(!pullParkDuration.isNegative, "pullParkDuration should be >= 0")
         check(D >= 0, "D should be >= 0")
         check(DOut >= 0, "DOut should be >= 0")
         check(DLow >= 0, "DLow should be >= 0")

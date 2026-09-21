@@ -13,6 +13,7 @@ import io.libp2p.example.dc.DcSlotMessageTopics
 import io.libp2p.example.dc.DcSlotMessageType
 import io.libp2p.example.dc.peerGraph
 import io.libp2p.pubsub.gossip.GossipParams
+import io.libp2p.pubsub.gossip.IWantPolicy
 import io.libp2p.pubsub.gossip.builders.GossipParamsBuilder
 import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.ContinentRegion
 import org.assertj.core.api.Assertions
@@ -158,16 +159,20 @@ class DcScenarioRunnerTest {
             .also { if (!gossipEnabled) it.disableGossip() }
             .build()
 
-        // The 50/25 tier runs the same eth ladder as everyone else, and differs in one thing only: it
-        // does not follow up an IHAVE with an IWANT.
+        // Every group runs the same eth ladder. What varies is how an IHAVE for an unknown message is
+        // followed up -- see IWantPolicy -- because the original "ask every announcer" is what fills a
+        // slow link: at D=4/DHigh=4 the 50/25 tier saw 18 copies of each payload chunk against a mesh
+        // of 4, and never asking took that to 3.7 and its inbound traffic from 54.6 to 29.0 MB.
         //
-        // A measurement rather than a proposal. The follow-up is unconditional, so a node whose mesh
-        // deliveries are late asks every advertising peer for the same message: at D=4/DHigh=4 this
-        // tier saw 18 copies of each payload chunk against a mesh of 4, and turning the follow-up off
-        // took that to 3.7 and its inbound traffic from 54.6 to 29.0 MB. Restoring the mesh to the eth
-        // ladder asks whether the smaller mesh was doing any of that work, or none of it.
-        val homeGossipParams = meshParams(d = 8, dLow = 6, dHigh = 12, dLazy = 6)
-            .copy(iWantRequestsEnabled = false)
+        //   -Ddc.iwant=all_announcers|disciplined|none   policy under test (default disciplined)
+        //   -Ddc.iwantScope=home|all                     who runs it: the 50/25 tier, or everyone
+        //
+        // With scope=home the other groups keep asking every announcer, so they are the control.
+        val iWantPolicy = IWantPolicy.valueOf((System.getProperty("dc.iwant") ?: "disciplined").uppercase())
+        val iWantEverywhere = System.getProperty("dc.iwantScope") == "all"
+        val ethLadder = meshParams(d = 8, dLow = 6, dHigh = 12, dLazy = 6)
+        val defaultGossipParams = if (iWantEverywhere) ethLadder.copy(iWantPolicy = iWantPolicy) else ethLadder
+        val homeGossipParams = ethLadder.copy(iWantPolicy = iWantPolicy)
 
         val validatorCount = 1_000_000
         val slotDuration = 12.seconds
@@ -211,8 +216,7 @@ class DcScenarioRunnerTest {
             .defaults {
                 // Spread payload chunks across their own 64 meshes.
                 allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK)
-                // Every group but the 50/25 tier below runs the eth ladder.
-                gossipParams = meshParams(d = 8, dLow = 6, dHigh = 12, dLazy = 6)
+                gossipParams = defaultGossipParams
             }
             .addGroup(count = 100) {
                 name = "validator-pools"

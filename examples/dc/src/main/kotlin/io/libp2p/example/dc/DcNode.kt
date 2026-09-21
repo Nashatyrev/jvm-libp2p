@@ -84,13 +84,14 @@ data class DcNode<R>(
 }
 
 /**
- * The mesh degrees of [params] on one line — the fields a scenario is likely to vary between
- * groups, and the ones that change what a node does with its peers. Everything else about
- * [GossipParams] stays out of it, since a report line naming forty fields is a report line nobody
- * reads.
+ * The mesh degrees of [params] and its IWANT policy on one line — the fields a scenario is likely
+ * to vary between groups, and the ones that change what a node does with its peers. Everything
+ * else about [GossipParams] stays out of it, since a report line naming forty fields is a report
+ * line nobody reads.
  */
 internal fun meshDegreeSummary(params: GossipParams): String =
-    "D=${params.D} DLow=${params.DLow} DHigh=${params.DHigh} DLazy=${params.DLazy}"
+    "D=${params.D} DLow=${params.DLow} DHigh=${params.DHigh} DLazy=${params.DLazy} " +
+        "iwant=${params.iWantPolicy.name.lowercase()}"
 
 /** One logical subnet. Numeric ids are namespaced by the message-type family. */
 data class DcSubnetSubscription(

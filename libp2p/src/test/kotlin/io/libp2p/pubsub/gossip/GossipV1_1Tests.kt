@@ -485,7 +485,7 @@ class GossipV1_1Tests : GossipTestsBase() {
 
     @Test
     fun testIWantRequestsDisabled() {
-        val test = TwoRoutersTest(coreParams = GossipParams(iWantRequestsEnabled = false))
+        val test = TwoRoutersTest(coreParams = GossipParams(iWantPolicy = IWantPolicy.NONE))
 
         test.mockRouter.subscribe("topic1")
         test.gossipRouter.subscribe("topic1")

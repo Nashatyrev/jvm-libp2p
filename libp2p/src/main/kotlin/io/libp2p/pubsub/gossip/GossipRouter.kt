@@ -13,6 +13,7 @@ import java.time.Duration
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.collections.Collection
@@ -125,6 +126,29 @@ open class GossipRouter(
     private val peerIHave = createLRUMap<PeerHandler, AtomicInteger>(MaxPeerIHaveEntries)
     private val iWantRequests = createLRUMap<Pair<PeerHandler, MessageId>, Long>(MaxIWantRequestsEntries)
     private val peerIDontWant = createLRUMap<PeerHandler, IDontWantCacheEntry>(MaxPeerIDontWantEntries)
+
+    /**
+     * [IWantPolicy.DISCIPLINED] state for one message we have been told about but have not received:
+     * who has offered it and whom we have asked, so we ask one announcer at a time instead of all.
+     */
+    private class PullState(val createdAt: Long) {
+        /** Announcers not yet asked, in the order they offered. */
+        val offers = linkedSetOf<PeerHandler>()
+
+        /** Peer -> time we sent it an IWANT. Entries leave when the peer breaks its promise. */
+        val asked = linkedMapOf<PeerHandler, Long>()
+
+        /** When the outstanding request is given up on and the next offer is asked. */
+        var retryAt: Long = Long.MAX_VALUE
+    }
+
+    private val pulls = createLRUMap<MessageId, PullState>(MaxIWantRequestsEntries)
+
+    /** Peers that broke a pull promise, with the time they may be asked again. */
+    private val parkedPeers = createLRUMap<PeerHandler, Long>(MaxPeerIHaveEntries)
+
+    /** The one pending [pullSweep], or null. Timeouts are all equal, so requests expire in order. */
+    private var pullSweepTask: ScheduledFuture<*>? = null
     private val heartbeatTask by lazy {
         executor.scheduleWithFixedDelay(
             ::catchingHeartbeat,
@@ -347,6 +371,8 @@ open class GossipRouter(
         if (iWantRequests.remove(peer to msg.messageId) != null) {
             notifyIWantComplete(peer, msg)
         }
+        // Whoever delivered it, the pull is over: no retry, and a late answer is simply taken.
+        pulls.remove(msg.messageId)
     }
 
     protected open fun notifyAnyValidMessage(peer: PeerHandler, msg: PubsubMessage) {
@@ -471,7 +497,7 @@ open class GossipRouter(
 
     private fun handleIHave(msg: Rpc.ControlIHave, peer: PeerHandler) {
         // nothing to do with an advertisement we are not going to follow up on
-        if (!params.iWantRequestsEnabled) return
+        if (params.iWantPolicy == IWantPolicy.NONE) return
         // we ignore IHAVE gossip for unknown topics
         if (msg.hasTopicID() && !mesh.containsKey(msg.topicID)) {
             return
@@ -489,12 +515,130 @@ open class GossipRouter(
             return
         }
 
-        val iWant = msg.messageIDsList
+        val unseen = msg.messageIDsList
             .map { it.toWBytes() }
             .filterNot { seenMessages.isSeen(it) }
-        val maxToAsk = min(iWant.size, params.maxIHaveLength - asked.get())
-        asked.addAndGet(maxToAsk)
-        iWant(peer, iWant.shuffled(random).subList(0, maxToAsk))
+        val budget = params.maxIHaveLength - asked.get()
+        when (params.iWantPolicy) {
+            IWantPolicy.ALL_ANNOUNCERS -> {
+                val maxToAsk = min(unseen.size, budget)
+                asked.addAndGet(maxToAsk)
+                iWant(peer, unseen.shuffled(random).subList(0, maxToAsk))
+            }
+            IWantPolicy.DISCIPLINED -> asked.addAndGet(offerDisciplined(peer, unseen.distinct(), budget))
+            IWantPolicy.NONE -> Unit
+        }
+    }
+
+    /**
+     * [IWantPolicy.DISCIPLINED]: records [peer] as an announcer of each id, and asks it only for
+     * the ids nobody is currently being asked for -- or whose outstanding request has already run
+     * past [GossipParams.pullRetryTimeout], in which case a fresh announcer is exactly what we were
+     * waiting for. Everything else waits in the offer table for [pullSweep]. Returns how many ids
+     * [peer] was asked for, so the caller can charge its IHAVE budget.
+     */
+    private fun offerDisciplined(peer: PeerHandler, ids: List<MessageId>, budget: Int): Int {
+        val now = currentTimeSupplier()
+        // A parked peer is not someone we would ask, so there is no point remembering its offers.
+        if (isParked(peer, now)) return 0
+        val askNow = mutableListOf<MessageId>()
+        ids.forEach { id ->
+            val state = pulls.getOrPut(id) { PullState(now) }
+            if (peer in state.asked) return@forEach
+            val outstanding = state.asked.values.count { now - it < params.pullBrokenPromiseTimeout.toMillis() }
+            val wantMore = outstanding < params.pullRequestsPerMessage || now >= state.retryAt
+            if (wantMore && askNow.size < budget) {
+                state.offers -= peer
+                state.asked[peer] = now
+                state.retryAt = now + params.pullRetryTimeout.toMillis()
+                askNow += id
+            } else {
+                state.offers += peer
+            }
+        }
+        iWant(peer, askNow)
+        schedulePullSweep()
+        return askNow.size
+    }
+
+    /**
+     * Expires outstanding pull requests: a request past [GossipParams.pullRetryTimeout] moves the
+     * pull on to the next announcer in the offer table, and one past
+     * [GossipParams.pullBrokenPromiseTimeout] parks the peer that made it. A pull with nothing in
+     * flight and nobody left to ask is dropped -- the message may still arrive by the mesh, and a
+     * later IHAVE simply starts it again.
+     */
+    private fun pullSweep() {
+        val now = currentTimeSupplier()
+        val retry = params.pullRetryTimeout.toMillis()
+        val broken = params.pullBrokenPromiseTimeout.toMillis()
+        val staleAfter = params.iWantFollowupTime.toMillis()
+        // Unlike an inbound RPC, a timer has no flush at the end of its handling: do it ourselves.
+        val askedPeers = mutableSetOf<PeerHandler>()
+        val pending = pulls.entries.iterator()
+        while (pending.hasNext()) {
+            val (id, state) = pending.next()
+            if (seenMessages.isSeen(id) || now - state.createdAt > staleAfter) {
+                pending.remove()
+                continue
+            }
+            state.asked.entries.removeIf { (peer, askedAt) ->
+                val brokenPromise = now - askedAt >= broken
+                if (brokenPromise) park(peer, now)
+                brokenPromise
+            }
+            if (now >= state.retryAt) {
+                state.offers.removeIf { offer -> isParked(offer, now) || offer in state.asked }
+                val next = state.offers.firstOrNull()
+                if (next != null) {
+                    state.offers -= next
+                    state.asked[next] = now
+                    state.retryAt = now + retry
+                    iWant(next, listOf(id))
+                    askedPeers += next
+                } else {
+                    state.retryAt = Long.MAX_VALUE
+                }
+            }
+            if (state.asked.isEmpty() && state.offers.isEmpty()) pending.remove()
+        }
+        askedPeers.forEach { flushPending(it) }
+        pullSweepTask = null
+        schedulePullSweep()
+    }
+
+    /** Arms the single sweep timer for the earliest thing that can expire, if anything is pending. */
+    private fun schedulePullSweep() {
+        if (pullSweepTask != null || pulls.isEmpty()) return
+        val now = currentTimeSupplier()
+        val broken = params.pullBrokenPromiseTimeout.toMillis()
+        val next = pulls.values.minOf { state ->
+            min(state.retryAt, state.asked.values.minOfOrNull { it + broken } ?: Long.MAX_VALUE)
+        }
+        val delay = (next - now).coerceIn(0L, params.iWantFollowupTime.toMillis())
+        pullSweepTask = executor.schedule(
+            {
+                try {
+                    pullSweep()
+                } catch (e: Exception) {
+                    pullSweepTask = null
+                    onServiceException(null, null, e)
+                }
+            },
+            delay,
+            TimeUnit.MILLISECONDS
+        )
+    }
+
+    private fun park(peer: PeerHandler, now: Long) {
+        parkedPeers[peer] = now + params.pullParkDuration.toMillis()
+    }
+
+    private fun isParked(peer: PeerHandler, now: Long): Boolean {
+        val until = parkedPeers[peer] ?: return false
+        if (until > now) return true
+        parkedPeers -= peer
+        return false
     }
 
     private fun handleIWant(msg: Rpc.ControlIWant, peer: PeerHandler) {
