@@ -256,7 +256,21 @@ data class GossipParams(
     /**
      * [iDontWantTTL] Expiry time for cache of received IDONTWANT messages for peers
      */
-    val iDontWantTTL: Duration = 3.seconds
+    val iDontWantTTL: Duration = 3.seconds,
+
+    /**
+     * When false, an IHAVE advertisement for an unknown message is not followed up with an IWANT
+     * request, so the message is only ever received by mesh forwarding.
+     *
+     * Serving *inbound* IWANT requests is unaffected; this only controls whether this router asks.
+     *
+     * Exists because the follow-up is unconditional: every peer that advertises an id we have not
+     * seen *yet* is asked for it, with no check for requests already in flight, so a node slow
+     * enough that IHAVEs outrun its mesh deliveries asks many peers for the same message and
+     * receives that many copies. Turning it off measures how much of a run's duplicate traffic
+     * that accounts for.
+     */
+    val iWantRequestsEnabled: Boolean = true
 
 ) {
     init {

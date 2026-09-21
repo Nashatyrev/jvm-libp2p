@@ -158,10 +158,16 @@ class DcScenarioRunnerTest {
             .also { if (!gossipEnabled) it.disableGossip() }
             .build()
 
-        // The eth ladder, halved, for the 50/25 tier only: its downlink is the one that saturates,
-        // and most of what fills it is duplicate copies arriving from mesh peers. mid-home stays on
-        // the default ladder as the control.
-        val homeGossipParams = meshParams(d = 4, dLow = 3, dHigh = 6, dLazy = 3)
+        // The 50/25 tier runs the same eth ladder as everyone else, and differs in one thing only: it
+        // does not follow up an IHAVE with an IWANT.
+        //
+        // A measurement rather than a proposal. The follow-up is unconditional, so a node whose mesh
+        // deliveries are late asks every advertising peer for the same message: at D=4/DHigh=4 this
+        // tier saw 18 copies of each payload chunk against a mesh of 4, and turning the follow-up off
+        // took that to 3.7 and its inbound traffic from 54.6 to 29.0 MB. Restoring the mesh to the eth
+        // ladder asks whether the smaller mesh was doing any of that work, or none of it.
+        val homeGossipParams = meshParams(d = 8, dLow = 6, dHigh = 12, dLazy = 6)
+            .copy(iWantRequestsEnabled = false)
 
         val validatorCount = 1_000_000
         val slotDuration = 12.seconds

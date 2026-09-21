@@ -470,6 +470,8 @@ open class GossipRouter(
     }
 
     private fun handleIHave(msg: Rpc.ControlIHave, peer: PeerHandler) {
+        // nothing to do with an advertisement we are not going to follow up on
+        if (!params.iWantRequestsEnabled) return
         // we ignore IHAVE gossip for unknown topics
         if (msg.hasTopicID() && !mesh.containsKey(msg.topicID)) {
             return

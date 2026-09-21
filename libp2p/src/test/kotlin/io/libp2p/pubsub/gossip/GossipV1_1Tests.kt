@@ -484,6 +484,37 @@ class GossipV1_1Tests : GossipTestsBase() {
     }
 
     @Test
+    fun testIWantRequestsDisabled() {
+        val test = TwoRoutersTest(coreParams = GossipParams(iWantRequestsEnabled = false))
+
+        test.mockRouter.subscribe("topic1")
+        test.gossipRouter.subscribe("topic1")
+
+        test.fuzz.timeController.addTime(2.seconds)
+
+        test.mockRouter.inboundMessages.clear()
+
+        val msgId = "messageId-1".toByteArray().toProtobuf()
+        test.mockRouter.sendToSingle(
+            Rpc.RPC.newBuilder().setControl(
+                Rpc.ControlMessage.newBuilder().addIhave(
+                    Rpc.ControlIHave.newBuilder()
+                        .setTopicID("topic1")
+                        .addMessageIDs(msgId)
+                )
+            ).build()
+        )
+        test.fuzz.timeController.addTime(100.millis)
+
+        // the advertisement is simply dropped: the message can still arrive by mesh forwarding
+        assertEquals(
+            0,
+            test.mockRouter.inboundMessages
+                .count { it.hasControl() && it.control.iwantCount > 0 }
+        )
+    }
+
+    @Test
     fun testLimitIWantEntries() {
         val test = TwoRoutersTest()
 
