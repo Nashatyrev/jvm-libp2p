@@ -115,6 +115,20 @@ data class DcRunConfig(
     val messages: List<DcSlotMessageConfig> = emptyList(),
     /** Bucket width of [DcRunReport.slotTraffic], the per-message-type intra-slot profile. */
     val slotTrafficBucketDuration: Duration = 100.milliseconds,
+    /**
+     * Offset into a *warm-up* slot before which nothing is published, so a warm-up slot can be run
+     * as only its tail. Zero -- the default -- runs warm-up slots in full.
+     *
+     * A warm-up slot exists to leave the measured slot a network that is already carrying traffic:
+     * formed meshes, warm congestion windows, a populated mcache, and the previous slot's tail
+     * still in flight. Most of that is established by the end of the slot, while most of the *cost*
+     * is the bulk data at its start -- so publishing a warm-up slot from, say, 6s buys much of the
+     * effect at a fraction of the wall clock. How much is lost is a question for the scenario to
+     * answer by comparing against a full warm-up slot, not something to assume.
+     *
+     * Applies only to the slots [warmupSlots] covers; the measured slots always publish in full.
+     */
+    val warmupSlotStart: Duration = Duration.ZERO,
     val randomSeed: Long = 0
 ) {
     init {
@@ -123,6 +137,12 @@ data class DcRunConfig(
         }
         require(slotTrafficBucketDuration.isPositive()) {
             "slotTrafficBucketDuration must be > 0, got $slotTrafficBucketDuration"
+        }
+        require(!warmupSlotStart.isNegative() && warmupSlotStart < slotInterval) {
+            "warmupSlotStart must be in [0, $slotInterval), got $warmupSlotStart"
+        }
+        require(warmupSlotStart == Duration.ZERO || warmupSlots > 0) {
+            "warmupSlotStart only applies to warm-up slots, and this run has none"
         }
         val configs = messages + listOfNotNull(blocks?.asSlotMessageConfig())
         // Keyed on (type, publishOffset) rather than type alone, so one type may appear several
@@ -423,14 +443,27 @@ object DcScenario {
             .toMap()
         var nextMessageId = 0
         return configs.mapIndexed { index, message ->
-            DcSlotMessageSchedule.create(
+            val schedule = DcSlotMessageSchedule.create(
                 network = network,
                 slots = config.slots,
                 config = message,
                 randomSeed = config.randomSeed + index,
                 firstMessageId = nextMessageId,
                 waveIndex = slotIndexOf.getValue(message)
-            ).also { nextMessageId += it.messages.size }
+            )
+            // Ids are handed out from the unfiltered schedule, so dropping messages below leaves
+            // gaps rather than renumbering -- ids only have to be unique, and the slot indices of
+            // what remains still line up with DcRunConfig.warmupSlots.
+            nextMessageId += schedule.messages.size
+            if (message.publishOffset >= config.warmupSlotStart) {
+                schedule
+            } else {
+                DcSlotMessageSchedule(
+                    schedule.slotTimes,
+                    message,
+                    schedule.messages.filter { it.slotIndex >= config.warmupSlots }
+                )
+            }
         }
     }
 

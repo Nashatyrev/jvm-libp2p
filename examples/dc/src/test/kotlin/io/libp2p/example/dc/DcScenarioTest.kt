@@ -4,6 +4,7 @@ import io.libp2p.pubsub.gossip.GossipParams
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -501,6 +502,44 @@ class DcScenarioTest {
             .isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining("group 'home'")
             .hasMessageContaining("maxGossipMessageSize=1024")
+    }
+
+    @Test
+    fun `warmupSlotStart publishes only the tail of a warm-up slot`() {
+        val network = population(nodeCount = 12, subnetCount = 4, subnetsPerNode = 2, peers = 5)
+        val config = DcRunConfig(
+            slotCount = 2,
+            warmupSlots = 1,
+            slotInterval = 12.seconds,
+            messages = ffgWaves(waves = 4, subnetCount = 4),
+            warmupSlotStart = 2.seconds
+        )
+
+        val schedules = DcScenario.defaultMessageSchedules(network, config)
+        val slotsOf = { offset: Duration ->
+            schedules.single { it.config.publishOffset == offset }.messages.map { it.slotIndex }.distinct().sorted()
+        }
+
+        // waves at 0s and 1s are skipped in the warm-up slot, the ones from 2s run in both
+        assertThat(slotsOf(0.seconds)).describedAs("wave @0s").containsExactly(1)
+        assertThat(slotsOf(1.seconds)).describedAs("wave @1s").containsExactly(1)
+        assertThat(slotsOf(2.seconds)).describedAs("wave @2s").containsExactly(0, 1)
+        assertThat(slotsOf(3.seconds)).describedAs("wave @3s").containsExactly(0, 1)
+
+        // ids stay unique across schedules: dropped messages leave gaps rather than renumbering
+        val allIds = schedules.flatMap { schedule -> schedule.messages.map { it.id } }
+        assertThat(allIds).doesNotHaveDuplicates()
+    }
+
+    @Test
+    fun `warmupSlotStart is rejected without a warm-up slot`() {
+        assertThatThrownBy {
+            DcRunConfig(
+                slotCount = 1,
+                messages = ffgWaves(waves = 2, subnetCount = 4),
+                warmupSlotStart = 2.seconds
+            )
+        }.hasMessageContaining("only applies to warm-up slots")
     }
 
     @Test

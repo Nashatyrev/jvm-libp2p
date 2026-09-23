@@ -186,8 +186,10 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
         val iwant = AtomicLong(0)
         val graft = AtomicLong(0)
         val prune = AtomicLong(0)
+        val idontwant = AtomicLong(0)
         val ihaveIds = AtomicLong(0)
         val iwantIds = AtomicLong(0)
+        val idontwantIds = AtomicLong(0)
 
         fun add(rpc: Rpc.RPC) {
             rpc.subscriptionsList.forEach { subscriptions.addAndGet(encodedFieldSize(it)) }
@@ -203,6 +205,10 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
             }
             control.graftList.forEach { graft.addAndGet(encodedFieldSize(it)) }
             control.pruneList.forEach { prune.addAndGet(encodedFieldSize(it)) }
+            control.idontwantList.forEach {
+                idontwant.addAndGet(encodedFieldSize(it))
+                idontwantIds.addAndGet(it.messageIDsCount.toLong())
+            }
         }
 
         /**
@@ -215,8 +221,10 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
             iwantBytes = iwant.get(),
             graftBytes = graft.get(),
             pruneBytes = prune.get(),
+            idontwantBytes = idontwant.get(),
             ihaveMessageIds = ihaveIds.get(),
             iwantMessageIds = iwantIds.get(),
+            idontwantMessageIds = idontwantIds.get(),
             totalBytes = total
         )
     }

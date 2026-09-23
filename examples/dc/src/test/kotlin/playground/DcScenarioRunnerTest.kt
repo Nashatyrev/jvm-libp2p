@@ -20,6 +20,7 @@ import org.assertj.core.api.Assertions
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import kotlin.collections.flatten
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -177,10 +178,15 @@ class DcScenarioRunnerTest {
         val validatorCount = 1_000_000
         val slotDuration = 12.seconds
         val ffgAttestationSize = 240
-        val ffgSlots = 4
+        // Slots an epoch spreads its attestations over: each validator attests once per epoch, so
+        // raising this divides both the votes published per wave and the aggregate's bitfield --
+        // aggregateSlotsPerEpoch follows it, and the bitfield covers one slot's share of a subnet.
+        val ffgSlots = System.getProperty("dc.ffgSlots")?.toInt() ?: 4
         val ffgWavesPerSlot = 12
         val ffgSubnetsCount = 64
-        val ffgResidentialSubnets = 1
+        // Attestation subnets each residential node (upper-home, mid-home, home) subscribes to.
+        // Doubling it doubles the vote traffic those tiers carry without touching anything else.
+        val ffgResidentialSubnets = System.getProperty("dc.homeFfgSubnets")?.toInt() ?: 1
         val blockSize = 8 * 1024
         val blockPayloadSize = 1024 * 1024
         val numberOfBlobs = 21
@@ -202,8 +208,23 @@ class DcScenarioRunnerTest {
         val ffgCompression = System.getProperty("dc.ffgCompression")?.toInt() ?: 1
         // Extra slots exist to be thrown away: by default every slot but the last is warm-up, so the
         // headline figures describe a network that has already carried a slot's worth of traffic.
-        val slotCount = System.getProperty("dc.slots")?.toInt() ?: 1
+        // Two slots by default, because a measured slot with a predecessor is a different network
+        // from a cold one: the same run measured ffg p99 at 2.12s behind a warm-up slot and 1.61s
+        // without one, and blob p50 at 492ms against 787ms.
+        val slotCount = System.getProperty("dc.slots")?.toInt() ?: 2
         val warmupSlots = System.getProperty("dc.warmupSlots")?.toInt() ?: (slotCount - 1)
+        // The warm-up slot publishes only its last four seconds. A full one costs as much wall clock
+        // as the measured slot -- 37m39s against 24m31s for this run -- and most of that cost buys
+        // nothing: measured attestations, aggregates, duplicate share and link utilisation all came
+        // back within a few percent of the full-warm-up figures. What it does cost is the bulk-data
+        // tail the measured slot inherits, so payload-chunk p50 reads ~25% high and copies per chunk
+        // ~30% high. Use -Ddc.warmupFrom=0 when those are the answer, or 6 for a middle ground
+        // (2 minutes dearer, and closer on blob p99 and the first aggregate wave).
+        val warmupSlotStart = if (warmupSlots == 0) {
+            Duration.ZERO
+        } else {
+            (System.getProperty("dc.warmupFrom")?.toInt() ?: 8).seconds
+        }
 
         val network = DcNetworkBuilder
             .world(
@@ -357,6 +378,7 @@ class DcScenarioRunnerTest {
                         )
                     }
             ).flatten(),
+            warmupSlotStart = warmupSlotStart,
         )
 
         val report = DcScenario.run(
