@@ -1,4 +1,4 @@
-# Streaming compression for gossipsub: 27–37% less inbound CL gossip with a 64 KiB Snappy history
+# Streaming compression for gossipsub: up to x2 less traffic 
 
 ## TL;DR
 
