@@ -15,7 +15,10 @@ Today every gossip message is compressed with Snappy on its own. Compressing the
 - **Keeping context across messages is what gains.** Plain LZ77 with a 64 KiB per-stream history, in the unmodified Snappy block format, receives:
   - **73% of today's bytes on a default node** (zstd with a per-stream context: 67%);
   - **63% on an all-subnets node** (zstd: 51%);
-  - **42% for attestations** in both cases.
+  - **42% for attestations and 63% for aggregates** in both cases.
+- **It also addresses two known inefficiencies without dedicated protocol changes:**
+  - the topic string sent with every message shrinks to a few-byte back-reference;
+  - the `AttestationData` repeated across a slot's attestations and aggregates is effectively sent once per stream and then referenced. What is left of an attestation (~117 bytes) is essentially its signature and indices.
 - **The decoder** is today's Snappy decoder plus a history buffer, with the same decompression-bomb bound.
 - **Prototype:** in jvm-libp2p, as `/snappy-stream<protocol>`, negotiated per stream with fallback to the plain protocol.
 
