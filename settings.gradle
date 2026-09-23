@@ -20,6 +20,7 @@ rootProject.name = 'jvm-libp2p'
 
 include ':libp2p'
 include ':tools:schedulers'
+include ':tools:gossip-compression'
 include ':tools:quic-simulator'
 include ':examples:chatter'
 include ':examples:dc'

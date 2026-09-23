@@ -1,0 +1,23 @@
+// Offline study: how much a stateful (streaming) compressor would save on real gossipsub traffic
+// compared with the per-message snappy used by eth2 today. Input is a dump written by Teku's
+// GossipRecordingHandler (*.grec files).
+//
+//   ./gradlew :tools:gossip-compression:installDist
+//   tools/gossip-compression/build/install/gossip-compression/bin/gossip-compression <rec-dir> <out-dir>
+
+apply plugin: 'application'
+
+dependencies {
+  implementation project(':libp2p')
+  implementation("com.google.protobuf:protobuf-java")
+  implementation("org.xerial.snappy:snappy-java:1.1.10.7")
+  implementation("com.github.luben:zstd-jni:1.5.7-4")
+  implementation("com.aayushatharva.brotli4j:brotli4j:1.18.0")
+  runtimeOnly("com.aayushatharva.brotli4j:native-osx-aarch64:1.18.0")
+  runtimeOnly("com.aayushatharva.brotli4j:native-linux-x86_64:1.18.0")
+}
+
+application {
+  mainClass = 'io.libp2p.tools.gossipcompression.MainKt'
+  applicationDefaultJvmArgs = ['-Xmx256g']
+}
