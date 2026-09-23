@@ -16,6 +16,7 @@ import io.libp2p.core.multistream.MultistreamProtocol
 import io.libp2p.core.multistream.MultistreamProtocolDebug
 import io.libp2p.core.multistream.MultistreamProtocolV1
 import io.libp2p.core.multistream.ProtocolBinding
+import io.libp2p.core.multistream.ProtocolMatcher
 import io.libp2p.core.mux.StreamMuxer
 import io.libp2p.core.mux.StreamMuxerDebug
 import io.libp2p.core.mux.StreamMuxerProtocol
@@ -26,6 +27,7 @@ import io.libp2p.etc.types.toProtobuf
 import io.libp2p.etc.util.netty.LoggingHandlerShort
 import io.libp2p.host.HostImpl
 import io.libp2p.host.MemoryAddressBook
+import io.libp2p.multistream.MultistreamProtocolDebugV1
 import io.libp2p.network.NetworkImpl
 import io.libp2p.protocol.IdentifyBinding
 import io.libp2p.security.noise.NoiseXXSecureChannel
@@ -69,6 +71,14 @@ open class Builder {
     var secureMultistreamProtocol: MultistreamProtocol by lazyVar { multistreamProtocol }
     var muxerMultistreamProtocol: MultistreamProtocol by lazyVar { multistreamProtocol }
     var streamMultistreamProtocol: MultistreamProtocol by lazyVar { multistreamProtocol }
+
+    /**
+     * Protocols whose outbound streams are offered `/snappy-stream` compressed first, falling back
+     * to the plain protocol when the remote doesn't support it (see [io.libp2p.compression.SnappyStreamCompression]).
+     * Once set, inbound compressed streams are accepted for every local protocol. `null` (the
+     * default) disables it. Applies to muxed (TCP/WebSocket) streams; QUIC streams don't use it yet.
+     */
+    var streamCompression: ProtocolMatcher? = null
 
     /**
      * Sets an identity for this host. If unset, libp2p will default to a random identity.
@@ -156,6 +166,11 @@ open class Builder {
                 val broadcast = ChannelVisitor.createBroadcast(*debug.afterSecureHandler.handlers.toTypedArray())
                 muxerMultistreamProtocol = it.copyWithHandlers(preHandler = broadcast.toChannelHandler())
             } ?: throw IllegalStateException("afterSecureHandler can't be installed as MultistreamProtocol doesn't support debugging interface: ${muxerMultistreamProtocol.javaClass}")
+        }
+
+        streamCompression?.also { matcher ->
+            streamMultistreamProtocol = (streamMultistreamProtocol as? MultistreamProtocolDebugV1)?.withStreamCompression(matcher)
+                ?: throw IllegalStateException("streamCompression requires MultistreamProtocolDebugV1, got ${streamMultistreamProtocol.javaClass}")
         }
 
         val streamVisitors = ChannelVisitor.createBroadcast<Stream>()
