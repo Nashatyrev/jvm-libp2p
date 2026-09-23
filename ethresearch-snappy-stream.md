@@ -92,6 +92,29 @@ Data column sidecars stay at ~96% under every per-stream compressor.
 6. **Static dictionaries age quickly.** On a 5-minute test a per-topic dictionary gave 81% on attestations; trained 20 minutes before the evaluation window, it gives 96–98%. The useful dictionary content seems to be the current epoch's checkpoints, which a stream context picks up by itself.
 7. **Cross-peer redundancy is duplicate delivery, not compressible structure.** With a context shared across *all* peers (not implementable, since each connection is decoded separately), a default node would receive 39.5% of today's bytes: aggregates 40%, blocks 11%. That is the same message arriving from several peers; IDONTWANT and friends address it, compression shouldn't.
 
+## Live check: three Teku nodes on mainnet
+
+We also ran the prototype between real nodes on mainnet, all subnets subscribed.
+- **Topology:** a hub node (supernode) connected to the network. Nodes 2 and 3 are connected only to the hub, as direct peers.
+- **Node 2** receives plain gossip. **Node 3** receives `/snappy-stream` with raw SSZ payloads.
+- **Window:** 40 minutes, after a 5-minute warm-up, with both nodes following the head.
+
+| Inbound gossip stream, 40 min | Node 2 (plain) | Node 3 (`/snappy-stream`) |
+|---|---|---|
+| Bytes on the wire | 1349.6 MB | **594.7 MB (44.1%)** |
+| Same data decoded | 1349.6 MB | 1441.0 MB (raw SSZ is 6.8% larger than Snappy) |
+| Messages: attestations / aggregates / blocks / columns / sync committee | 4 817 407 / 18 962 / 199 / 1 358 / 80 046 | identical |
+
+**What it confirms.**
+- **Both nodes saw the same stream:** message counts match exactly in every category.
+- **Node 3 worked normally:** it followed the head, and messages validated after re-compressing to Snappy on receipt. There were no errors and no lost records.
+- **The result matches the offline estimate.** 95% of this stream is attestations, one copy of each; offline, attestations came out at 42% with a 64 KiB history.
+
+**What it doesn't show.**
+- **No control traffic.** The hub sends direct peers no IHAVE or GRAFT, so the window has no IHAVE, IWANT or IDONTWANT at all. On an all-subnets node control is 35% of inbound bytes and compresses poorly at 64 KiB (93%). On a real mesh stream we expect the total to land close to the offline 63%, not at 44%.
+- **No duplicates:** every message arrived exactly once.
+- **CPU wasn't measured.** Node 3 also runs the codec and re-compresses to Snappy on receipt; the hub decompresses before sending.
+
 ## Proposal: `/snappy-stream`
 
 Our constraint is that the decoder must stay as simple and as hardened as what clients already run. Zip bombs and complex parsers (Huffman/FSE tables, large dictionaries) are exactly the attack surface we don't want to grow.
