@@ -4,14 +4,6 @@ Today every gossip message is compressed with Snappy on its own. Compressing the
 
 ## TL;DR
 
-- **Recording:** one hour of real mainnet gossip from a Teku node subscribed to all attestation subnets, replayed offline through different compressors.
-- **Default-node view:** we also cut the recording down to what a node with default subscriptions would receive over the same connections: 2 attestation subnets, no sync committee subnets, everything global.
-- **All numbers are inbound traffic.**
-- Today's per-message Snappy leaves a lot on the table. Most of the redundancy is *between* messages on the same stream, and a per-message compressor can't see it:
-  - the topic string, repeated in every message;
-  - the `AttestationData` shared by a slot's attestations;
-  - message ids repeated across IHAVE/IWANT/IDONTWANT.
-- **Changing only the algorithm gains nothing:** per-message zstd gets 96–100% of today's bytes.
 - **Keeping context across messages is what gains.** Plain LZ77 with a 64 KiB per-stream history, in the unmodified Snappy block format, receives:
   - **73% of today's bytes on a default node** (zstd with a per-stream context: 67%);
   - **63% on an all-subnets node** (zstd: 51%);
@@ -20,17 +12,6 @@ Today every gossip message is compressed with Snappy on its own. Compressing the
   - the topic string sent with every message shrinks to a few-byte back-reference;
   - the `AttestationData` repeated across a slot's attestations and aggregates is effectively sent once per stream and then referenced. What is left of an attestation (~117 bytes) is essentially its signature and indices.
 - **The decoder** is today's Snappy decoder plus a history buffer, with the same decompression-bomb bound.
-- **Prototype:** in jvm-libp2p, as `/snappy-stream<protocol>`, negotiated per stream with fallback to the plain protocol.
-
-## Why look at this
-
-Eth2 gossip compresses each payload independently with Snappy. That works well for blocks: raw SSZ blocks are 2.4× their Snappy size. It does little for the small messages:
-
-- **A `SingleAttestation`** is ~240 bytes of SSZ: indices, a 128-byte `AttestationData` and a 96-byte signature. Snappy saves ~5% on it.
-- **The protobuf envelope isn't compressed.** It carries the topic string (`/eth2/<digest>/beacon_attestation_N/ssz_snappy`, 47 bytes) in every message. That is ~17% of an attestation on the wire.
-- **Control isn't compressed either.** IHAVE/IWANT/IDONTWANT are lists of 20-byte message ids.
-
-Consecutive messages on one stream are highly redundant, though: same topics, same `AttestationData` within a slot, the same message ids again and again.
 
 ## Measurement
 
@@ -160,19 +141,3 @@ Any violation closes the stream, since the state can't be resynced. The largest 
 - **Latency.** None added: every write is flushed immediately.
 - **Layering.** This lives below gossipsub, as a libp2p stream feature. It needs agreement across libp2p implementations (go, rust, nim, js, jvm, …), not only among CL clients.
 
-## Caveats
-
-- **One node's view.**
-  - ~45 peers, behind NAT, so few inbound connections.
-  - No validators.
-  - Execution layer replaced by a stub. To keep gossiping attestations with an always-optimistic head, we had to override Teku's optimistic-sync topic gating.
-- **The default-node profile is derived by filtering the all-subnets recording,** not recorded by a real 2-subnet node.
-- **Only custody data-column subnets were recorded.**
-- **Per-category splits for whole-frame stream compressors are proportional attributions.** Totals are exact.
-
-## Questions for the community
-
-1. Is a libp2p-level stream compression feature (negotiated per stream by id prefix) the right layer? Or should it be a new gossipsub protocol version?
-2. Are other client teams willing to take a Snappy decoder extended with a 64 KiB history? Or do you prefer LZ4 block with prefix dictionary, which is similar and gives the same numbers?
-3. On a default node the gain is ~27%, and most of what is left is blocks, columns and duplicate deliveries. Is that worth a protocol change on its own, or only together with larger attestation traffic (e.g. more validators per node, supernodes, future designs with more attestation gossip)?
-4. Would someone with a different node profile (supernode, validators, more inbound peers) re-run the recording? The recorder is a small Teku patch.
