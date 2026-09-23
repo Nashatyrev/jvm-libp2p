@@ -97,7 +97,14 @@ The prototype codec counts time with `System.nanoTime()` around every block, on 
 - **A block averages ~2 KB,** i.e. almost always one message per write.
 - **Rough estimate for a real node:** one peer's ~0.54 MB/s stream costs 0.44% of a core. Compressing a separate stream for each of ~8 mesh peers is on the order of 3–4% of one core with this encoder.
 
-## Proposal: `/snappy-stream`
+## Integration
+
+1. **Ideally, a generic libp2p feature.** Stream compression would be available for any libp2p stream, not tied to gossipsub, and any protocol could opt into it.
+2. **To start, an optional extra protocol for gossip.** For example `/snappy-stream/meshsub/1.2.0`, offered alongside the plain `/meshsub/1.2.0`.
+   - A peer that doesn't support it simply negotiates the plain protocol.
+   - The stream is compressed, but what it decompresses to is the ordinary gossipsub RPC stream with the usual `ssz_snappy` payloads. Message ids, validation and the rest of the gossip stack don't change.
+   - So the implementation is simple: a codec in front of the gossip stream. The live run above shows this already gives 43% on attestation-heavy traffic.
+3. **Later, once compressed streams are widely adopted, the per-message Snappy inside payloads could be dropped.** Payloads would travel as raw SSZ inside the compressed stream. That mostly helps blocks and data columns, and needs a new topic encoding (e.g. `/ssz` instead of `/ssz_snappy`).
 
 
 
