@@ -5,6 +5,7 @@ import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.ByteToMessageCodec
 import io.netty.handler.codec.CorruptedFrameException
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Compresses a whole stream with [SnappyHistoryEncoder] / [SnappyHistoryDecoder].
@@ -43,7 +44,9 @@ class SnappyStreamCodec(
         while (msg.isReadable) {
             val n = minOf(msg.readableBytes(), maxBlockSize)
             msg.readBytes(chunk, 0, n)
+            val t0 = System.nanoTime()
             val encodedLen = encoder.encode(chunk, 0, n)
+            Stats.encode(System.nanoTime() - t0, n, encodedLen)
             val before = out.writerIndex()
             writeVarint(out, encodedLen)
             out.writeBytes(encoder.output, 0, encodedLen)
@@ -67,15 +70,51 @@ class SnappyStreamCodec(
             }
             val block = ByteArray(encodedLen)
             msg.readBytes(block)
+            val t0 = System.nanoTime()
             val decoded = try {
                 decoder.decode(block, 0, encodedLen)
             } catch (e: SnappyHistoryFormatException) {
                 fail(ctx, e.message ?: "malformed block")
             }
+            Stats.decode(System.nanoTime() - t0, decoded.size, encodedLen)
             wireBytesIn += msg.readerIndex() - start
             plainBytesIn += decoded.size
             if (decoded.isNotEmpty()) out += Unpooled.wrappedBuffer(decoded)
         }
+    }
+
+    /**
+     * Process-wide totals over all codecs, for measuring the cost of the compression: time spent
+     * in [SnappyHistoryEncoder.encode] / [SnappyHistoryDecoder.decode] (wall clock around each
+     * block, on the event loop thread) and the bytes and blocks they handled.
+     */
+    object Stats {
+        val encodeNanos = AtomicLong()
+        val encodeBlocks = AtomicLong()
+        val encodePlainBytes = AtomicLong()
+        val encodeWireBytes = AtomicLong()
+        val decodeNanos = AtomicLong()
+        val decodeBlocks = AtomicLong()
+        val decodePlainBytes = AtomicLong()
+        val decodeWireBytes = AtomicLong()
+
+        internal fun encode(nanos: Long, plain: Int, wire: Int) {
+            encodeNanos.addAndGet(nanos)
+            encodeBlocks.incrementAndGet()
+            encodePlainBytes.addAndGet(plain.toLong())
+            encodeWireBytes.addAndGet(wire.toLong())
+        }
+
+        internal fun decode(nanos: Long, plain: Int, wire: Int) {
+            decodeNanos.addAndGet(nanos)
+            decodeBlocks.incrementAndGet()
+            decodePlainBytes.addAndGet(plain.toLong())
+            decodeWireBytes.addAndGet(wire.toLong())
+        }
+
+        override fun toString() =
+            "encode: ${encodeBlocks.get()} blocks, ${encodePlainBytes.get()} -> ${encodeWireBytes.get()} B, ${encodeNanos.get()} ns; " +
+                "decode: ${decodeBlocks.get()} blocks, ${decodeWireBytes.get()} -> ${decodePlainBytes.get()} B, ${decodeNanos.get()} ns"
     }
 
     private fun fail(ctx: ChannelHandlerContext, reason: String): Nothing {
