@@ -1,5 +1,7 @@
 package io.libp2p.multistream
 
+import io.libp2p.compression.SnappyStreamCodec
+import io.libp2p.compression.SnappyStreamCompression
 import io.libp2p.core.ConnectionClosedException
 import io.libp2p.core.NoSuchLocalProtocolException
 import io.libp2p.core.NoSuchRemoteProtocolException
@@ -18,8 +20,11 @@ import java.util.concurrent.CompletableFuture
 /**
  * Created by Anton Nashatyrev on 20.06.2019.
  */
-class ProtocolSelect<TController>(val protocols: List<ProtocolBinding<TController>> = mutableListOf()) :
-    ChannelInboundHandlerAdapter() {
+class ProtocolSelect<TController>(
+    val protocols: List<ProtocolBinding<TController>> = mutableListOf(),
+    /** Whether `/snappy-stream` compressed variants of [protocols] may have been negotiated */
+    val streamCompression: Boolean = false
+) : ChannelInboundHandlerAdapter() {
 
     val selectedFuture = CompletableFuture<TController>()
     var activeFired = false
@@ -44,16 +49,26 @@ class ProtocolSelect<TController>(val protocols: List<ProtocolBinding<TControlle
     override fun userEventTriggered(ctx: ChannelHandlerContext, evt: Any) {
         when (evt) {
             is ProtocolNegotiationSucceeded -> {
-                val protocolBinding = protocols.find { it.protocolDescriptor.protocolMatcher.matches(evt.proto) }
+                // a compressed stream carries the plain protocol: everything after the codec sees just that
+                val uncompressed = if (streamCompression) SnappyStreamCompression.uncompressed(evt.proto) else null
+                val proto = uncompressed ?: evt.proto
+                val protocolBinding = protocols.find { it.protocolDescriptor.protocolMatcher.matches(proto) }
                     ?: throw NoSuchLocalProtocolException("Protocol negotiation failed: not supported protocol ${evt.proto}")
-                ctx.channel().attr(PROTOCOL).get()?.complete(evt.proto)
+                ctx.channel().attr(PROTOCOL).get()?.complete(proto)
+                var protocolStart = ctx.name()
+                if (uncompressed != null) {
+                    ctx.pipeline().addAfter(protocolStart, SnappyStreamCompression.CODEC_HANDLER_NAME, SnappyStreamCodec())
+                    protocolStart = SnappyStreamCompression.CODEC_HANDLER_NAME
+                }
                 ctx.pipeline().addAfter(
-                    this,
+                    protocolStart,
                     "ProtocolBindingInitializer",
                     nettyInitializer {
-                        protocolBinding.initChannel(it.channel.getP2PChannel(), evt.proto).forward(selectedFuture)
+                        protocolBinding.initChannel(it.channel.getP2PChannel(), proto).forward(selectedFuture)
                     }
                 )
+                super.userEventTriggered(ctx, ProtocolNegotiationSucceeded(proto))
+                return
             }
             is ProtocolNegotiationFailed -> throw NoSuchRemoteProtocolException("ProtocolNegotiationFailed: $evt")
         }
