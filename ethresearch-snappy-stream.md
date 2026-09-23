@@ -37,20 +37,14 @@ Today every gossip message is compressed with Snappy on its own. Compressing the
 
 ## Results (inbound, relative to today's wire bytes)
 
-| Scenario | Default node total | All-subnets total | Attestation | Aggregate | Block | Control (default / all) |
-|---|---|---|---|---|---|---|
-| Today: Snappy per message | 100% | 100% | 100% | 100% | 100% | 100% / 100% |
-| No compression at all | 138% | 107% | 105% | 106% | 237% | 100% / 100% |
-| zstd-3 per message | 95.9% | 99.8% | 100% | 97% | 86% | 100% / 100% |
-| zstd-3 + 64 KiB dictionary per topic, per message | 94.2% | 98.4% | 96–98% | 93% | 86% | 100% / 100% |
-| zstd-3 + 64 KiB dictionary, whole frame | 84.9% | 82.6% | 71–74% | 81% | 83–86% | 94% / 97% |
-| **zstd-3 stream per peer stream** (2 MiB window) | **67.4%** | **51.2%** | 40% | 62% | 76–79% | 60% / 64% |
-| zstd-3 stream, 32 KiB window | 71.7% | 62.3% | 40–41% | 63% | 90% | 62% / 94% |
-| deflate-6 stream (32 KiB) | 71.8% | 62.8% | 41–42% | 64% | 88% | 63% / 94% |
-| **Plain LZ77, Snappy format, 64 KiB history** | **72.8%** | **63.1%** | **42%** | 63% | 93% | 62% / 93% |
-| same, Snappy-like single hash table encoder | 73.8% | 63.4% | 42% | 64% | 96% | 63% / 94% |
-| Plain LZ77, Snappy format, 4 KiB history | 76.6% | 65.0% | 42% | 64% | 94% | 82% / 98% |
-| Plain LZ77, Snappy format, 1 MiB history | 71.1% | 54.3% | 42–43% | 64% | 85–88% | 64% / 68% |
+| Scenario                                                        | Default node total | All-subnets total | Attestation | Aggregate | Block | Control (default / all) |
+|-----------------------------------------------------------------|---|---|---|---|---|---|
+| Today: Snappy per message                                       | 100% | 100% | 100% | 100% | 100% | 100% / 100% |
+| No compression at all                                           | 138% | 107% | 105% | 106% | 237% | 100% / 100% |
+| zstd-3 stream per peer stream (2 MiB window) (For comparisson)  | **67.4%** | **51.2%** | 40% | 62% | 76–79% | 60% / 64% |
+| Plain LZ77, Snappy format, 4 KiB history                        | 76.6% | 65.0% | 42% | 64% | 94% | 82% / 98% |
+| **Plain LZ77, Snappy format, 64 KiB history**                   | **72.8%** | **63.1%** | **42%** | 63% | 93% | 62% / 93% |
+| Plain LZ77, Snappy format, 1 MiB history                        | 71.1% | 54.3% | 42–43% | 64% | 85–88% | 64% / 68% |
 
 Data column sidecars stay at ~96% under every per-stream compressor.
 
@@ -75,11 +69,40 @@ We also ran the prototype between real nodes on mainnet, all subnets subscribed.
 **What it doesn't show.**
 - **No control traffic.** The hub sends direct peers no IHAVE or GRAFT, so the window has no IHAVE, IWANT or IDONTWANT at all. On an all-subnets node control is 35% of inbound bytes and compresses poorly at 64 KiB (93%). On a real mesh stream we expect the total to land close to the offline 63%, not at 44%.
 
+### Snappy-compressed payloads inside the stream
+
+**A second run: payloads stay Snappy-compressed inside the stream,** exactly as on the network today, with no transcoding on either side. Same topology; 10 minutes after a 2-minute warm-up.
+
+| Payloads inside `/snappy-stream` | Stream bytes before compression | On the wire | Share |
+|---|---|---|---|
+| Snappy (as today, no transcoding) | 324.9 MB | 140.2 MB | **43.1%** |
+| Raw SSZ (first run) | 1349.6 MB (node 2's wire bytes) | 594.7 MB | 44.1% |
+
+**On this traffic, un-Snappying the payloads first buys nothing.**
+- The stream is 95% attestations, and Snappy leaves an attestation almost verbatim: its `AttestationData` and the topic string pass through Snappy nearly unchanged. The stream compressor finds those repeats either way.
+- This means the payload encoding (`ssz_snappy`) and message handling can stay exactly as they are; only the stream is compressed.
+- Blocks and data columns would compress better from raw SSZ, but here they are ~3% of the bytes. On a default node, where they are a much larger share, raw payloads may still be worth it.
+
+### CPU
+
+The prototype codec counts time with `System.nanoTime()` around every block, on the event loop thread. The numbers below cover 540 s of the second run.
+
+| | Blocks | Bytes | Time | Per block | Per byte (throughput) | Share of one core |
+|---|---|---|---|---|---|---|
+| **Compression** (hub → node 3) | 148 837 | 290.6 → 125.0 MB | 2.358 s | 15.8 µs | 7.74 ns (129 MB/s) | 0.44% |
+| **Decompression** (node 3) | 149 262 | 125.4 → 291.4 MB | 0.229 s | 1.5 µs | 0.75 ns (1.3 GB/s) | 0.04% |
+
+- **Decompression is essentially free,** on par with plain Snappy.
+- **Compression is 10× slower than decompression, and that is our simple Kotlin encoder:** it hashes every position. An optimized Snappy-style encoder in C or Rust runs at 250–500 MB/s, 2–4× faster.
+- **A block averages ~2 KB,** i.e. almost always one message per write.
+- **Rough estimate for a real node:** one peer's ~0.54 MB/s stream costs 0.44% of a core. Compressing a separate stream for each of ~8 mesh peers is on the order of 3–4% of one core with this encoder.
+
 ## Proposal: `/snappy-stream`
+
 
 
 ## Costs and trade-offs
 
-- **CPU.** Every message is encoded and decoded separately for each peer; today one Snappy blob is forwarded as is to all mesh peers. The measurement already includes this, since contexts are per stream. Compressing one hour of a default node's inbound traffic took 7 CPU-seconds with zstd-3 and ~10–13 s with our unoptimized Kotlin LZ77.
+- **CPU.** Every message is encoded and decoded separately for each peer; today one Snappy blob is forwarded as is to all mesh peers. The measurement already includes this, since contexts are per stream. Offline, compressing one hour of a default node's inbound traffic took 7 CPU-seconds with zstd-3 and ~10–13 s with our unoptimized Kotlin LZ77. Live, our encoder ran at 129 MB/s and the decoder at 1.3 GB/s (see [CPU](#cpu)).
 - **Memory.** It is 64 KiB of history per direction per peer, plus encoder hash tables. That is fixed and known up front: a few MB per node for ~100 peers.
 
