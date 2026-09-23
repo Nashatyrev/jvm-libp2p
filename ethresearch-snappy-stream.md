@@ -1,5 +1,7 @@
 # Streaming compression for gossipsub: up to x2 less traffic 
 
+Today every gossip message is compressed with Snappy on its own. Compressing the whole gossip stream instead, keeping the context across messages, also catches the redundancy between them. For a node subscribed to all attestation subnets this cuts inbound gossip traffic by up to 2x.
+
 ## TL;DR
 
 - **Recording:** one hour of real mainnet gossip from a Teku node subscribed to all attestation subnets, replayed offline through different compressors.
