@@ -2,6 +2,8 @@
 
 Today every gossip message is compressed with Snappy on its own. Compressing the whole gossip stream instead, keeping the context across messages, also catches the redundancy between them. For a node subscribed to all attestation subnets this cuts inbound gossip traffic by up to 2x.
 
+Note: this post was written in collaboration with Claude (Anthropic).
+
 ## TL;DR
 
 - **Keeping context across messages is what gains.** Plain LZ77 with a 64 KiB per-stream history, in the unmodified Snappy block format, receives:
