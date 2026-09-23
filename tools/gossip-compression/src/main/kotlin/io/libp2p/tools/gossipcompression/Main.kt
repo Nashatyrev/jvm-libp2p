@@ -62,6 +62,17 @@ fun main(args: Array<String>) {
         listOf(zstdStream(3, 17), zstdStream(3, 20), zstdStream(3, 23), deflateStream(6), brotliStream(5, 22))
             .forEach { add(TopicStreamScenario(it, crossPeer = false)) }
         listOf(zstdStream(3, 20), zstdStream(3, 23)).forEach { add(TopicStreamScenario(it, crossPeer = true)) }
+        add(BlockScenario("S6", lzBlock(1)))
+        add(BlockScenario("S6", lzBlock(16)))
+        for (hist in listOf(0, 4 shl 10, 16 shl 10, 32 shl 10, (64 shl 10) - 1)) {
+            add(LzStreamScenario(hist, 16, lz4 = false))
+            add(LzStreamScenario(hist, 16, lz4 = true))
+        }
+        add(LzStreamScenario((64 shl 10) - 1, 1, lz4 = false))
+        add(LzStreamScenario((64 shl 10) - 1, 4, lz4 = false))
+        add(LzStreamScenario((64 shl 10) - 1, 64, lz4 = false))
+        add(LzStreamScenario(256 shl 10, 16, lz4 = false))
+        add(LzStreamScenario(1 shl 20, 16, lz4 = false))
     }.filter { only == null || only.containsMatchIn(it.name) || it is WireScenario }
 
     val results = scenarios.map { s ->

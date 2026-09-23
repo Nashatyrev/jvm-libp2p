@@ -66,6 +66,15 @@ fun zstdBlock(level: Int, dict: ByteArray? = null) = BlockAlgo(
 
 fun snappyBlock() = BlockAlgo("snappy") { BlockCompressor { Snappy.maxCompressedLength(it.size).let { max -> Snappy.rawCompress(it, 0, it.size, ByteArray(max), 0) } } }
 
+/** Our own LZ77 encoder without history, per message: should come out close to snappy. */
+fun lzBlock(chainDepth: Int) = BlockAlgo("LZ77 snappy-format depth $chainDepth") {
+    val enc = LzHistoryEncoder(0, chainDepth)
+    BlockCompressor {
+        enc.encode(it)
+        enc.lastSize
+    }
+}
+
 fun deflateBlock(level: Int) = BlockAlgo("deflate-$level") {
     val deflater = Deflater(level, true)
     BlockCompressor { data ->

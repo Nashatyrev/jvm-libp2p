@@ -191,3 +191,48 @@ fun trainDict(samples: Sequence<ByteArray>, dictSize: Int, sampleBytes: Int = 64
         null
     }
 }
+
+/**
+ * Plain LZ77 with a shared history per (stream, direction) over whole frames, like S3 but without
+ * entropy coding (see [LzHistoryEncoder]). Every frame is decoded back and compared with the
+ * original, so the numbers come from a verified round trip. With [lz4] the same parse is priced in
+ * the LZ4 block format instead (plus varint decoded and encoded lengths, since LZ4 blocks carry
+ * neither); only valid for histories up to 64 KiB.
+ */
+class LzStreamScenario(private val history: Int, private val chainDepth: Int, private val lz4: Boolean) :
+    Scenario("S6", "LZ77 ${if (lz4) "lz4" else "snappy"}-format hist ${(history + 1023) / 1024}k depth $chainDepth per peer stream") {
+    override val windowBytes get() = history.toLong()
+
+    init {
+        require(!lz4 || history <= 65535) { "LZ4 offsets are 16 bit" }
+    }
+
+    override fun run(rec: Recording, window: Window) = Tally().apply {
+        val last = lastFrameOf(rec)
+        val encoders = HashMap<Long, LzHistoryEncoder>()
+        val decoders = HashMap<Long, LzHistoryDecoder>()
+        for ((i, f) in rec.frames.withIndex()) {
+            if (f.nanos >= window.evalToNanos) break
+            val key = ctxKey(f)
+            val enc = encoders.getOrPut(key) { LzHistoryEncoder(history, chainDepth) }
+            val t0 = System.nanoTime()
+            enc.encode(f.raw)
+            if (window.isEval(f)) cpuNanos += System.nanoTime() - t0
+            if (!lz4) {
+                val decoded = decoders.getOrPut(key) { LzHistoryDecoder(history, 1 shl 24) }.decode(enc.lastOutput, enc.lastSize)
+                check(decoded.contentEquals(f.raw)) { "LZ round trip mismatch at frame $i" }
+            }
+            maxContexts = maxOf(maxContexts, encoders.size)
+            val size = if (lz4) {
+                varintSize(f.raw.size) + varintSize(enc.lastLz4Size) + enc.lastLz4Size
+            } else {
+                varintSize(enc.lastSize) + enc.lastSize
+            }
+            if (window.isEval(f)) addProportional(f, size)
+            if (last[key] == i) {
+                encoders.remove(key)
+                decoders.remove(key)
+            }
+        }
+    }
+}
