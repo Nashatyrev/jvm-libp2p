@@ -85,6 +85,49 @@ So there are two working configurations, and the lever that separates them is no
 > attestation subnet if, and only if, the epoch is stretched to match.
 
 <details>
+<summary>Why C's tail is better when its local traffic profile is identical — the attestation tail
+belongs to the network, not to the receiving node</summary>
+
+A and C put **the same vote load on a constrained node**, by construction: the second subnet doubles
+its share, the longer epoch halves the votes per slot, and the two cancel.
+
+| per home node, measured slot | A | C |
+|---|---|---|
+| ffg-vote bytes | 12.4 MB | 12.1 MB |
+| votes received per wave | ~325 | ~326 |
+
+What is *not* the same is what the rest of the network carries. Each validator attests once per
+epoch, so an 8-slot epoch puts 125 000 votes in a slot where a 4-slot epoch puts 250 000:
+
+| per node, measured slot | A | C |
+|---|---|---|
+| `vps` — total / of it votes | 96.7 MB / 41.5 | 63.0 MB / 20.5 |
+| `validator-pools` — total / of it votes | 1052 MB / 503.7 | 563 MB / 249.8 |
+
+And that is where the tail is made. Within a single run, **FFG p99 is nearly the same for every
+tier**, from the 50 Mbit/s home node to the 10 Gbit/s pool node running at 23% utilisation:
+
+| FFG p99, ms | `home` 50/25 | `mid-home` | `upper-home` | `vps` 500M | `validator-pools` 10G |
+|---|---|---|---|---|---|
+| **A** | 2073 | 1872 | 1950 | 1780 | **1742** |
+| **B** | 3034 | 2670 | 2756 | 2648 | **2598** |
+| **C** | 1386 | 1285 | 1344 | 1275 | **1226** |
+
+A tail caused by the receiver's own congestion could not be the same number for a node on 50 Mbit/s
+and a node on 10 Gbit/s. The tail moves with the *total* vote volume in the network — halve it and
+every tier's p99 falls by a third — while p50 barely moves (203 → 192 ms on the home tier). The
+typical path is equally fast in both; what differs is the unlucky path, the one that queues behind
+somebody else's forwarding burst, and in A every burst is twice as deep everywhere.
+
+B proves the same point from the other side. Only the *constrained tier's* subscription changed
+there — nothing about the pools, the vps or the epoch — and yet **every tier's tail got worse,
+including the pools' (1742 → 2598 ms)**. Constrained nodes sit in everyone's meshes and relay for
+everyone, so congesting them congests the network: they are not just the tier that suffers first,
+they are a term in everybody else's latency.
+
+</details>
+
+<details>
 <summary>Per-wave comparison: FFG votes and aggregates, A / B / C</summary>
 
 All figures home tier, measured slot, milliseconds.
