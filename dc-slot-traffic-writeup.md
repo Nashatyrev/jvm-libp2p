@@ -34,6 +34,78 @@ Everything below comes from the `large network` scenario in
 [`DcScenarioRunnerTest`](examples/dc/src/test/kotlin/playground/DcScenarioRunnerTest.kt), run on
 the simulator in `examples/dc`.
 
+## Result: the slot fits, in two of the three configurations
+
+**A fast-finality slot — a block, a 1 MiB payload, 21 blobs' worth of DA columns, 250 000 FFG votes
+and 1024 aggregates — fits on a 50 / 25 Mbit/s node.** It does not fit unconditionally: the
+configuration has to trade off how many attestation subnets a constrained node carries against how
+many slots the epoch spreads its votes over.
+
+Two things have to hold for a configuration to count as working:
+
+- **Every attestation wave arrives within 4 s of being published** — judged on the *worst* wave of
+  the twelve, not on the average. A vote that misses its deadline is not a vote.
+- **The link is not pinned to its ceiling for most of the slot.** A node that spends the whole slot
+  at 100% has no headroom left for a bad slot, a re-org or a peer churn event.
+
+Three configurations were run, identical in everything else:
+
+| home tier, per measured slot | **A** — 4-slot epoch, 1 subnet | **B** — 4-slot epoch, 2 subnets | **C** — 8-slot epoch, 2 subnets |
+|---|---|---|---|
+| inbound, raw UDP | 52.2 MB | 66.4 MB | **50.2 MB** |
+| link at ≥ 95% of 50 Mbit/s | 3.4 s of 12 | **6.9 s of 12** | 3.2 s of 12 |
+| FFG p99, worst wave | 3.15 s | **4.06 s** | **2.13 s** |
+| FFG p99, all waves | 2.07 s | 3.03 s | 1.39 s |
+| aggregate p99, worst wave | 1.18 s | 1.29 s | 1.07 s |
+| payload chunk p99 | 2.36 s | 2.86 s | 2.24 s |
+| | **fits**, 0.85 s of margin | **misses the deadline** | **fits**, 1.87 s of margin |
+
+**A — 4-slot epoch, one attestation subnet.** The bulk-data burst pins the link for 3.4 s, the
+twelve vote waves ride on top of it, and the worst wave lands 0.85 s inside the deadline.
+
+![Configuration A](docs/dc-slot-traffic/fit-a-4slots-1subnet.png)
+
+**B — the same epoch, two subnets.** Doubling the vote traffic a constrained node carries adds 27%
+to its inbound bytes, and the slot stops draining: the link is at its ceiling for 6.9 of 12 seconds,
+the blue vote band never clears between waves, and the worst wave **misses the 4 s deadline at
+4.06 s**. Everything still arrives — just not in time.
+
+![Configuration B](docs/dc-slot-traffic/fit-b-4slots-2subnets.png)
+
+**C — two subnets, epoch spread over 8 slots.** Spreading the epoch halves both quantities the
+second subnet doubled: 10 416 votes per wave instead of 20 833, and a 484-byte aggregate instead of
+728, since the bitvector covers half as much of a subnet. That buys back more than the second subnet
+cost — **C is the best of the three on every row**, including the baseline it is being compared to.
+
+![Configuration C](docs/dc-slot-traffic/fit-c-8slots-2subnets.png)
+
+So there are two working configurations, and the lever that separates them is not bandwidth:
+
+> **Epoch length is what pays for attestation subnets.** A constrained node can carry a second
+> attestation subnet if, and only if, the epoch is stretched to match.
+
+<details>
+<summary>Per-wave detail, and why the early waves are the ones that hurt</summary>
+
+FFG p99 per wave, home tier, milliseconds:
+
+| wave @ | 0 s | 1 s | 2 s | 3 s | 4 s | 5 s | 6 s | 7 s | 8 s | 9 s | 10 s | 11 s |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **A** | 853 | 2820 | **3149** | 2437 | 1805 | 1470 | 1422 | 1160 | 1281 | 1257 | 1337 | 1356 |
+| **B** | 3486 | **4063** | 3984 | 3138 | 2651 | 2203 | 1985 | 1829 | 1764 | 1955 | 2028 | 1894 |
+| **C** | 492 | 1068 | **2132** | 1831 | 1489 | 1154 | 1014 | 491 | 490 | 425 | 444 | 489 |
+
+In every configuration the worst waves are those published into the bulk-data window at 1–3 s, and
+what separates the three is how quickly the network gets out from under it. A is back under 1.5 s
+from wave 5 on, C under 500 ms from wave 7 on. B never recovers: its cheapest wave — at 8 s, as far
+from the burst as a wave gets — is still 1.76 s, worse than *any* wave A sees once the burst has
+cleared.
+
+That also says where the remaining headroom is: the constraint is not the steady-state vote rate but
+the collision between the votes and the DA burst at the head of the slot.
+
+</details>
+
 ## Experiment parameters
 
 ### Simulator
