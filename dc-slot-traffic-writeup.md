@@ -64,10 +64,13 @@ aggregates are published by validators drawn from every group.
 
 ### The load-bearing assumption: weak nodes are a minority
 
-Everything in this write-up holds **only because the 50 / 25 Mbit/s nodes are 10% of the network
-and are surrounded by much better-provisioned peers.** This is a condition on the network, not a
+<details>
+<summary>
+Everything in this write-up holds <b>only because the 50 / 25 Mbit/s nodes are 10% of the network
+and are surrounded by much better-provisioned peers.</b> This is a condition on the network, not a
 detail of the scenario, and it is worth stating plainly because the conclusions do not survive
 without it.
+</summary>
 
 Gossip forwarding is byte-symmetric: a node receives each message it subscribes to about `mesh`
 times and forwards it about `mesh − 1` times, so upload and download are nearly the same quantity.
@@ -95,14 +98,13 @@ mixed network**", not "a network of minimum-spec nodes survives one". The compos
 population is itself a parameter, and one the protocol specifications say little about: EIP-7870
 defines the attester tier as a per-node floor and makes no assumption about how many nodes sit on
 it.
+</details>
 
 ### Gossip
 
-The router is jvm-libp2p's gossipsub, on mainnet parameters, with the two modifications and the one
-bug fix below — the second modification is what makes the slot fit on a 50 / 25 link at all.
-Summaries are the whole story; open a block for the detail.
-
-**A constraint that shaped all of this: the protocol itself is not changed.** Everything here is an
+<details>
+<summary>A constraint that shaped all of this: the protocol itself is not changed</summary>
+ Everything here is an
 implementation change — local behaviour, local policy, an extra knob in `GossipParams` — and none
 of it touches the wire format, the control message types, their semantics, or what a peer is
 entitled to expect. Nothing needs to be negotiated and nothing needs a spec change: a node running
@@ -111,15 +113,17 @@ itself. Batching several messages into one RPC is something the format already a
 when to answer an IHAVE with an IWANT is the receiver's own decision; remembering which ids you
 already advertised to a peer is bookkeeping, not protocol. The mesh degree is local in the same
 way, which is why the tiers here can run different values of `D` and still interoperate.
+</details>
 
 #### Parameters
+
+<details>
+<summary>Ethereum mainnet values — `D` = 8</summary>
 
 **Ethereum mainnet values — `D` = 8, `D_low` = 6, `D_high` = 12, `D_lazy` = 6, heartbeat 700 ms —
 not jvm-libp2p's defaults.** Measured mesh: 9.47 per (node, topic) network-wide, 11.67 on the home
 tier.
 
-<details>
-<summary>Full list, and why mainnet's values are the less comfortable ones</summary>
 
 | | value | jvm-libp2p default |
 |---|---|---|
@@ -140,8 +144,12 @@ So a run against jvm-libp2p defaults is optimistic relative to mainnet, not cons
 #### Modifications
 
 <details>
-<summary><b>Batch publishing and batched forwarding</b> — messages handled in one event-loop turn
-leave as one merged RPC per peer, not one RPC each</summary>
+<summary>Batch publishing</summary>
+
+Modification investigated by @csaba
+
+Messages handled in one event-loop turn
+leave as one merged RPC per peer, not one RPC each
 
 A router that handles one message at a time emits one RPC per message per peer, which in this
 scenario would be fatal to realism: a slot carries 250 000 FFG votes of 240 bytes, each arriving in
@@ -157,8 +165,12 @@ them in one frame, not thirty.
 </details>
 
 <details>
-<summary><b>Disciplined IWANT</b> — ask one announcer at a time instead of every announcer; cuts
-home-tier inbound traffic by a third and FFG p99 from 5.1 s to 1.6 s</summary>
+<summary>Disciplined IWANT</summary>
+
+Modification investigated by @csaba
+
+Ask one announcer at a time instead of every announcer; cuts
+home-tier inbound traffic by a third and FFG p99 from 5.1 s to 1.6 s
 
 `GossipParams.iWantPolicy`, commits `304d4ad0` and `9949de48`.
 
@@ -188,7 +200,7 @@ delivers later and lets *more* IHAVEs win the race.
 #### Bug fixed along the way
 
 <details>
-<summary><b>Duplicate IHAVE</b> — the same message id was advertised to the same peer more than
+<summary>Duplicate IHAVE — the same message id was advertised to the same peer more than
 once, because <code>emitGossip</code> kept no record of who had been told</summary>
 
 Commit `6ae0e236`.
