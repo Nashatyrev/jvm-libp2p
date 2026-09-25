@@ -15,7 +15,10 @@ in. So the profile below is read on the `home` tier first, and everything better
 expected to have an easier time of it — it carries the same messages over a link that is 2× to
 200× wider, which the comparison further down confirms for bulk data and, interestingly, does not
 confirm for the attestation tail. The pool chart is included only as the other extreme, to show what
-changes when a node subscribes to everything.
+changes when a node subscribes to everything. One condition on all of this is load-bearing and is
+spelled out in [its own section](#the-load-bearing-assumption-weak-nodes-are-a-minority): the weak
+nodes have to be a *minority* surrounded by stronger peers. A network made entirely of them is a
+different network, and a much slower one.
 
 Everything below comes from the `large network` scenario in
 [`DcScenarioRunnerTest`](examples/dc/src/test/kotlin/playground/DcScenarioRunnerTest.kt), run on
@@ -58,6 +61,43 @@ link, and they are there to separate what a wider link fixes from what it does n
 
 The pools are the only publishers of blocks, payload chunks and blob columns; attestations and
 aggregates are published by validators drawn from every group.
+
+### The load-bearing assumption: weak nodes are a minority
+
+Everything in this write-up holds **only because the 50 / 25 Mbit/s nodes are 10% of the network
+and are surrounded by much better-provisioned peers.** This is a condition on the network, not a
+detail of the scenario, and it is worth stating plainly because the conclusions do not survive
+without it.
+
+Gossip forwarding is byte-symmetric: a node receives each message it subscribes to about `mesh`
+times and forwards it about `mesh − 1` times, so upload and download are nearly the same quantity.
+This run measures exactly that — a home node sends 72.3 MB and receives 75.6 MB, a ratio of 0.96.
+But the attester link is 2:1 asymmetric, so a home node has only half the upload it would need to
+carry its own weight. **It is a net sink**, and a network can only absorb sinks while they are a
+minority: here, a home node's ~100 peers are drawn overwhelmingly from the 700 nodes on 500 Mbit/s
+or more, which can serve it at full rate and can re-forward what it forwards slowly.
+
+**If the whole network were on 50 / 25, the network's effective capacity would be the 25 Mbit/s
+uplink, not the 50 Mbit/s downlink** — nobody can deliver faster than their peers can send. The
+slot measured here already averages ~35 Mbit/s of inbound raw UDP per home node (52.2 MB over 12 s)
+and peaks at 100% of the downlink; there is no arrangement in which every node also *uploads* that
+much over a 25 Mbit/s link. The traffic simply does not fit, and the numbers below would not carry
+over.
+
+That is not a hypothesis. It was measured in the sibling `median network` scenario, where the only
+difference between the two runs is who the home nodes' peers are — both on a *symmetric* 50 / 50
+link, i.e. twice the upload the attester tier is specified to have:
+
+| `median network`, 1M validators, 50 / 50 home links | blob p99 | payload p50 | network duplication |
+|---|---|---|---|
+| 90 home nodes among 10 pools | 2.4 s | 0.98 s | 12.8× |
+| **1000 home nodes, no pools at all** | **7.8 s** | **1.88 s** | **39×** |
+
+So the claim this write-up supports is "a minimum-spec node survives a fast-finality slot **in a
+mixed network**", not "a network of minimum-spec nodes survives one". The composition of the
+population is itself a parameter, and one the protocol specifications say little about: EIP-7870
+defines the attester tier as a per-node floor and makes no assumption about how many nodes sit on
+it.
 
 ### Gossip parameters
 
