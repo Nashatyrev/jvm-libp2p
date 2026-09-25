@@ -86,7 +86,12 @@ class Recording(val startEpochMillis: Long, val frames: List<Frame>, val streams
 fun varintSize(v: Int): Int = CodedOutputStream.computeUInt32SizeNoTag(v)
 
 /** Reads the `*.grec` files written by Teku's GossipRecordingHandler, in file name order. */
-fun readRecording(dir: File, maxNanos: Long = Long.MAX_VALUE): Recording {
+fun readRecording(
+    dir: File,
+    maxNanos: Long = Long.MAX_VALUE,
+    inboundOnly: Boolean = false,
+    profile: NodeProfile? = null
+): Recording {
     val files = dir.listFiles { f -> f.name.endsWith(".grec") }!!.sortedBy { it.name }
     require(files.isNotEmpty()) { "No .grec files in $dir" }
     val frames = ArrayList<Frame>(10_000_000)
@@ -118,10 +123,15 @@ fun readRecording(dir: File, maxNanos: Long = Long.MAX_VALUE): Recording {
                         3 -> {
                             val outbound = inp.readByte().toInt() == 1
                             val bytes = ByteArray(inp.readInt()).also { inp.readFully(it) }
-                            if (nanos <= maxNanos) {
-                                val (frame, failures) = parseFrame(nanos, streamIdx, outbound, bytes)
-                                frames += frame
-                                snappyFailures += failures
+                            if (nanos <= maxNanos && !(inboundOnly && outbound)) {
+                                val parsed = Rpc.RPC.parseFrom(bytes)
+                                val rpc = if (profile == null) parsed else profile.filter(parsed)
+                                if (rpc != null) {
+                                    val wireSize = if (rpc === parsed) bytes.size else rpc.serializedSize
+                                    val (frame, failures) = parseFrame(nanos, streamIdx, outbound, rpc, wireSize)
+                                    frames += frame
+                                    snappyFailures += failures
+                                }
                             }
                         }
                         4 -> dropped = inp.readLong()
@@ -137,8 +147,7 @@ fun readRecording(dir: File, maxNanos: Long = Long.MAX_VALUE): Recording {
     return Recording(startEpochMillis, frames, streams, dropped, snappyFailures)
 }
 
-private fun parseFrame(nanos: Long, streamIdx: Int, outbound: Boolean, bytes: ByteArray): Pair<Frame, Int> {
-    val rpc = Rpc.RPC.parseFrom(bytes)
+private fun parseFrame(nanos: Long, streamIdx: Int, outbound: Boolean, rpc: Rpc.RPC, wireSize: Int): Pair<Frame, Int> {
     var failures = 0
     val publishes = rpc.publishList.map { msg ->
         val wireData = msg.data.toByteArray()
@@ -160,7 +169,7 @@ private fun parseFrame(nanos: Long, streamIdx: Int, outbound: Boolean, bytes: By
         publishList.forEachIndexed { i, _ -> setPublish(i, getPublish(i).toBuilder().setData(com.google.protobuf.ByteString.copyFrom(publishes[i].ssz))) }
     }.build()
     val known = nonPublish.values.sum() + publishes.sumOf { it.rpcFieldSize(it.wireDataLen) }
-    if (bytes.size != known) nonPublish[Category.OTHER] = bytes.size - known
+    if (wireSize != known) nonPublish[Category.OTHER] = wireSize - known
     val raw = rawRpc.toByteArray()
     val framed = ByteArray(varintSize(raw.size) + raw.size)
     CodedOutputStream.newInstance(framed).apply {
@@ -168,5 +177,5 @@ private fun parseFrame(nanos: Long, streamIdx: Int, outbound: Boolean, bytes: By
         writeRawBytes(raw)
         flush()
     }
-    return Frame(nanos, streamIdx, outbound, varintSize(bytes.size) + bytes.size, framed, publishes, nonPublish) to failures
+    return Frame(nanos, streamIdx, outbound, varintSize(wireSize) + wireSize, framed, publishes, nonPublish) to failures
 }

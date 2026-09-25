@@ -6,6 +6,11 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Usage: gossip-compression <rec-dir> <out-dir> [--skip-min 5] [--train-min 20] [--eval-min 60] [--only <regex>]
+ *   [--dir in] [--profile all|<attestation subnets, e.g. 3,17>]
+ *
+ * `--dir in` keeps only inbound frames. `--profile` narrows the recording to what a node with the
+ * given subscriptions would have received (see [NodeProfile]); a subnet list also drops the sync
+ * committee subnets, as for a node without validators.
  *
  * The first `skip` minutes of the recording are ignored (node warming up), the next `train`
  * minutes are only used to train the static dictionaries, and the `eval` minutes after that are
@@ -23,7 +28,12 @@ fun main(args: Array<String>) {
     val only = opts["only"]?.toRegex()
     val window = Window(skip, skip + train, skip + train, skip + train + eval)
 
-    val rec = readRecording(recDir, window.evalToNanos)
+    val inboundOnly = opts["dir"] == "in"
+    val profile = opts["profile"]?.let { NodeProfile.create(it, NodeProfile.scanMessageIds(recDir)) }
+    val rec = readRecording(recDir, window.evalToNanos, inboundOnly, profile)
+    if (profile != null) {
+        println("Profile: ${profile.name}; IWANT/IDONTWANT ids mapped to a topic: ${profile.knownIds}, unknown (kept): ${profile.unknownIds}")
+    }
     val lastNanos = rec.frames.last().nanos
     println(
         "Loaded ${rec.frames.size} frames, ${rec.streams.size} streams, recording span ${lastNanos / min} min, " +
