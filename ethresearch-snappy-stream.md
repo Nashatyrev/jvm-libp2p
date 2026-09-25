@@ -1,6 +1,8 @@
-# Streaming compression for gossipsub: up to x2 less traffic 
+# Snappy with a memory: ~40% less gossip traffic
 
 Today every gossip message is compressed with Snappy on its own. Compressing the whole gossip stream instead, keeping the context across messages, also catches the redundancy between them. For a node subscribed to all attestation subnets this cuts inbound gossip traffic by up to 2x.
+
+This came up while researching networking for Fast Finality, where attestation and aggregate traffic grows a lot, so we looked for ways to shrink it.
 
 Note: this post was written in collaboration with Claude (Anthropic).
 
