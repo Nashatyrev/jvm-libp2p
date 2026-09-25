@@ -85,18 +85,51 @@ So there are two working configurations, and the lever that separates them is no
 > attestation subnet if, and only if, the epoch is stretched to match.
 
 <details>
-<summary>Per-wave detail, and why the early waves are the ones that hurt</summary>
+<summary>Per-wave comparison: FFG votes and aggregates, A / B / C</summary>
 
-FFG p99 per wave, home tier, milliseconds:
+All figures home tier, measured slot, milliseconds.
 
-| wave @ | 0 s | 1 s | 2 s | 3 s | 4 s | 5 s | 6 s | 7 s | 8 s | 9 s | 10 s | 11 s |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **A** | 853 | 2820 | **3149** | 2437 | 1805 | 1470 | 1422 | 1160 | 1281 | 1257 | 1337 | 1356 |
-| **B** | 3486 | **4063** | 3984 | 3138 | 2651 | 2203 | 1985 | 1829 | 1764 | 1955 | 2028 | 1894 |
-| **C** | 492 | 1068 | **2132** | 1831 | 1489 | 1154 | 1014 | 491 | 490 | 425 | 444 | 489 |
+**FFG votes — 12 waves, one per second.** A and C publish a wave every second either way; C's waves
+are half the size (10 416 votes against 20 833), B's are the same size as A's but arrive on two
+subnets instead of one.
 
-In every configuration the worst waves are those published into the bulk-data window at 1–3 s, and
-what separates the three is how quickly the network gets out from under it. A is back under 1.5 s
+| wave @ | A p50 | A p99 | B p50 | B p99 | C p50 | C p99 |
+|---|---|---|---|---|---|---|
+| 0 s | 214 | 853 | 243 | 3486 | 204 | 492 |
+| 1 s | 233 | 2820 | 263 | **4063** | 210 | 1068 |
+| 2 s | 620 | **3149** | 741 | 3984 | 599 | **2132** |
+| 3 s | 531 | 2437 | 914 | 3138 | 511 | 1831 |
+| 4 s | 257 | 1805 | 782 | 2651 | 238 | 1489 |
+| 5 s | 210 | 1470 | 499 | 2203 | 206 | 1154 |
+| 6 s | 206 | 1422 | 282 | 1985 | 199 | 1014 |
+| 7 s | 206 | 1160 | 249 | 1829 | 194 | 491 |
+| 8 s | 203 | 1281 | 229 | 1764 | 192 | 490 |
+| 9 s | 201 | 1257 | 230 | 1955 | 192 | 425 |
+| 10 s | 207 | 1337 | 233 | 2028 | 195 | 444 |
+| 11 s | 209 | 1356 | 235 | 1894 | 201 | 489 |
+| **all waves** | **234** | **2073** | **355** | **3034** | **224** | **1386** |
+
+**Aggregates — 5 publication instants.** Same 1024 aggregates per slot in all three; in C each one
+is 484 B rather than 728 B, because its bitvector covers half a slot's share of a subnet.
+
+| wave @ | A p50 | A p99 | B p50 | B p99 | C p50 | C p99 |
+|---|---|---|---|---|---|---|
+| 6 s | 286 | 582 | 412 | 1135 | 281 | 490 |
+| 8 s | 285 | 494 | 372 | 907 | 276 | 475 |
+| 9 s | 306 | 625 | 428 | 1034 | 291 | 590 |
+| 10 s | 326 | 962 | 464 | 1240 | 306 | 948 |
+| 11 s | 336 | **1181** | 490 | **1291** | 315 | **1074** |
+| **all waves** | **310** | **971** | **438** | **1201** | **296** | **849** |
+
+Two things the aggregate table shows that the FFG one does not. Aggregates are published after the
+bulk-data burst is gone, so no configuration has a catastrophic wave — B's worst is 1.29 s, not 4 s.
+But they **degrade monotonically across the slot** in all three, 582 → 1181 ms in A, because each
+later wave queues behind more accumulated vote traffic. That is the one place where B's extra load
+shows up as a constant penalty rather than a burst effect: its p50 is 90–155 ms worse than A's in every
+single wave, from the first one onwards.
+
+In every configuration the worst FFG waves are those published into the bulk-data window at 1–3 s,
+and what separates the three is how quickly the network gets out from under it. A is back under 1.5 s
 from wave 5 on, C under 500 ms from wave 7 on. B never recovers: its cheapest wave — at 8 s, as far
 from the burst as a wave gets — is still 1.76 s, worse than *any* wave A sees once the burst has
 cleared.
