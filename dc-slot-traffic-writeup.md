@@ -102,6 +102,16 @@ The router is jvm-libp2p's gossipsub, on mainnet parameters, with the two modifi
 bug fix below — the second modification is what makes the slot fit on a 50 / 25 link at all.
 Summaries are the whole story; open a block for the detail.
 
+**A constraint that shaped all of this: the protocol itself is not changed.** Everything here is an
+implementation change — local behaviour, local policy, an extra knob in `GossipParams` — and none
+of it touches the wire format, the control message types, their semantics, or what a peer is
+entitled to expect. Nothing needs to be negotiated and nothing needs a spec change: a node running
+these changes talks to a stock gossipsub peer, and every choice below is one a node makes for
+itself. Batching several messages into one RPC is something the format already allows; whether and
+when to answer an IHAVE with an IWANT is the receiver's own decision; remembering which ids you
+already advertised to a peer is bookkeeping, not protocol. The mesh degree is local in the same
+way, which is why the tiers here can run different values of `D` and still interoperate.
+
 #### Parameters
 
 **Ethereum mainnet values — `D` = 8, `D_low` = 6, `D_high` = 12, `D_lazy` = 6, heartbeat 700 ms —
