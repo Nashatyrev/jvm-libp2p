@@ -170,12 +170,24 @@ Two reading notes:
 ### The same node on a wider link
 
 `mid-home` and `upper-home` are the same node as `home` — same 8 DA columns, same single
-attestation subnet, same 100 peers — with 2× and 4× the bandwidth. The two charts are what happens
-to the profile when only the link changes.
+attestation subnet, same 100 peers — with 2× and 4× the bandwidth. The three charts below are what
+happens to the profile when only the link changes; the first one is the home profile again, repeated
+here so the three can be read in sequence.
+
+**50 / 25 Mbit/s — `home`** (the chart from above)
+
+![Slot traffic profile, home group](docs/dc-slot-traffic/slot-traffic-home.png)
+
+**100 / 50 Mbit/s — `mid-home`**
 
 ![Slot traffic profile, mid-home group](docs/dc-slot-traffic/slot-traffic-mid-home.png)
 
+**200 / 100 Mbit/s — `upper-home`**
+
 ![Slot traffic profile, upper-home group](docs/dc-slot-traffic/slot-traffic-upper-home.png)
+
+Each panel has its own y scale and its own red capacity line, so read every one against its own
+line rather than against the others.
 
 The bulk-data window is the part that moves. At 50 Mbit/s it is a 3.4-second plateau against the
 ceiling; at 100 Mbit/s it is a peak that still just touches the line for 0.9 s; at 200 Mbit/s it is
