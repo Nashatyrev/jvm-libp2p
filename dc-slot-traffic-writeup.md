@@ -6,19 +6,29 @@ waves on top of it. This write-up shows what a slot actually looks like on the w
 are distributed in time, how they split per message type and per class of node, and whether
 attestations and aggregates make their deadlines on a home-grade link.
 
-**The subject is the most constrained node in the network.** The network is a mix of tiers, from 10
-Gbit/s staking operators down to a 50 / 25 Mbit/s home connection, and the question that decides
-whether a parameter set is viable is not what the average node sees — it is whether the *most
-constrained* node still receives everything in time. That node has the narrowest link, and it is
-also the one whose failure is least acceptable: home stakers are the population the protocol is
-supposed to keep in. So the profile below is read on the `home` tier first, and everything better
-provisioned is expected to have an easier time of it — it carries the same messages over a link that
-is 2× to 200× wider, which the comparison further down confirms for bulk data and, interestingly,
-does not confirm for the attestation tail. The pool chart is included only as the other extreme, to
-show what changes when a node subscribes to everything. One condition on all of this is load-bearing
-and is spelled out in its own section below: constrained nodes have to be a *minority* surrounded
-by better-provisioned peers. A network made entirely of them is a different network, and a much
-slower one.
+<details>
+<summary>
+<b>The subject is the most constrained node in the network</b> — the 50 / 25 Mbit/s home tier, not
+the average node.
+</summary>
+
+The network is a mix of tiers, from 10 Gbit/s staking operators down to a 50 / 25 Mbit/s home
+connection, and the question that decides whether a parameter set is viable is not what the average
+node sees — it is whether the *most constrained* node still receives everything in time. That node
+has the narrowest link, and it is also the one whose failure is least acceptable: home stakers are
+the population the protocol is supposed to keep in.
+
+So the profile below is read on the `home` tier first, and everything better provisioned is expected
+to have an easier time of it — it carries the same messages over a link that is 2× to 200× wider,
+which the comparison further down confirms for bulk data and, interestingly, does not confirm for
+the attestation tail. The pool chart is included only as the other extreme, to show what changes
+when a node subscribes to everything.
+
+One condition on all of this is load-bearing and is spelled out in its own section below:
+constrained nodes have to be a *minority* surrounded by better-provisioned peers. A network made
+entirely of them is a different network, and a much slower one.
+
+</details>
 
 Everything below comes from the `large network` scenario in
 [`DcScenarioRunnerTest`](examples/dc/src/test/kotlin/playground/DcScenarioRunnerTest.kt), run on
