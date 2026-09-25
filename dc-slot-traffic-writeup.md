@@ -125,6 +125,26 @@ including the pools' (1742 → 2598 ms)**. Constrained nodes sit in everyone's m
 everyone, so congesting them congests the network: they are not just the tier that suffers first,
 they are a term in everybody else's latency.
 
+**The decisive test.** Configuration A was re-run with one change — the 100 home nodes given
+200 / 100 Mbit/s, so the network has no constrained tier at all. Nothing else moved: same messages,
+same epoch, same subscriptions, and the same traffic (the pools still receive 1061 MB against
+1052 MB, network duplication 8.77× against 8.68×).
+
+| FFG p99, ms | `upper-home` (unchanged, 200/100) | `vps` 500M | `validator-pools` 10G |
+|---|---|---|---|
+| A — 100 nodes at the attester floor | 1950 | 1780 | 1742 |
+| A with those 100 nodes on 200/100 | **358** | **353** | **287** |
+
+`upper-home` is byte-for-byte the same node in both runs — same link, same subscriptions, same
+11 MB of votes per slot at the same peak rate. Its attestation tail fell **5.4×** because 100 *other*
+nodes out of 1000 stopped being slow. Aggregates behave the same way (pools 935 → 408 ms).
+
+The mechanism is visible in what did *not* improve: payload chunks barely moved (pools 613 →
+650 ms, `upper-home` 845 → 862 ms). Constrained nodes custody 8 of 128 DA columns, so they are
+almost never on a payload chunk's path — but they are full members of the attestation subnets they
+subscribe to, and every vote crossing the network has a chance of being relayed by one. They add no
+bytes to anyone; they add **delay**, and they add it to precisely the traffic they relay.
+
 </details>
 
 <details>
@@ -245,11 +265,16 @@ and peaks at 100% of the downlink; there is no arrangement in which every node a
 much over a 25 Mbit/s link. The traffic simply does not fit, and the numbers below would not carry
 over.
 
-How much worse a homogeneous network actually gets is **not measured here**. Earlier runs of a
-1000-node all-home network exist, but they predate the pull discipline this configuration relies on,
-so their degradation cannot be separated from the IWANT amplification that has since been fixed.
-The direction is not in doubt — the uplink bound above is arithmetic — but the magnitude needs a
-fresh run before it is worth quoting.
+How much worse a *homogeneous* network gets is **not measured here**. Earlier runs of a 1000-node
+all-home network exist, but they predate the pull discipline this configuration relies on, so their
+degradation cannot be separated from the IWANT amplification that has since been fixed. The
+direction is not in doubt — the uplink bound above is arithmetic — but the magnitude needs a fresh
+run before it is worth quoting.
+
+What *is* measured is the cost of the minority itself, and it is not small: with the 100 constrained
+nodes upgraded to 200 / 100 Mbit/s and nothing else changed, the attestation tail at every other
+tier falls by a factor of five — see *the decisive test* in the Result chapter. Ten per cent of the
+network sitting at the attester floor is what sets the other ninety per cent's p99.
 
 So the claim this write-up supports is "a minimum-spec node survives a fast-finality slot **in a
 mixed network**", not "a network of minimum-spec nodes survives one". The composition of the
