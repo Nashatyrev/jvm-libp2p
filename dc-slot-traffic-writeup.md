@@ -199,7 +199,7 @@ on this scenario (single-slot runs, home tier):
 | copies per payload chunk | 22.8 | **12.3** |
 | inbound per node | 82.6 MB | **56.4 MB** |
 | FFG vote p99 | 5.10 s | **1.61 s** |
-| aggregate p99 / delivered | 5.35 s / 84.0% | **0.99 s / 100%** |
+| aggregate p99 | 5.35 s, and a sixth of them still in flight when the run window closed | **0.99 s** |
 
 Note what this is *not*: shrinking the mesh does not substitute for it. At `D = 4 / D_high = 4` the
 mesh fell from 11.7 to 3.9 while copies per chunk only went 22.4 → 18.3, because a leaner mesh
@@ -254,8 +254,8 @@ Notes on the two attestation rows, which are the fast-finality-specific part:
   changes the result by only a few percent, except for inflating the bulk-data tail the measured
   slot inherits.
 - Run on the 512 GB Mac Studio: **24 m 27 s of wall clock for 42 s of simulated time**.
-- Delivery in the measured slot is **100% for every message type**; gossip bytes are 89.3% of raw
-  UDP bytes, the rest being QUIC and framing overhead.
+- Gossip bytes are 89.3% of raw UDP bytes in the measured slot, the rest being QUIC and framing
+  overhead.
 
 ## Traffic profile
 
@@ -392,7 +392,7 @@ pool node receives, against 35.6% on the home tier.
 
 ## Attestation and aggregate waves
 
-Per-wave delivery, home group, measured slot, **100% delivered in every wave**.
+Per-wave latency, home group, measured slot.
 
 ### FFG votes — 12 waves, one per second
 
