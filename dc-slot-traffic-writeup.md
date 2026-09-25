@@ -140,20 +140,21 @@ Notes on the two attestation rows, which are the fast-finality-specific part:
 
 ## Traffic profile
 
-Inbound bytes per node, averaged over the group, in 100 ms buckets across the measured slot. The
+Inbound throughput per node, averaged over the group, in 100 ms buckets across the measured slot —
+the y axis is Mbit/s, so a tier's link capacity is the number printed on its link. The
 stack is decoded gossip, split per message type, with the first copy of a message in the darker
 shade and its duplicates in the lighter one. The grey backdrop is raw UDP — the gap between it and
 the stack is QUIC and framing overhead.
 
 How close each tier comes to its own downlink, over the measured slot:
 
-| group | link | peak bucket | peak as % of link | buckets ≥ 95% (of 120) |
+| group | link | peak throughput | peak as % of link | buckets ≥ 95% (of 120) |
 |---|---|---|---|---|
-| `validator-pools` | 10 Gbit/s | 27.5 MiB / 100 ms | 23.0% | 0 |
-| `vps` | 500 Mbit/s | 2.8 MiB / 100 ms | 47.4% | 0 |
-| `upper-home` | 200 Mbit/s | 1.6 MiB / 100 ms | 67.0% | 0 |
-| `mid-home` | 100 Mbit/s | 1.19 MiB / 100 ms | 99.7% | 9 |
-| `home` | **50 Mbit/s** | 0.60 MiB / 100 ms | **100%** | **34** |
+| `validator-pools` | 10 Gbit/s | 2303 Mbit/s | 23.0% | 0 |
+| `vps` | 500 Mbit/s | 237 Mbit/s | 47.4% | 0 |
+| `upper-home` | 200 Mbit/s | 134 Mbit/s | 67.0% | 0 |
+| `mid-home` | 100 Mbit/s | 99.7 Mbit/s | 99.7% | 9 |
+| `home` | **50 Mbit/s** | 50.0 Mbit/s | **100%** | **34** |
 
 Utilisation rises monotonically as the link narrows, and only the two home tiers touch their
 ceiling — `home` for 3.4 s of the slot, `mid-home` for 0.9 s. Everything above them has headroom to
@@ -184,7 +185,7 @@ many copies of everything it subscribes to.
 The slot has three distinct phases:
 
 1. **0 – 1 s.** The first attestation wave, the block, and a control burst at the slot boundary
-   (~190 KB per 100 ms against a ~40 KB floor mid-slot) as the heartbeat fires.
+   (~15 Mbit/s against a ~4 Mbit/s floor mid-slot) as the heartbeat fires.
 2. **1 – 4.5 s: the bulk-data window.** Payload chunks and blob columns are published at +1 s and
    the link goes to **100% of its 50 Mbit/s downlink and stays there for 34 of the slot's 120
    buckets**. Blob columns finish first (p99 at 2.9 s), payload chunks last (p99 at 3.4 s) — the
