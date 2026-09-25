@@ -84,14 +84,11 @@ and peaks at 100% of the downlink; there is no arrangement in which every node a
 much over a 25 Mbit/s link. The traffic simply does not fit, and the numbers below would not carry
 over.
 
-That is not a hypothesis. It was measured in the sibling `median network` scenario, where the only
-difference between the two runs is who the home nodes' peers are — both on a *symmetric* 50 / 50
-link, i.e. twice the upload the attester tier is specified to have:
-
-| `median network`, 1M validators, 50 / 50 home links | blob p99 | payload p50 | network duplication |
-|---|---|---|---|
-| 90 home nodes among 10 pools | 2.4 s | 0.98 s | 12.8× |
-| **1000 home nodes, no pools at all** | **7.8 s** | **1.88 s** | **39×** |
+How much worse a homogeneous network actually gets is **not measured here**. Earlier runs of a
+1000-node all-home network exist, but they predate the pull discipline this configuration relies on,
+so their degradation cannot be separated from the IWANT amplification that has since been fixed.
+The direction is not in doubt — the uplink bound above is arithmetic — but the magnitude needs a
+fresh run before it is worth quoting.
 
 So the claim this write-up supports is "a minimum-spec node survives a fast-finality slot **in a
 mixed network**", not "a network of minimum-spec nodes survives one". The composition of the
