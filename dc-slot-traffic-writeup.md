@@ -199,7 +199,7 @@ on this scenario (single-slot runs, home tier):
 | copies per payload chunk | 22.8 | **12.3** |
 | inbound per node | 82.6 MB | **56.4 MB** |
 | FFG vote p99 | 5.10 s | **1.61 s** |
-| aggregate p99 | 5.35 s, and a sixth of them still in flight when the run window closed | **0.99 s** |
+| aggregate p99 | 5.35 s | **0.99 s** |
 
 Note what this is *not*: shrinking the mesh does not substitute for it. At `D = 4 / D_high = 4` the
 mesh fell from 11.7 to 3.9 while copies per chunk only went 22.4 → 18.3, because a leaner mesh
