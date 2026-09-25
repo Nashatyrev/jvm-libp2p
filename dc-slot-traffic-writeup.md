@@ -96,15 +96,73 @@ population is itself a parameter, and one the protocol specifications say little
 defines the attester tier as a per-node floor and makes no assumption about how many nodes sit on
 it.
 
-### Gossip parameters
+### Gossip
 
-Ethereum mainnet values, not jvm-libp2p defaults: **D = 8, D_low = 6, D_high = 12, D_lazy = 6,
-heartbeat 700 ms**. Measured mesh size over the run: mean 9.47 per (node, topic).
+The router is jvm-libp2p's gossipsub, unmodified except for the three items listed under
+*Modifications* below — two of which are changes this work made to get the slot to fit at all.
 
-One deviation: the `home` group runs **disciplined IWANT** (one outstanding request per message id,
-200 ms retry, 400 ms broken-promise penalty), while the other groups keep the stock behaviour of
-asking every announcer. Without this the 50/25 tier receives 22 copies of every payload chunk
-against a mesh of 12, and the slot never fits in the link — see the separate note on pull discipline.
+#### Parameters
+
+Ethereum mainnet values, not jvm-libp2p defaults:
+
+| | value | jvm-libp2p default |
+|---|---|---|
+| `D` / `D_low` / `D_high` / `D_lazy` | 8 / 6 / 12 / 6 | 6 / 4 / 12 / 6 |
+| heartbeat interval | 700 ms | 1000 ms |
+| IWANT policy on the `home` tier | **disciplined** | ask every announcer |
+| IWANT policy elsewhere | ask every announcer | ask every announcer |
+
+Measured mesh size over the run: mean 9.47 per (node, topic) network-wide, 11.67 on the home tier.
+Message ids are content-only (no `from` / `seqno` / `signature`), as on mainnet, so duplicates are
+recognised as duplicates.
+
+Mainnet's values are the *less* comfortable ones here: `D = 8` instead of 6 raises duplication by
+about a third, and a 700 ms heartbeat fires gossip emission 43% more often than a 1000 ms one, which
+matters because IHAVE dominates control traffic. Runs against jvm-libp2p defaults are optimistic
+relative to mainnet, not conservative.
+
+#### Modifications
+
+**1. Batch publishing and batched forwarding.** A router that handles one message at a time emits
+one RPC per message per peer. In this scenario that is fatal to realism: a slot carries 250 000
+FFG votes of 240 bytes each, and each would arrive in its own framed RPC with its own write. The
+router instead takes lists — `publishBatch()` publishes a list atomically on one event-loop turn,
+and on the receive side every message decoded from one inbound RPC that validates synchronously is
+broadcast in a single chunk (`broadcastInbound(msgs, peer)`) followed by one `flushAllPending()`.
+Everything accumulated in a peer's `RpcPartsQueue` in that turn leaves as **one merged RPC**, sized
+against the RPC limits. So a node that receives 30 votes in one frame forwards them in one frame,
+not thirty.
+
+**2. Disciplined IWANT** (`GossipParams.iWantPolicy`, commits `304d4ad0` and `9949de48`). Stock
+gossipsub answers an IHAVE for an unknown message id by immediately sending IWANT to *that*
+announcer, with no check for a request already in flight. A node whose mesh delivery runs late
+therefore gets one extra copy for every IHAVE that beats the message. On the home tier this was the
+single largest source of traffic: 22.4 copies of each payload chunk against a mesh of 11.7. The
+disciplined policy keeps an offer table per message id, asks **one** announcer at a time, retries
+after 200 ms, penalises a broken promise for 400 ms and parks a dead id for 30 s. Measured on this
+scenario (single-slot runs, home tier):
+
+| home tier | ask every announcer | disciplined |
+|---|---|---|
+| IWANT ids sent per node | 82 870 | **1 480** |
+| copies per payload chunk | 22.8 | **12.3** |
+| inbound per node | 82.6 MB | **56.4 MB** |
+| FFG vote p99 | 5.10 s | **1.61 s** |
+| aggregate p99 / delivered | 5.35 s / 84.0% | **0.99 s / 100%** |
+
+Note what this is *not*: shrinking the mesh does not substitute for it. At `D = 4 / D_high = 4` the
+mesh fell from 11.7 to 3.9 while copies per chunk only went 22.4 → 18.3, because a leaner mesh
+delivers later and lets *more* IHAVEs win the race.
+
+#### Bug fixed along the way
+
+**Duplicate IHAVE** (commit `6ae0e236`). `emitGossip` built one id list per topic and sent it to
+every selected peer with no memory of who had already been told, so the same message id was
+re-advertised to the same peer on subsequent heartbeats, and twice inside a single RPC for a message
+carrying two topic ids. The mcache now tracks `wasGossipedTo` per peer and the `maxIHaveLength` cut
+is applied *after* that filter, so a peer that already knows the first 5000 ids receives the next
+batch rather than the same one. Regression tests were written first and all three failed against
+the old code.
 
 ### What a slot publishes
 
