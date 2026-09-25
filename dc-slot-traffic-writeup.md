@@ -6,6 +6,17 @@ waves on top of it. This write-up shows what a slot actually looks like on the w
 are distributed in time, how they split per message type and per class of node, and whether
 attestations and aggregates make their deadlines on a home-grade link.
 
+**The subject is the weakest node in the network.** The network is a mix of tiers, from 10 Gbit/s
+staking operators down to a 50 / 25 Mbit/s home connection, and the question that decides whether a
+parameter set is viable is not what the average node sees — it is whether the *worst-provisioned*
+node still receives everything in time. That node has the narrowest link, and it is also the one
+whose failure is least acceptable: home stakers are the population the protocol is supposed to keep
+in. So the profile below is read on the `home` tier first, and everything better provisioned is
+expected to have an easier time of it — it carries the same messages over a link that is 2× to
+200× wider, which the comparison further down confirms for bulk data and, interestingly, does not
+confirm for the attestation tail. The pool chart is included only as the other extreme, to show what
+changes when a node subscribes to everything.
+
 Everything below comes from the `large network` scenario in
 [`DcScenarioRunnerTest`](examples/dc/src/test/kotlin/playground/DcScenarioRunnerTest.kt), run on
 the simulator in `examples/dc`.
@@ -41,8 +52,12 @@ QUIC transport. What is simulated is time and the network underneath:
 | `home` | 100 | **50 / 25 Mbit/s** | 100 | 8 of 128 | 1 of 64 |
 
 The `home` tier is the EIP-7870 "Attester" floor — 50 Mbit/s down, 25 Mbit/s up — and it is the
-group everything below is read against. The pools are the only publishers of blocks, payload chunks
-and blob columns; attestations and aggregates are published by validators drawn from every group.
+group everything below is read against, for the reason given above: it is the tier that decides
+whether the configuration works. `mid-home` and `upper-home` are the same node with 2× and 4× the
+link, and they are there to separate what a wider link fixes from what it does not.
+
+The pools are the only publishers of blocks, payload chunks and blob columns; attestations and
+aggregates are published by validators drawn from every group.
 
 ### Gossip parameters
 
@@ -93,7 +108,25 @@ stack is decoded gossip, split per message type, with the first copy of a messag
 shade and its duplicates in the lighter one. The grey backdrop is raw UDP — the gap between it and
 the stack is QUIC and framing overhead.
 
-### Home tier (50 / 25 Mbit/s)
+How close each tier comes to its own downlink, over the measured slot:
+
+| group | link | peak bucket | peak as % of link | buckets ≥ 95% (of 120) |
+|---|---|---|---|---|
+| `validator-pools` | 10 Gbit/s | 27.5 MiB / 100 ms | 23.0% | 0 |
+| `vps` | 500 Mbit/s | 2.8 MiB / 100 ms | 47.4% | 0 |
+| `upper-home` | 200 Mbit/s | 1.6 MiB / 100 ms | 67.0% | 0 |
+| `mid-home` | 100 Mbit/s | 1.19 MiB / 100 ms | 99.7% | 9 |
+| `home` | **50 Mbit/s** | 0.60 MiB / 100 ms | **100%** | **34** |
+
+Utilisation rises monotonically as the link narrows, and only the two home tiers touch their
+ceiling — `home` for 3.4 s of the slot, `mid-home` for 0.9 s. Everything above them has headroom to
+spare and is not what limits the configuration, which is why the rest of this section reads the
+`home` profile in detail and uses the pool profile only as a contrast.
+
+### Home tier (50 / 25 Mbit/s) — the binding case
+
+This is the chart that matters: the weakest node in the network, the one that saturates first and
+the one the protocol is meant to keep in.
 
 ![Slot traffic profile, home group](docs/dc-slot-traffic/slot-traffic-home.png)
 
@@ -133,6 +166,42 @@ Two reading notes:
 - Buckets 0 – 3 s carry a small amount of wrap-around. The run's completion window is
   11 s + 4 s of settle in a 12 s slot, so the tail of the last waves folds back onto the early
   buckets. It inflates the early bands slightly; it does not affect the per-wave figures below.
+
+### The same node on a wider link
+
+`mid-home` and `upper-home` are the same node as `home` — same 8 DA columns, same single
+attestation subnet, same 100 peers — with 2× and 4× the bandwidth. The two charts are what happens
+to the profile when only the link changes.
+
+![Slot traffic profile, mid-home group](docs/dc-slot-traffic/slot-traffic-mid-home.png)
+
+![Slot traffic profile, upper-home group](docs/dc-slot-traffic/slot-traffic-upper-home.png)
+
+The bulk-data window is the part that moves. At 50 Mbit/s it is a 3.4-second plateau against the
+ceiling; at 100 Mbit/s it is a peak that still just touches the line for 0.9 s; at 200 Mbit/s it is
+a single spike that reaches 67% of the link and is over by 3 s, leaving the rest of the slot visibly
+empty. What is left there is the attestation sawtooth, which costs the same on every tier.
+
+| home group → | `home` 50/25 | `mid-home` 100/50 | `upper-home` 200/100 |
+|---|---|---|---|
+| peak use of own link | 100% | 99.7% | 67.0% |
+| buckets ≥ 95% (of 120) | 34 | 9 | 0 |
+| payload chunk p50 / p99 | 1094 / 2362 ms | 573 / 1143 ms | 461 / 845 ms |
+| blob column p50 / p99 | 545 / 1868 ms | 330 / 883 ms | 303 / 729 ms |
+| FFG vote p50 / p99 | 234 / 2073 ms | 203 / **1872** ms | 195 / **1950** ms |
+| aggregate p50 / p99 | 310 / 971 ms | 269 / **954** ms | 264 / **953** ms |
+
+Two things to take from this:
+
+- **Bulk data scales with the link, as expected.** Doubling the link halves payload-chunk p99, and
+  doubling it again takes off another third. A node above the home tier is never in trouble on
+  blocks, payload or DA columns.
+- **The attestation and aggregate tails do not.** FFG p99 barely moves (2073 → 1872 → 1950 ms) and
+  the aggregate p99 is flat to the millisecond (971 → 954 → 953 ms). Those tails are not produced by
+  the receiving node's downlink — they are produced by propagation through a mesh whose other
+  members are home nodes. **A well-provisioned node cannot buy its way out of them**; they are a
+  property of the population, which is the other half of why the weakest tier is the one to design
+  against.
 
 ### Validator pool (10 Gbit/s, all subnets)
 
