@@ -32,6 +32,7 @@ import io.libp2p.network.NetworkImpl
 import io.libp2p.protocol.IdentifyBinding
 import io.libp2p.security.noise.NoiseXXSecureChannel
 import io.libp2p.transport.ConnectionUpgrader
+import io.libp2p.transport.quic.QuicTransport
 import io.libp2p.transport.tcp.TcpTransport
 import io.netty.channel.ChannelHandler
 import io.netty.handler.logging.LogLevel
@@ -76,7 +77,7 @@ open class Builder {
      * Protocols whose outbound streams are offered `/snappy-stream` compressed first, falling back
      * to the plain protocol when the remote doesn't support it (see [io.libp2p.compression.SnappyStreamCompression]).
      * Once set, inbound compressed streams are accepted for every local protocol. `null` (the
-     * default) disables it. Applies to muxed (TCP/WebSocket) streams; QUIC streams don't use it yet.
+     * default) disables it. Applies to muxed (TCP/WebSocket) and QUIC streams.
      */
     var streamCompression: ProtocolMatcher? = null
 
@@ -215,6 +216,7 @@ open class Builder {
             listOf(
                 transports.values.map { it(upgrader) },
                 secureTransports.values.map { it(privKey, updatableProtocols) }
+                    .onEach { (it as? QuicTransport)?.streamMultistreamProtocol = streamMultistreamProtocol }
             ).flatten()
 
         val addressBook = addressBook.impl

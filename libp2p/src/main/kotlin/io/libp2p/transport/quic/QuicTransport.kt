@@ -160,8 +160,13 @@ class QuicTransport(
         MultiThreadIoEventLoopGroup(NioIoHandler.newFactory())
     }
     private var allocator by lazyVar { AdaptiveByteBufAllocator(true) }
-    private var multistreamProtocol: MultistreamProtocol = MultistreamProtocolV1
-    private var incomingMultistreamProtocol: MultistreamProtocol by lazyVar { multistreamProtocol }
+
+    /**
+     * Negotiates the protocol of every QUIC stream, inbound and outbound. The host builder sets it
+     * to its stream multistream, so that stream-level options (debug stream handlers,
+     * `streamCompression`) apply to QUIC streams as they do to muxed TCP streams.
+     */
+    var streamMultistreamProtocol: MultistreamProtocol = MultistreamProtocolV1
 
     companion object {
         @JvmStatic
@@ -327,11 +332,11 @@ class QuicTransport(
                             val connection = ConnectionOverNetty(quicCh, this@QuicTransport, true)
                             // ConnectionOverNetty.init sets quicCh.attr(CONNECTION) = connection,
                             // so InboundStreamHandler can find it before thenApply runs.
-                            connection.setMuxerSession(QuicMuxerSession(quicCh, connection))
+                            connection.setMuxerSession(QuicMuxerSession(quicCh, connection, streamMultistreamProtocol))
                             it.addLastLocal(QuicConnectionExceptionHandler())
                         }
                     )
-                    .streamHandler(InboundStreamHandler(multistreamProtocol, protocols))
+                    .streamHandler(InboundStreamHandler(streamMultistreamProtocol, protocols))
                     .connect()
                     .toCompletableFuture()
                     .whenComplete { quicCh, ex ->
@@ -497,7 +502,7 @@ class QuicTransport(
                 nettyInitializer {
                     val connection = ConnectionOverNetty(it.channel, this@QuicTransport, false)
 
-                    connection.setMuxerSession(QuicMuxerSession(it.channel as QuicChannel, connection))
+                    connection.setMuxerSession(QuicMuxerSession(it.channel as QuicChannel, connection, streamMultistreamProtocol))
                     it.channel.attr(CONNECTION).set(connection)
 
                     // Add a handler to wait for channel activation (handshake completion)
@@ -590,7 +595,7 @@ class QuicTransport(
             .activeMigration(false) // disable until address-change handling is implemented
             // Note: spin bit is not configurable in Netty's QUIC codec; quiche disables it by default
             .statelessResetToken(deriveStatelessResetToken())
-            .streamHandler(InboundStreamHandler(incomingMultistreamProtocol, protocols))
+            .streamHandler(InboundStreamHandler(streamMultistreamProtocol, protocols))
             .build()
     }
 
@@ -651,7 +656,7 @@ class QuicTransport(
                 registerChannel(quicChannel)
                 try {
                     val connection = ConnectionOverNetty(quicChannel, this@QuicTransport, false)
-                    connection.setMuxerSession(QuicMuxerSession(quicChannel, connection))
+                    connection.setMuxerSession(QuicMuxerSession(quicChannel, connection, streamMultistreamProtocol))
 
                     val peerCerts = quicChannel.sslEngine()?.session?.peerCertificates
                         ?: throw Libp2pException("No peer certificates in hole-punched connection from $addr")
@@ -695,13 +700,12 @@ class QuicTransport(
 
     class QuicMuxerSession(
         val ch: QuicChannel,
-        val connection: ConnectionOverNetty
+        val connection: ConnectionOverNetty,
+        val multistreamProtocol: MultistreamProtocol = MultistreamProtocolV1
     ) : StreamMuxer.Session {
 
         override fun <T> createStream(protocols: List<ProtocolBinding<T>>): StreamPromise<T> {
-            val multistreamProtocol: MultistreamProtocol = MultistreamProtocolV1
-            val streamMultistreamProtocol: MultistreamProtocol by lazyVar { multistreamProtocol }
-            val multi = streamMultistreamProtocol.createMultistream(protocols)
+            val multi = multistreamProtocol.createMultistream(protocols)
 
             val controller = CompletableFuture<T>()
 

@@ -17,6 +17,7 @@ import io.libp2p.security.noise.NoiseXXSecureChannel
 import io.libp2p.tools.Echo
 import io.libp2p.tools.HostFactory
 import io.libp2p.transport.implementation.StreamOverNetty
+import io.libp2p.transport.quic.QuicTransport
 import io.libp2p.transport.tcp.TcpTransport
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -84,6 +85,59 @@ class SnappyStreamCompressionTest {
 
         assertThat(local.codec()).isNull()
         assertThat(remote.codec()).isNull()
+    }
+
+    private fun quicHost(port: Int, compress: Boolean) = host {
+        identity { random() }
+        secureTransports { add(QuicTransport::ECDSA) }
+        network { listen("/ip4/127.0.0.1/udp/$port/quic-v1") }
+        protocols { +Echo() }
+        if (compress) streamCompression = ProtocolMatcher.prefix("/test/echo")
+    }
+
+    /** Protocol and codecs of a QUIC echo stream, captured while the hosts are still running. */
+    private class QuicEcho(val protocol: String, val local: SnappyStreamCodec?, val remote: SnappyStreamCodec?)
+
+    private fun quicEchoOver(initiatorCompress: Boolean, responderCompress: Boolean): QuicEcho {
+        val port = 20000 + Random.nextInt(20000)
+        val initiator = quicHost(port, initiatorCompress)
+        val responder = quicHost(port + 1, responderCompress)
+        val responderStreams = CopyOnWriteArrayList<Stream>()
+        responder.addStreamVisitor { responderStreams += it }
+        initiator.start().get(5, TimeUnit.SECONDS)
+        responder.start().get(5, TimeUnit.SECONDS)
+        try {
+            val echo = Echo().dial(initiator, responder.peerId, Multiaddr.fromString("/ip4/127.0.0.1/udp/${port + 1}/quic-v1"))
+            val ctrl = echo.controller.get(10, TimeUnit.SECONDS)
+            repeat(3) {
+                assertThat(ctrl.echo("hello quic snappy stream $it").get(5, TimeUnit.SECONDS)).isEqualTo("hello quic snappy stream $it")
+            }
+            val local = echo.stream.get()
+            val remote = responderStreams.single { it.getProtocol().getNow(null) == "/test/echo" }
+            return QuicEcho(local.getProtocol().get(), local.codec(), remote.codec())
+        } finally {
+            initiator.stop().get(5, TimeUnit.SECONDS)
+            responder.stop().get(5, TimeUnit.SECONDS)
+        }
+    }
+
+    @Test
+    fun `QUIC streams are compressed when both sides support it`() {
+        val echo = quicEchoOver(initiatorCompress = true, responderCompress = true)
+
+        assertThat(echo.protocol).isEqualTo("/test/echo")
+        assertThat(echo.local).isNotNull
+        assertThat(echo.remote).isNotNull
+        assertThat(echo.remote!!.plainBytesIn).isEqualTo(echo.local!!.plainBytesOut).isGreaterThan(0)
+    }
+
+    @Test
+    fun `QUIC streams fall back to the plain protocol when the responder doesn't support it`() {
+        val echo = quicEchoOver(initiatorCompress = true, responderCompress = false)
+
+        assertThat(echo.protocol).isEqualTo("/test/echo")
+        assertThat(echo.local).isNull()
+        assertThat(echo.remote).isNull()
     }
 
     private fun gossipHost(port: Int, gossip: Gossip) = host {
