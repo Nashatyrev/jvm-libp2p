@@ -23,6 +23,12 @@ import kotlin.time.Duration.Companion.seconds
  */
 class DcSlotTrafficProfileTest {
 
+    private companion object {
+        /** Wire topics in the shape the scenario uses, so their length is realistic in these tests. */
+        const val TOPIC_BLOCK = "/eth2/6a95a1a9/beacon_block/ssz_snappy"
+        const val TOPIC_PAYLOAD = "/eth2/6a95a1a9/execution_payload/ssz_snappy"
+    }
+
     // --- DcSlotProfileParams.bucketOf ------------------------------------------------------------
 
     @Test
@@ -90,7 +96,11 @@ class DcSlotTrafficProfileTest {
 
     @Test
     fun `typeOf recovers the type from a global or subnet topic, the inverse of topic()`() {
-        assertThat(DcSlotMessageTopics.typeOf("/dc/block")).isEqualTo(DcSlotMessageType.BLOCK)
+        assertThat(DcSlotMessageTopics.typeOf("/eth2/6a95a1a9/beacon_block/ssz_snappy"))
+            .isEqualTo(DcSlotMessageType.BLOCK)
+        // The name segment carries underscores of its own, so only a trailing numeric one is a subnet.
+        assertThat(DcSlotMessageTopics.typeOf("/eth2/6a95a1a9/beacon_aggregate_and_proof/ssz_snappy"))
+            .isEqualTo(DcSlotMessageType.AGGREGATES)
         val ffgSubnetTopic = DcSlotMessageTopics.Subnets(64).topic(DcSlotMessageType.FFG_ATTESTATION, 12).topic
         assertThat(DcSlotMessageTopics.typeOf(ffgSubnetTopic)).isEqualTo(DcSlotMessageType.FFG_ATTESTATION)
 
@@ -104,8 +114,10 @@ class DcSlotTrafficProfileTest {
     @Test
     fun `typeOf is null for anything not shaped like one of our topics`() {
         assertThat(DcSlotMessageTopics.typeOf("/floodsub/1.0.0")).isNull()
-        assertThat(DcSlotMessageTopics.typeOf("/dc/")).isNull()
-        assertThat(DcSlotMessageTopics.typeOf("/dc/has a space")).isNull()
+        assertThat(DcSlotMessageTopics.typeOf("/eth2/6a95a1a9//ssz_snappy")).isNull()
+        assertThat(DcSlotMessageTopics.typeOf("/eth2/6a95a1a9/has a space/ssz_snappy")).isNull()
+        assertThat(DcSlotMessageTopics.typeOf("/eth2/6a95a1a9/beacon_block")).isNull()
+        assertThat(DcSlotMessageTopics.typeOf("/dc/block")).isNull()
     }
 
     // --- GossipByteCounter wire-level attribution -------------------------------------------------
@@ -131,7 +143,7 @@ class DcSlotTrafficProfileTest {
         val counter = GossipByteCounter(params)
         counter.currentTimeSupplier = { 250.milliseconds }
 
-        counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 1000))
+        counter.readForTest(rpcWithPublish(TOPIC_BLOCK, id = 1, dataSize = 1000))
 
         val bytes = counter.uniqueMessageBytesReadByTypeAndBucket.getValue(DcSlotMessageType.BLOCK)
         assertThat(bytes[2])
@@ -147,7 +159,7 @@ class DcSlotTrafficProfileTest {
         val counter = GossipByteCounter(params)
         counter.currentTimeSupplier = { 0.milliseconds }
 
-        repeat(4) { counter.readForTest(rpcWithPublish("/dc/payload", id = 7, dataSize = 100)) }
+        repeat(4) { counter.readForTest(rpcWithPublish(TOPIC_PAYLOAD, id = 7, dataSize = 100)) }
 
         val oneMessageSize = counter.publishBytesRead / 4
         val unique = counter.uniqueMessageBytesReadByTypeAndBucket.getValue(DcSlotMessageType.PAYLOAD)[0]
@@ -165,8 +177,8 @@ class DcSlotTrafficProfileTest {
         val counter = GossipByteCounter(params)
         counter.currentTimeSupplier = { 0.milliseconds }
 
-        counter.readForTest(rpcWithPublish("/dc/payload", id = 1, dataSize = 100))
-        counter.readForTest(rpcWithPublish("/dc/payload", id = 2, dataSize = 100))
+        counter.readForTest(rpcWithPublish(TOPIC_PAYLOAD, id = 1, dataSize = 100))
+        counter.readForTest(rpcWithPublish(TOPIC_PAYLOAD, id = 2, dataSize = 100))
 
         assertThat(counter.duplicateMessageBytesReadByTypeAndBucket).isEmpty()
         assertThat(counter.uniqueMessageBytesReadByTypeAndBucket.getValue(DcSlotMessageType.PAYLOAD)[0])
@@ -179,7 +191,7 @@ class DcSlotTrafficProfileTest {
         val counter = GossipByteCounter(params)
         // currentTimeSupplier left unset.
 
-        counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 1000))
+        counter.readForTest(rpcWithPublish(TOPIC_BLOCK, id = 1, dataSize = 1000))
 
         assertThat(counter.uniqueMessageBytesReadByTypeAndBucket).isEmpty()
         assertThat(counter.duplicateMessageBytesReadByTypeAndBucket).isEmpty()
@@ -191,7 +203,7 @@ class DcSlotTrafficProfileTest {
         val counter = GossipByteCounter()
         counter.currentTimeSupplier = { 250.milliseconds }
 
-        counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 1000))
+        counter.readForTest(rpcWithPublish(TOPIC_BLOCK, id = 1, dataSize = 1000))
 
         assertThat(counter.uniqueMessageBytesReadByTypeAndBucket).isEmpty()
         assertThat(counter.duplicateMessageBytesReadByTypeAndBucket).isEmpty()
@@ -204,7 +216,7 @@ class DcSlotTrafficProfileTest {
         val counter = GossipByteCounter(params)
         counter.currentTimeSupplier = { 350.milliseconds }
         val subscribeOnly = Rpc.RPC.newBuilder()
-            .addSubscriptions(Rpc.RPC.SubOpts.newBuilder().setSubscribe(true).setTopicid("/dc/block"))
+            .addSubscriptions(Rpc.RPC.SubOpts.newBuilder().setSubscribe(true).setTopicid(TOPIC_BLOCK))
             .build()
 
         counter.readForTest(subscribeOnly)
@@ -238,8 +250,8 @@ class DcSlotTrafficProfileTest {
         val counterA = GossipByteCounter(p).also { it.currentTimeSupplier = { 50.milliseconds } }
         val counterB = GossipByteCounter(p).also { it.currentTimeSupplier = { 50.milliseconds } }
         // Two different nodes, each seeing this message for the first time -- both unique.
-        counterA.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
-        counterB.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
+        counterA.readForTest(rpcWithPublish(TOPIC_BLOCK, id = 1, dataSize = 100))
+        counterB.readForTest(rpcWithPublish(TOPIC_BLOCK, id = 1, dataSize = 100))
 
         val profile = DcSlotTrafficProfile.of(
             gossipCounters = listOf(counterA, counterB),
@@ -260,8 +272,8 @@ class DcSlotTrafficProfileTest {
         val p = params()
         val counterA = GossipByteCounter(p).also { it.currentTimeSupplier = { 50.milliseconds } }
         // Node A's two mesh peers both forward it the same message -- one unique sighting, one duplicate.
-        counterA.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
-        counterA.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
+        counterA.readForTest(rpcWithPublish(TOPIC_BLOCK, id = 1, dataSize = 100))
+        counterA.readForTest(rpcWithPublish(TOPIC_BLOCK, id = 1, dataSize = 100))
 
         val profile = DcSlotTrafficProfile.of(
             gossipCounters = listOf(counterA),
@@ -280,7 +292,7 @@ class DcSlotTrafficProfileTest {
     fun `transport is the raw inbound UDP byte count, not netted against gossip's own accounting`() {
         val p = params()
         val counter = GossipByteCounter(p).also { it.currentTimeSupplier = { 50.milliseconds } }
-        counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
+        counter.readForTest(rpcWithPublish(TOPIC_BLOCK, id = 1, dataSize = 100))
         val gossipBytes = counter.bytesRead
 
         val profile = DcSlotTrafficProfile.of(
@@ -303,7 +315,7 @@ class DcSlotTrafficProfileTest {
         // times for a multi-packet message).
         val p = params()
         val counter = GossipByteCounter(p).also { it.currentTimeSupplier = { 50.milliseconds } }
-        counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 100))
+        counter.readForTest(rpcWithPublish(TOPIC_BLOCK, id = 1, dataSize = 100))
 
         val profile = DcSlotTrafficProfile.of(
             gossipCounters = listOf(counter),
@@ -374,7 +386,7 @@ class DcSlotTrafficProfileTest {
     fun `the table has one row per bucket and unique plus duplicate columns per type, plus control and transport`() {
         val p = params(bucketDuration = 100.milliseconds, slotDuration = 500.milliseconds)
         val counter = GossipByteCounter(p).also { it.currentTimeSupplier = { 200.milliseconds } }
-        counter.readForTest(rpcWithPublish("/dc/block", id = 1, dataSize = 1000))
+        counter.readForTest(rpcWithPublish(TOPIC_BLOCK, id = 1, dataSize = 1000))
 
         val profile = DcSlotTrafficProfile.of(
             gossipCounters = listOf(counter),

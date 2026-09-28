@@ -155,11 +155,13 @@ class DcBlockScenarioTest {
     fun `every message type namespaces its topics and allows one issuance config per offset`() {
         DcSlotMessageType.values().forEach { type ->
             assertThat(DcSlotMessageTopics.Global.topic(type, null).topic)
-                .isEqualTo("/dc/${type.id}")
+                .isEqualTo("/eth2/6a95a1a9/${type.wireName}/ssz_snappy")
             assertThat(DcSlotMessageTopics.Subnets(8).topic(type, 3).topic)
-                .isEqualTo("/dc/${type.id}/3")
+                .isEqualTo("/eth2/6a95a1a9/${type.wireName}_3/ssz_snappy")
         }
         assertThat(DcSlotMessageType.values().map { it.id }.distinct())
+            .hasSize(DcSlotMessageType.values().size)
+        assertThat(DcSlotMessageType.values().map { it.wireName }.distinct())
             .hasSize(DcSlotMessageType.values().size)
 
         // Same type at the same offset is still a mistake: two competing issuance configs.

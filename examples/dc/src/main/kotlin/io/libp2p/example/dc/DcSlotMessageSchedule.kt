@@ -7,29 +7,35 @@ import kotlin.random.Random
 import kotlin.time.Duration
 
 /**
- * Semantic type of a slot message. [id] is the short name used on the wire (as the gossip topic
- * suffix) and in every report.
+ * Semantic type of a slot message. [id] is the short name used in every report; [wireName] is the
+ * name that goes into the gossip topic, and it is the Ethereum one because the topic string travels
+ * in every copy of every message. At mainnet lengths that is 47 bytes on a 240-byte attestation, so
+ * a short made-up name would understate the wire cost of small messages by around 10%.
  *
  * Declaration order is report order: anything printed per message type — the columns of
  * [DcSlotTrafficProfile], the per-type sections of [DcRunReport] and [DcGroupStats] — is
  * ordered by [Enum.ordinal], so the constants are listed in the order they occur within a slot.
  */
-enum class DcSlotMessageType(val id: String) {
-    BLOCK("block"),
-    PAYLOAD("payload"),
-    PAYLOAD_CHUNK("payload-c"),
-    BLOB_COLUMN("blob"),
-    GOLDFISH_ATTESTATION("ac-vote"),
-    FFG_ATTESTATION("ffg-vote"),
-    AGGREGATES("aggregates");
+enum class DcSlotMessageType(val id: String, val wireName: String) {
+    BLOCK("block", "beacon_block"),
+    PAYLOAD("payload", "execution_payload"),
+    PAYLOAD_CHUNK("payload-c", "payload_chunk"),
+    BLOB_COLUMN("blob", "data_column_sidecar"),
+    GOLDFISH_ATTESTATION("ac-vote", "ac_attestation"),
+    FFG_ATTESTATION("ffg-vote", "beacon_attestation"),
+    AGGREGATES("aggregates", "beacon_aggregate_and_proof");
 
     override fun toString(): String = id
 
     companion object {
         private val BY_ID = values().associateBy { it.id }
+        private val BY_WIRE_NAME = values().associateBy { it.wireName }
 
         /** The type with this [id], or null if no constant uses it. */
         fun byId(id: String): DcSlotMessageType? = BY_ID[id]
+
+        /** The type whose topic carries this [wireName], or null if no constant uses it. */
+        fun byWireName(wireName: String): DcSlotMessageType? = BY_WIRE_NAME[wireName]
     }
 }
 
@@ -70,13 +76,13 @@ sealed class DcSlotMessageTopics {
     internal fun topic(type: DcSlotMessageType, subnetId: Int?): Topic = when (this) {
         Global -> {
             require(subnetId == null) { "global $type message must not have a subnet, got $subnetId" }
-            Topic("$TOPIC_PREFIX${type.id}")
+            Topic("$TOPIC_PREFIX${type.wireName}$TOPIC_SUFFIX")
         }
         is Subnets -> {
             require(subnetId != null && subnetId in 0 until subnetCount) {
                 "$type subnet must be in 0 until $subnetCount, got $subnetId"
             }
-            Topic("$TOPIC_PREFIX${type.id}/$subnetId")
+            Topic("$TOPIC_PREFIX${type.wireName}_$subnetId$TOPIC_SUFFIX")
         }
     }
 
@@ -87,18 +93,31 @@ sealed class DcSlotMessageTopics {
         }
 
     companion object {
-        private const val TOPIC_PREFIX = "/dc/"
+        /**
+         * Ethereum's topic shape, `/eth2/<fork digest>/<name>/<encoding>`, because its length is
+         * paid on every copy of every message. The digest is a fixed stand-in for a real fork.
+         */
+        private const val TOPIC_PREFIX = "/eth2/6a95a1a9/"
+        private const val TOPIC_SUFFIX = "/ssz_snappy"
 
         /**
          * Recovers the [DcSlotMessageType] a wire topic string belongs to — the inverse of [topic],
          * for code that only has the topic (e.g. [GossipByteCounter], reading a topic ID off an
          * inbound RPC with no other context on what published it). Null for anything not shaped like
-         * one of our own topics, including a prefixed topic whose type segment names no constant.
+         * one of our own topics, including a well-shaped topic whose name segment names no constant.
          */
         fun typeOf(topic: String): DcSlotMessageType? {
-            if (!topic.startsWith(TOPIC_PREFIX)) return null
-            val rest = topic.removePrefix(TOPIC_PREFIX)
-            return DcSlotMessageType.byId(rest.substringBefore('/'))
+            if (!topic.startsWith(TOPIC_PREFIX) || !topic.endsWith(TOPIC_SUFFIX)) return null
+            val name = topic.removePrefix(TOPIC_PREFIX).removeSuffix(TOPIC_SUFFIX)
+            if ('/' in name) return null
+            // A subnet topic ends in _<id>; a global one has no such suffix. Names contain
+            // underscores themselves, so only a trailing all-digit segment counts as a subnet.
+            val base = if (name.substringAfterLast('_', "").toIntOrNull() != null) {
+                name.substringBeforeLast('_')
+            } else {
+                name
+            }
+            return DcSlotMessageType.byWireName(base)
         }
     }
 }
