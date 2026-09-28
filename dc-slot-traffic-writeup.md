@@ -119,14 +119,14 @@ tier**, from the 50 Mbit/s home node to the 10 Gbit/s pool node running at 23% u
 A tail caused by the receiver's own congestion could not be the same number for a node on 50 Mbit/s
 and a node on 10 Gbit/s. The tail moves with the *total* vote volume in the network — halve it and
 every tier's p99 falls by a quarter — while p50 barely moves (228 → 222 ms on the home tier). The
-typical path is equally fast in both; what differs is the unlucky path, the one that queues behind
-somebody else's forwarding burst, and in A every burst is twice as deep everywhere.
+typical message is equally fast in both; what differs is the unlucky one, the message that has to
+get out of a congested uplink before anybody can have it, and in A every node's queue is twice as
+deep.
 
 B proves the same point from the other side. Only the *constrained tier's* subscription changed
 there — nothing about the pools, the vps or the epoch — and yet **every tier's tail got worse,
-including the pools' (1592 → 2696 ms)**. Constrained nodes sit in everyone's meshes and relay for
-everyone, so congesting them congests the network: they are not just the tier that suffers first,
-they are a term in everybody else's latency.
+including the pools' (1592 → 2696 ms)**. Congesting the constrained tier congests the network: it is
+not just the tier that suffers first, it is a term in everybody else's latency.
 
 **The decisive test.** Configuration A was re-run with one change — the 100 home nodes given
 200 / 100 Mbit/s, so the network has no constrained tier at all. Nothing else moved: same messages,
@@ -142,11 +142,22 @@ same epoch, same subscriptions, and the same traffic (the pools still receive 11
 votes per slot at the same peak rate. Its attestation tail fell **5.4×** because 100 *other* nodes
 out of 1000 stopped being slow. Aggregates behave the same way (pools 958 → 343 ms).
 
-The mechanism is visible in what did *not* improve: payload chunks barely moved (pools 391 →
-374 ms, `upper-home` 753 → 747 ms). Constrained nodes custody 8 of 128 DA columns, so they are
-almost never on a payload chunk's path — but they are full members of the attestation subnets they
-subscribe to, and every vote crossing the network has a chance of being relayed by one. They add no
-bytes to anyone; they add **delay**, and they add it to precisely the traffic they relay.
+**The delay is paid on what a constrained node publishes, not on what it forwards.** Every group
+hosts the same number of validators, so the constrained tier publishes about 10% of all votes — and
+each of those votes has to get out of a 25 Mbit/s uplink that is already saturated with forwarding
+before any peer, however well provisioned, can see it. Mesh redundancy is no help there: a message
+has D paths *out of* its publisher, but all of them start on the same congested link. Against a slow
+*relay* the mesh does protect you — the other paths deliver first — which is why a tail made of slow
+forwarding would not show up equally at every tier, and this one does.
+
+The distribution says the same thing. The knee is at p90 (home p50 228 → p90 625 → p95 990 →
+p99 1864 ms), about where it should be if roughly a tenth of the votes leave from behind a
+constrained uplink and the rest do not.
+
+What did *not* improve is the check: payload chunks barely moved (pools 391 → 374 ms, `upper-home`
+753 → 747 ms) — and payload chunks are published only by the pools, so no constrained uplink is ever
+on their critical path. Constrained nodes add no bytes to anyone. They add **delay to the messages
+they originate**, and everyone waits for those equally.
 
 </details>
 
