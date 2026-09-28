@@ -1,4 +1,4 @@
-# Distributed Consensus: Gossip traffic profile for a slot
+# Decoupled Consensus: Gossip traffic profile for a slot
 
 Fast-finality designs move a lot more attestation and aggregate traffic than today's network, and
 that traffic is not spread evenly: a slot has a bulk-data burst at its start and a dozen attestation
