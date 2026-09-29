@@ -52,7 +52,7 @@ tasks.register('simulation', Test) {
   jvmArgs('-XX:MaxDirectMemorySize=130g')
   // Lets a scenario be swept without editing it, e.g.
   //   ./gradlew :examples:dc:simulation --tests "*large network*" -Ddc.validators=100000
-  ['dc.validators', 'dc.ffgCompression', 'dc.slots', 'dc.warmupSlots', 'dc.gossip', 'dc.ffg', 'dc.ethGossip', 'dc.homeDownMbps', 'dc.homeUpMbps', 'dc.iwant', 'dc.iwantScope', 'dc.homeFfgSubnets', 'dc.warmupFrom', 'dc.idontwant', 'dc.ffgSlots'].each { name ->
+  ['dc.validators', 'dc.ffgCompression', 'dc.slots', 'dc.warmupSlots', 'dc.gossip', 'dc.ffg', 'dc.ethGossip', 'dc.homeDownMbps', 'dc.homeUpMbps', 'dc.iwant', 'dc.iwantScope', 'dc.homeFfgSubnets', 'dc.warmupFrom', 'dc.idontwant', 'dc.ffgSlots', 'dc.homeCount', 'dc.midHomeCount', 'dc.upperHomeCount', 'dc.homeValidators'].each { name ->
     if (System.getProperty(name) != null) {
       systemProperty name, System.getProperty(name)
     }

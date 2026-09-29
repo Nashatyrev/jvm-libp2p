@@ -145,7 +145,22 @@ class DcScenarioRunnerTest {
         val gossipEnabled = true
         val ffgEnabled = true
         val ethGossipParams = true
-        val homeLink = DcLink(mbitPerSecond(50), mbitPerSecond(25))
+        // Inert unless set: the 50/25 attester floor. Raise both to erase the constrained tier
+        // and measure what it costs every other tier.
+        val homeLink = DcLink(
+            mbitPerSecond(System.getProperty("dc.homeDownMbps")?.toLong() ?: 50),
+            mbitPerSecond(System.getProperty("dc.homeUpMbps")?.toLong() ?: 25)
+        )
+        // Residential group sizes. Moving nodes between the three tiers keeps the network at 1000
+        // nodes and every node's validators and subscriptions unchanged -- only the share of the
+        // population sitting at the attester floor moves.
+        val upperHomeCount = System.getProperty("dc.upperHomeCount")?.toInt() ?: 100
+        val midHomeCount = System.getProperty("dc.midHomeCount")?.toInt() ?: 100
+        val homeCount = System.getProperty("dc.homeCount")?.toInt() ?: 100
+        // -Ddc.homeValidators=false: the attester-floor tier runs no validators, so it publishes no
+        // votes or aggregates and only relays. Its share is spread over everyone else, so the
+        // network keeps 1M validators and every wave keeps its size.
+        val homeValidators = System.getProperty("dc.homeValidators") != "false"
 
         // Mesh degree is a local choice each node makes, so groups may run different ones and still
         // interoperate. Built from one factory so a group's params differ from the run's default in
@@ -176,6 +191,8 @@ class DcScenarioRunnerTest {
         val homeGossipParams = ethLadder.copy(iWantPolicy = iWantPolicy)
 
         val validatorCount = 1_000_000
+        val nodeCount = 100 + 600 + upperHomeCount + midHomeCount + homeCount
+        val validatorsPerNode = validatorCount / (if (homeValidators) nodeCount else nodeCount - homeCount)
         val slotDuration = 12.seconds
         val ffgAttestationSize = 240
         // Slots an epoch spreads its attestations over: each validator attests once per epoch, so
@@ -247,7 +264,7 @@ class DcScenarioRunnerTest {
                     ContinentRegion.US_WEST to 0.2,
                 )
                 bandwidth = Bandwidths.FAST_DATACENTER
-                validators = validatorCount / 1000
+                validators = validatorsPerNode
                 peers = 200
 
                 allMessageSubnets(DcSlotMessageType.BLOB_COLUMN)
@@ -258,43 +275,43 @@ class DcScenarioRunnerTest {
                 name = "vps"
                 spreadOverRegions()
                 bandwidth = Bandwidths.VPS
-                validators = validatorCount / 1000
+                validators = validatorsPerNode
                 peers = 100
 
                 // Model the current validator custody requirement: eight of 128 DA columns per node.
                 randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, count = 16)
                 randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = 4)
             }
-            .addGroup(count = 100) {
+            .addGroup(count = upperHomeCount) {
                 // business
                 name = "upper-home"
                 spreadOverRegions()
                 bandwidth = DcLink(mbitPerSecond(200), mbitPerSecond(100))
-                validators = validatorCount / 1000
+                validators = validatorsPerNode
                 peers = 100
 
                 // Model the current validator custody requirement: eight of 128 DA columns per node.
                 randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, count = 8)
                 randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = ffgResidentialSubnets)
             }
-            .addGroup(count = 100) {
+            .addGroup(count = midHomeCount) {
                 // business
                 name = "mid-home"
                 spreadOverRegions()
                 bandwidth = DcLink(mbitPerSecond(100), mbitPerSecond(50))
-                validators = validatorCount / 1000
+                validators = validatorsPerNode
                 peers = 100
 
                 // Model the current validator custody requirement: eight of 128 DA columns per node.
                 randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, count = 8)
                 randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, count = ffgResidentialSubnets)
             }
-            .addGroup(count = 100) {
+            .addGroup(count = homeCount) {
                 // business
                 name = "home"
                 spreadOverRegions()
                 bandwidth = homeLink
-                validators = validatorCount / 1000
+                validators = if (homeValidators) validatorsPerNode else 0
                 peers = 100
                 gossipParams = homeGossipParams
 
