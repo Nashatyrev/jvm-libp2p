@@ -6,6 +6,27 @@ waves on top of it. This write-up shows what a slot actually looks like on the w
 are distributed in time, how they split per message type and per class of node, and whether
 attestations and aggregates make their deadlines on a home-grade link.
 
+## TL;DR
+
+- **The slot fits on a 50 / 25 Mbit/s node**: 54 MB inbound, the link pinned for 3.9 s of 12, the
+  worst attestation wave 1.14 s inside the 4 s deadline. 1M validators, 21 blobs, 1 MiB payload,
+  250 000 votes, 1024 aggregates.
+- **Attestation subnets are paid for with epoch length.** A second subnet on a constrained node
+  misses the deadline (worst wave 4.25 s); the same second subnet with the epoch spread over 8 slots
+  instead of 4 is the best configuration measured.
+- **The attestation tail is not made by the constrained node's downlink.** It is the same at every
+  tier, a 10 Gbit/s node included, and it comes from the votes constrained nodes *publish*: a vote
+  leaving a saturated 25 Mbit/s uplink is late for everyone, and mesh redundancy cannot route around
+  a publisher. Make those nodes relay-only and the network-wide p99 drops 5.6×, at identical traffic.
+- **Two gossipsub changes carry this**, both pure implementation, no protocol change: batching a
+  turn's messages into one RPC per peer, and asking one announcer at a time instead of every
+  announcer for an IHAVE (which alone cut the constrained tier's traffic by a quarter and its FFG p99
+  from 5.9 s to 1.8 s).
+- **It all holds only while constrained nodes are a minority** surrounded by better-provisioned
+  peers. Gossip forwarding is byte-symmetric while the attester link is 2:1 asymmetric, so such a
+  node is a net sink; an all-constrained network is capped by its 25 Mbit/s uplink and this slot does
+  not fit in it.
+
 <details>
 <summary>
 <b>The subject is the most constrained node in the network</b> — the 50 / 25 Mbit/s home tier, not
