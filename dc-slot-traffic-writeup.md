@@ -159,6 +159,39 @@ What did *not* improve is the check: payload chunks barely moved (pools 391 → 
 on their critical path. Constrained nodes add no bytes to anyone. They add **delay to the messages
 they originate**, and everyone waits for those equally.
 
+**Publishing versus relaying, measured.** To separate the two directly, A was re-run with the
+constrained nodes kept exactly as they are — same 50 / 25 link, same subscriptions, same place in
+every mesh — but running **no validators**, so they relay everything and publish nothing. Their
+validators go to the other 900 nodes, so the network still holds 1M and every wave still carries
+20 831 votes. The same pair was run with the constrained tier cut to 20 nodes, the other 80 moved
+to the two wider home tiers (140 `mid-home`, 140 `upper-home`).
+
+| FFG p99, ms | `upper-home` | `vps` 500M | `validator-pools` 10G |
+|---|---|---|---|
+| 100 constrained nodes, publishing (A) | 1835 | 1640 | 1592 |
+| 100 constrained nodes, relay only | **344** | **341** | **281** |
+| 20 constrained nodes, publishing | 1028 | 909 | 873 |
+| 20 constrained nodes, relay only | **341** | **340** | **282** |
+| no constrained tier (from above) | 339 | 339 | 283 |
+
+Once the constrained nodes stop publishing, **it makes no difference whether there are 100 of them
+or 20** — or none at all: the three rows agree to within 5 ms. A hundred nodes on 50 / 25 sitting in
+every vote mesh and relaying at full load cost the rest of the network nothing measurable. Aggregates
+say the same (pools 958 → 378 ms with 100 relay-only nodes, 348 with 20), and the traffic is
+unchanged in all four runs (pools 1162–1174 MB).
+
+The percentiles on the pools show where the tail starts. With 100 publishing constrained nodes —
+10% of the votes — p90 is still fast at 266 ms and p95 is already 665. With 20 — 2% of the votes —
+p95 is fast at 260 ms and only p99 is slow, at 873. The tail begins exactly at the share of votes
+that leave from behind a constrained uplink. That is why cutting the tier from 100 to 20 nodes only
+halved the p99 instead of removing it: 2% is still more than the 1% a p99 can hide.
+
+The constrained nodes' own reception improves too, since they no longer wait on each other's votes:
+home FFG p99 1864 → 969 ms and worst wave 2860 → 1246 ms with 100 relay-only nodes. With only 20
+the home figures are noisier — p99 of a wave is ~65 deliveries, dominated by one or two nodes — and
+those 20 receive a little more than before (57–58 MB against 54 MB), because nearly all of their
+peers are now fast and their duplicates arrive closer together.
+
 </details>
 
 <details>
@@ -288,7 +321,9 @@ run before it is worth quoting.
 What *is* measured is the cost of the minority itself, and it is not small: with the 100 constrained
 nodes upgraded to 200 / 100 Mbit/s and nothing else changed, the attestation tail at every other
 tier falls by a factor of five — see *the decisive test* in the Result chapter. Ten per cent of the
-network sitting at the attester floor is what sets the other ninety per cent's p99.
+network sitting at the attester floor is what sets the other ninety per cent's p99. The cost is in
+what those nodes *publish*: kept on 50 / 25 but running no validators, they cost the rest of the
+network nothing measurable.
 
 So the claim this write-up supports is "a minimum-spec node survives a fast-finality slot **in a
 mixed network**", not "a network of minimum-spec nodes survives one". The composition of the
@@ -555,8 +590,8 @@ Two things to take from this:
   blocks, payload or DA columns.
 - **The attestation and aggregate tails do not.** FFG p99 barely moves (1864 → 1719 → 1835 ms) and
   the aggregate p99 is flat to the millisecond (1015 → 1010 → 1000 ms). Those tails are not produced by
-  the receiving node's downlink — they are produced by propagation through a mesh whose other
-  members are home nodes. **A well-provisioned node cannot buy its way out of them**; they are a
+  the receiving node's downlink — they are produced by the votes that other home nodes publish
+  through their own congested uplinks. **A well-provisioned node cannot buy its way out of them**; they are a
   property of the population, which is the other half of why the most constrained tier is the one to
   design against.
 
