@@ -59,7 +59,7 @@ entirely of them is a different network, and a much slower one.
 
 </details>
 
-## Result: the slot fits, with room to spare in two configurations of three
+## Result: 
 
 Of the three runs, two can be considered acceptable:
 
