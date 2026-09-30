@@ -4,16 +4,17 @@ Fast-finality designs move a lot more attestation and aggregate traffic than tod
 that traffic is not spread evenly: a slot has a bulk-data burst at its start and a dozen attestation
 waves on top of it. This write-up shows what a slot actually looks like on the wire — how the bytes
 are distributed in time, how they split per message type and per class of node, and whether
-attestations and aggregates make their deadlines on a home-grade link.
+how much of a home-grade link it all takes.
 
 ## TL;DR
 
 - **The slot fits on a 50 / 25 Mbit/s node**: 54 MB inbound, the link pinned for 3.9 s of 12, the
-  worst attestation wave 1.14 s inside the 4 s deadline. 1M validators, 21 blobs, 1 MiB payload,
-  250 000 votes, 1024 aggregates.
+  worst attestation wave at 2.9 s p99. 1M validators, 21 blobs, 1 MiB payload, 250 000 votes,
+  1024 aggregates.
 - **Attestation subnets are paid for with epoch length.** A second subnet on a constrained node
-  misses the deadline (worst wave 4.25 s); the same second subnet with the epoch spread over 8 slots
-  instead of 4 is the best configuration measured.
+  costs 25% more bytes and leaves the link at its ceiling for 7.2 s of 12, with the worst wave at
+  4.25 s; the same second subnet with the epoch spread over 8 slots instead of 4 is the best
+  configuration measured.
 - **Two gossipsub changes carry this**, both pure implementation, no protocol change: batching a
   turn's messages into one RPC per peer, and asking one announcer at a time instead of every
   announcer for an IHAVE (which alone cut the constrained tier's traffic by a quarter and its FFG p99
@@ -51,23 +52,23 @@ entirely of them is a different network, and a much slower one.
 
 </details>
 
-Everything below comes from the `large network` scenario in
-[`DcScenarioRunnerTest`](examples/dc/src/test/kotlin/playground/DcScenarioRunnerTest.kt), run on
-the simulator in `examples/dc`.
-
-## Result: the slot fits, in two of the three configurations
+## Result: the slot fits, with room to spare in two configurations of three
 
 **A fast-finality slot — a block, a 1 MiB payload, 21 blobs' worth of DA columns, 250 000 FFG votes
-and 1024 aggregates — fits on a 50 / 25 Mbit/s node.** It does not fit unconditionally: the
-configuration has to trade off how many attestation subnets a constrained node carries against how
-many slots the epoch spreads its votes over.
+and 1024 aggregates — fits on a 50 / 25 Mbit/s node.** Everything arrives, in every configuration
+tried. What separates them is how much of the slot the link spends saturated and how long the
+attestation tail gets, and that turns on a trade-off: how many attestation subnets a constrained
+node carries against how many slots the epoch spreads its votes over.
 
-Two things have to hold for a configuration to count as working:
+There is no dissemination deadline to test against — the design does not set one, and how late a
+vote may be before it stops counting is still open. So the comparison below is relative, on two
+things that are meaningful without a threshold:
 
-- **Every attestation wave arrives within 4 s of being published** — judged on the *worst* wave of
-  the twelve, not on the average. A vote that misses its deadline is not a vote.
-- **The link is not pinned to its ceiling for most of the slot.** A node that spends the whole slot
-  at 100% has no headroom left for a bad slot, a re-org or a peer churn event.
+- **How much of the slot the link spends at its ceiling.** A node pinned at 100% for most of the
+  slot has no headroom left for a bad slot, a re-org or a peer churn event.
+- **How far the attestation tail is from the rest of the distribution.** Latency judged on the
+  *worst* of the twelve waves, not the average, because the waves that land in the bulk-data window
+  are the ones a design has to live with.
 
 Three configurations were run, identical in everything else:
 
@@ -80,25 +81,26 @@ Three configurations were run, identical in everything else:
 | FFG p99, all waves | 1.86 s | 3.15 s | 1.40 s |
 | aggregate p99, worst wave | 1.19 s | 1.95 s | 1.20 s |
 | payload chunk p99 | 2.27 s | 2.93 s | 2.32 s |
-| | **fits**, 1.14 s of margin | **misses the deadline** | **fits**, 1.80 s of margin |
+| | baseline | **25% more bytes, link pinned twice as long, every tail worse** | **cheapest and fastest of the three** |
 
 **A — 4-slot epoch, one attestation subnet.** The bulk-data burst pins the link for 3.9 s, the
-twelve vote waves ride on top of it, and the worst wave lands 1.14 s inside the deadline.
+twelve vote waves ride on top of it, and the slot drains with time to spare: from wave 6 on, every
+wave is under 1.4 s at p99.
 
 ![Configuration A](docs/dc-slot-traffic/fit-a-4slots-1subnet.png)
 
 **B — the same epoch, two subnets.** Doubling the vote traffic a constrained node carries adds 25%
-to its inbound bytes, and the slot stops draining: the link is at its ceiling for 7.2 of 12 seconds,
-the blue vote band never clears between waves, and the worst wave **misses the 4 s deadline at
-4.25 s**.
+to its inbound bytes, and the slot stops draining: the link is at its ceiling for **7.2 of 12
+seconds**, the blue vote band never clears between waves, and no wave recovers — even the cheapest,
+published as far from the burst as a wave gets, is 2.02 s at p99 against A's 1.07 s.
 
 ![Configuration B](docs/dc-slot-traffic/fit-b-4slots-2subnets.png)
 
 **C — two subnets, epoch spread over 8 slots.** Spreading the epoch halves both quantities the
 second subnet doubled: 10 416 votes per wave instead of 20 833, and a 484-byte aggregate instead of
 728, since the bitvector covers half as much of a subnet. That buys back more than the second subnet
-cost: **C carries less traffic than the one-subnet baseline and has the widest deadline margin of
-the three**. Its aggregate and payload tails land within a few tens of milliseconds of A's, which is
+cost: **C carries less traffic than the one-subnet baseline and has the fastest tails of the
+three**. Its aggregate and payload tails land within a few tens of milliseconds of A's, which is
 inside run-to-run noise; everything else is clearly better.
 
 ![Configuration C](docs/dc-slot-traffic/fit-c-8slots-2subnets.png)
@@ -253,7 +255,8 @@ is 484 B rather than 728 B, because its bitvector covers half a slot's share of 
 | **all waves** | **312** | **1015** | **451** | **1612** | **295** | **1027** |
 
 Two things the aggregate table shows that the FFG one does not. Aggregates are published after the
-bulk-data burst is gone, so no configuration has a catastrophic wave — B's worst is 1.95 s, not 4 s.
+bulk-data burst is gone, so no configuration has a catastrophic wave — B's worst is 1.95 s against
+A's 1.19 s, where the FFG waves differ by seconds.
 But they **degrade across the slot** in all three, 536 → 1193 ms in A, because each later wave
 queues behind more accumulated vote traffic. That is the one place where B's extra load shows up as
 a constant penalty rather than a burst effect: its p50 is 85–205 ms worse than A's in every single
@@ -661,7 +664,7 @@ ones published into the bulk-data window**, and they pay 2.2–2.9 s at p99 agai
 waves after it — and 610 ms at p50 for wave 2 against ~195 ms once the link is free. The
 attestation tail on a home link is set by the blobs and the payload, not by the attestations.
 
-All twelve waves stay under the 4 s attestation deadline, with 1.14 s of margin in the worst wave.
+The worst wave is 2.86 s at p99 and 1.92 s at p95; from wave 6 on the tail is under 1.4 s.
 
 ### Aggregates — 5 publication instants
 
