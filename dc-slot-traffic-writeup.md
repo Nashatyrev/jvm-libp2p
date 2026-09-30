@@ -8,25 +8,20 @@ how much of a home-grade link it all takes.
 
 ## TL;DR
 
-- **The slot fits on a 50 / 25 Mbit/s node**: 54 MB inbound, the link pinned for 3.9 s of 12, the
-  worst attestation wave at 2.9 s p99. 1M validators, 21 blobs, 1 MiB payload, 250 000 votes,
-  1024 aggregates.
-- **Attestation subnets are paid for with epoch length.** A second subnet on a constrained node
-  costs 25% more bytes and leaves the link at its ceiling for 7.2 s of 12, with the worst wave at
-  4.25 s; the same second subnet with the epoch spread over 8 slots instead of 4 is the best
-  configuration measured.
-- **Two gossipsub changes carry this**, both pure implementation, no protocol change: batching a
-  turn's messages into one RPC per peer, and asking one announcer at a time instead of every
-  announcer for an IHAVE (which alone cut the constrained tier's traffic by a quarter and its FFG p99
-  from 5.9 s to 1.8 s).
-- **It all holds only while constrained nodes are a minority** surrounded by better-provisioned
-  peers. Gossip forwarding is byte-symmetric while the attester link is 2:1 asymmetric, so such a
-  node is a net sink; an all-constrained network is capped by its 25 Mbit/s uplink and this slot does
-  not fit in it.
-- **The attestation tail is not made by the constrained node's downlink.** It is the same at every
-  tier, a 10 Gbit/s node included, and it comes from the votes constrained nodes *publish*: a vote
-  leaving a saturated 25 Mbit/s uplink is late for everyone, and mesh redundancy cannot route around
-  a publisher. Make those nodes relay-only and the network-wide p99 drops 5.6×, at identical traffic.
+- The **slot fits** on a 50/25 Mbit/s node (1M validators, 21 blobs, 1 MiB payload, 1024 aggregates per slot):
+  
+  - either **4 slots** per epoch + **1 attestation subnet** subscription    
+  - or **8 slots** per epoch + **2 attestation subnets** subscription    
+- The **slot doesn't fit** on a 50/25 Mbit/s node:
+  - **4 slots** per epoch + **2 attestation subnet** subscription
+- It all holds only while **constrained nodes are a minority** surrounded by better-provisioned
+  peers.
+- **Two GossipSub changes** carry this (both pure implementation, no protocol change): 
+  - Batch publishing
+  - Disciplined IWANT
+- **Other two potential GossipSub changes** may significantly improve the throughput and buy us more space: 
+  - Using Partial Messages GossipSub extension to save a lot on massive IHAVE traffic
+  - Using [snappy-stream compression](https://ethresear.ch/t/snappy-with-a-memory-40-less-gossip-traffic/26078/2) to compress attestations/aggregates up to x2 
 
 <details>
 <summary>
