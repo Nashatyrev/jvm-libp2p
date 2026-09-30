@@ -51,9 +51,9 @@ entirely of them is a different network, and a much slower one.
 
 Three runs, 2 of them might be considered as acceptable: 
 
-- ✅ **4 slots** per epoch + **1 attestation subnet** subscription
-- ⚠️ **4 slots** per epoch + **2 attestation subnet** subscription
-- ✅ **8 slots** per epoch + **2 attestation subnets** subscription
+- ✅ A **4 slots** per epoch + **1 attestation subnet** subscription
+- ⚠️ B **4 slots** per epoch + **2 attestation subnet** subscription
+- ✅ C **8 slots** per epoch + **2 attestation subnets** subscription
 
 
 
@@ -73,7 +73,7 @@ vote may be before it stops counting is still open. The criteria are correspondi
   bulk-data burst should not be in a different league from the rest. Judged on the *worst* of the
   twelve waves, since those are the ones a design has to live with.
 
-Three configurations were run, identical in everything else:
+Three runs, identical in everything else, two of which might be considered acceptable:
 
 | home tier, per measured slot | **A** — 4-slot epoch, 1 subnet | **B** — 4-slot epoch, 2 subnets | **C** — 8-slot epoch, 2 subnets |
 |---|---|---|---|
@@ -84,7 +84,7 @@ Three configurations were run, identical in everything else:
 | FFG p99, all waves | 1.86 s | 3.15 s | 1.40 s |
 | aggregate p99, worst wave | 1.19 s | 1.95 s | 1.20 s |
 | payload chunk p99 | 2.27 s | 2.93 s | 2.32 s |
-| | baseline | **25% more bytes, link pinned twice as long, every tail worse** | **cheapest and fastest of the three** |
+| | ✅ baseline | ⚠️ **25% more bytes, link pinned twice as long, every tail worse** | ✅ **cheapest and fastest of the three** |
 
 **A — 4-slot epoch, one attestation subnet.** The bulk-data burst pins the link for 3.9 s, the
 twelve vote waves ride on top of it, and the slot drains with time to spare: from wave 6 on, every
