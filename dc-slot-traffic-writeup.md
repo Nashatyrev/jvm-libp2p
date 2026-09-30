@@ -3,33 +3,35 @@
 Fast-finality designs move a lot more attestation and aggregate traffic than today's network, and
 that traffic is not spread evenly: a slot has a bulk-data burst at its start and a dozen attestation
 waves on top of it. This write-up shows what a slot actually looks like on the wire — how the bytes
-are distributed in time, how they split per message type and per class of node, and whether
-how much of a home-grade link it all takes.
+are distributed in time, how they split per message type and per class of node, and how much of a
+home-grade link it all takes.
 
 ## TL;DR
 
-- The aim was just to check if the traffic is gonna fit the most constrained nodes (as per [EIP-7870](https://eips.ethereum.org/EIPS/eip-7870))
-  with existing GossipSub protocol  
-- Short experiment description: 
-  - Publish near-maximum size slot inhabitants (post ePBS) at their approximate timings: 
-    - Block: **8Kb**
-    - Block payload: **1Mb**
-    - Blobs: **21 blobs**
-  - Publish slot assigned attestations via 64 subnets scattered across a slot 
-  - Publish **1024** (16 * 64) aggregates scattered closer to the end of the slot 
-- The **slot fits** on a 50/25 Mbit/s node (1M validators, 21 blobs, 1 MiB payload, 1024 aggregates per slot):
-  - either **4 slots** per epoch + **1 attestation subnet** subscription    
-  - or **8 slots** per epoch + **2 attestation subnets** subscription    
-- The **slot doesn't fit** on a 50/25 Mbit/s node:
-  - **4 slots** per epoch + **2 attestation subnet** subscription
-- It all holds only while **constrained nodes are a minority** surrounded by better-provisioned
+- The aim was to check whether this traffic fits on the most constrained nodes, as defined by
+  [EIP-7870](https://eips.ethereum.org/EIPS/eip-7870), with the existing GossipSub protocol.
+- The experiment in short:
+  - Publish near-maximum-size slot messages (post-ePBS) at their approximate times:
+    - block: **8 KiB**
+    - execution payload: **1 MiB**
+    - blobs: **21**
+  - Publish the slot's share of attestations over 64 subnets, spread across the slot.
+  - Publish **1024** (16 × 64) aggregates, concentrated towards the end of the slot.
+- The **slot fits** on a 50 / 25 Mbit/s node (1M validators, 21 blobs, 1 MiB payload, 1024
+  aggregates per slot) with either:
+  - **4 slots** per epoch and **1 attestation subnet** subscription, or
+  - **8 slots** per epoch and **2 attestation subnet** subscriptions.
+- The **slot does not fit** on a 50 / 25 Mbit/s node with:
+  - **4 slots** per epoch and **2 attestation subnet** subscriptions.
+- All of this holds only while **constrained nodes are a minority** surrounded by better-provisioned
   peers.
-- **Two GossipSub changes** carry this (both pure implementation, no protocol change): 
-  - Batch publishing
-  - Disciplined IWANT
-- **Other two potential GossipSub changes** may noticeably improve the throughput and buy us more space: 
-  - Using [snappy-stream compression](https://ethresear.ch/t/snappy-with-a-memory-40-less-gossip-traffic/26078/2) to compress attestations/aggregates up to x2 
-  - Using Partial Messages GossipSub extension to save a lot on massive IHAVE traffic
+- **Two GossipSub changes** make it work, both implementation-only, with no protocol change:
+  - batch publishing;
+  - disciplined IWANT.
+- **Two further GossipSub changes** could noticeably improve throughput and buy more headroom:
+  - [Snappy stream compression](https://ethresear.ch/t/snappy-with-a-memory-40-less-gossip-traffic/26078/2),
+    which compresses attestations and aggregates by up to 2×;
+  - the Partial Messages GossipSub extension, which would save much of the heavy IHAVE traffic.
 
 <details>
 <summary>
@@ -57,7 +59,7 @@ entirely of them is a different network, and a much slower one.
 
 ## Result: the slot fits, with room to spare in two configurations of three
 
-Three runs, 2 of them might be considered as acceptable: 
+Of the three runs, two can be considered acceptable:
 
 | | | slots per epoch | attestation subnets |
 |---|---|---|---|
@@ -65,25 +67,26 @@ Three runs, 2 of them might be considered as acceptable:
 | ⚠️ | B | 4 | 2 |
 | ✅ | C | 8 | 2 |
 
-There is no dissemination deadline to test against — how late a
-vote may be before it stops counting is still open. The criteria are correspondingly soft:
+There is no dissemination deadline to test against: how late a vote may be before it stops
+counting is still an open question. The criteria are correspondingly soft:
 
-- **The link should not stay saturated.** A node pinned at its ceiling has no headroom for a bad slot,
-  and past that point its latencies stop describing the protocol and start describing the queue in front of it.
-- **Dissemination latency should stay in a reasonable spread.** No threshold,
-  just the shape — the tail should not run away from the median, and the waves that land in the
-  bulk-data burst should not be in a different league from the rest. Judged on the *worst* of the
+- **The link should not stay saturated.** A node pinned at its ceiling has no headroom for a bad
+  slot, and past that point its latencies stop describing the protocol and start describing the
+  queue in front of it.
+- **Dissemination latency should stay in a reasonable spread.** There is no threshold, only the
+  shape: the tail should not run away from the median, and the waves that land in the bulk-data
+  burst should not be in a different league from the rest. This is judged on the *worst* of the
   twelve waves, since those are the ones a design has to live with.
 
-**A — 4-slot epoch, 1 attestation subnet.** 
+**A — 4-slot epoch, 1 attestation subnet.**
 
 ![Configuration A](docs/dc-slot-traffic/fit-a-4slots-1subnet.png)
 
-**B — 4-slot epoch, 2 attestation subnet.**
+**B — 4-slot epoch, 2 attestation subnets.**
 
 ![Configuration B](docs/dc-slot-traffic/fit-b-4slots-2subnets.png)
 
-**C — 4-slot epoch, 1 attestation subnet.**
+**C — 8-slot epoch, 2 attestation subnets.**
 
 ![Configuration C](docs/dc-slot-traffic/fit-c-8slots-2subnets.png)
 
@@ -96,7 +99,7 @@ its share, the longer epoch halves the votes per slot, and the two cancel.
 
 | per home node, measured slot | A | C |
 |---|---|---|
-| ffg-vote bytes | 13.7 MB | 12.9 MB |
+| FFG vote bytes | 13.7 MB | 12.9 MB |
 | votes received per wave | ~325 | ~326 |
 
 What is *not* the same is what the rest of the network carries. Each validator attests once per
@@ -108,7 +111,7 @@ epoch, so an 8-slot epoch puts 125 000 votes in a slot where a 4-slot epoch puts
 | `validator-pools` — total / of it votes | 1171 MB / 608.3 | 626 MB / 302.4 |
 
 And that is where the tail is made. Within a single run, **FFG p99 is nearly the same for every
-tier**, from the 50 Mbit/s home node to the 10 Gbit/s pool node running at 23% utilisation:
+tier**, from the 50 Mbit/s home node to the 10 Gbit/s pool node running at 28% utilisation:
 
 | FFG p99, ms | `home` 50/25 | `mid-home` | `upper-home` | `vps` 500M | `validator-pools` 10G |
 |---|---|---|---|---|---|
@@ -154,7 +157,7 @@ The distribution says the same thing. The knee is at p90 (home p50 228 → p90 6
 p99 1864 ms), about where it should be if roughly a tenth of the votes leave from behind a
 constrained uplink and the rest do not.
 
-What did *not* improve is the check: payload chunks barely moved (pools 391 → 374 ms, `upper-home`
+The check is what did *not* improve: payload chunks barely moved (pools 391 → 374 ms, `upper-home`
 753 → 747 ms) — and payload chunks are published only by the pools, so no constrained uplink is ever
 on their critical path. Constrained nodes add no bytes to anyone. They add **delay to the messages
 they originate**, and everyone waits for those equally.
@@ -231,17 +234,17 @@ is 484 B rather than 728 B, because its bitvector covers half a slot's share of 
 | 11 s | 339 | **1193** | 544 | 1767 | 316 | **1199** |
 | **all waves** | **312** | **1015** | **451** | **1612** | **295** | **1027** |
 
-Two things the aggregate table shows that the FFG one does not. Aggregates are published after the
-bulk-data burst is gone, so no configuration has a catastrophic wave — B's worst is 1.95 s against
-A's 1.19 s, where the FFG waves differ by seconds.
-But they **degrade across the slot** in all three, 536 → 1193 ms in A, because each later wave
-queues behind more accumulated vote traffic. That is the one place where B's extra load shows up as
+The aggregate table shows two things the FFG one does not. Aggregates are published after the
+bulk-data burst is gone, so no configuration has a catastrophic wave: B's worst is 1.95 s against
+A's 1.19 s, whereas the FFG waves differ by seconds. But aggregates **degrade across the slot** in
+all three, 536 → 1193 ms in A, because each later wave queues behind more accumulated vote
+traffic. That is the one place where B's extra load shows up as
 a constant penalty rather than a burst effect: its p50 is 85–205 ms worse than A's in every single
 wave, from the first one onwards.
 
 In every configuration the worst FFG waves are those published into the bulk-data window at 1–3 s,
 and what separates the three is how quickly the network gets out from under it. A is back under
-1.4 s from wave 6 on, C under 510 ms from wave 8 on. B never recovers: its cheapest wave — at 7 s,
+1.4 s from wave 6 on, C around 500 ms from wave 8 on. B never recovers: its cheapest wave — at 7 s,
 as far from the burst as a wave gets — is still 2.02 s, worse than *any* wave A sees once the burst
 has cleared.
 
@@ -254,8 +257,8 @@ the collision between the votes and the DA burst at the head of the slot.
 
 ### Simulator
 
-The nodes are real: unmodified jvm-libp2p gossipsub with its real Netty pipelines and a simulated
-QUIC transport. What is simulated is time and the network underneath:
+The nodes are real: jvm-libp2p's GossipSub, with the changes listed under *Gossip* below, running
+its real Netty pipelines over a simulated QUIC transport. What is simulated is time and the network underneath:
 
 - **1000 nodes**, each behind a modelled access link with separate download and upload capacity.
 - **Six regions** (US-East, US-West, Europe, Asia, South America, Africa) with a fixed RTT matrix —
@@ -337,26 +340,25 @@ it.
 
 <details>
 <summary>A constraint that shaped all of this: the protocol itself is not changed</summary>
- Everything here is an
-implementation change — local behaviour, local policy, an extra knob in `GossipParams` — and none
-of it touches the wire format, the control message types, their semantics, or what a peer is
-entitled to expect. Nothing needs to be negotiated and nothing needs a spec change: a node running
-these changes talks to a stock gossipsub peer, and every choice below is one a node makes for
-itself. Batching several messages into one RPC is something the format already allows; whether and
+
+Everything here is an implementation change — local behaviour, local policy, an extra knob in
+`GossipParams` — and none of it touches the wire format, the control message types, their
+semantics, or what a peer is entitled to expect. Nothing needs to be negotiated and nothing needs a
+spec change: a node running these changes talks to a stock GossipSub peer, and every choice below is
+one a node makes for itself. Batching several messages into one RPC is something the format already allows; whether and
 when to answer an IHAVE with an IWANT is the receiver's own decision; remembering which ids you
 already advertised to a peer is bookkeeping, not protocol. The mesh degree is local in the same
 way, which is why the tiers here can run different values of `D` and still interoperate.
+
 </details>
 
 #### Parameters
 
 <details>
-<summary>Ethereum mainnet values — `D` = 8</summary>
+<summary>Ethereum mainnet values, not jvm-libp2p's defaults: D = 8, D_low = 6, D_high = 12,
+D_lazy = 6, heartbeat 700 ms</summary>
 
-**Ethereum mainnet values — `D` = 8, `D_low` = 6, `D_high` = 12, `D_lazy` = 6, heartbeat 700 ms —
-not jvm-libp2p's defaults.** Measured mesh: 9.57 per (node, topic) network-wide, 11.62 on the home
-tier.
-
+Measured mesh: 9.57 per (node, topic) network-wide, 11.62 on the home tier.
 
 | | value | jvm-libp2p default |
 |---|---|---|
@@ -379,10 +381,9 @@ So a run against jvm-libp2p defaults is optimistic relative to mainnet, not cons
 <details>
 <summary>Batch publishing</summary>
 
-Modification investigated by @csaba
+Modification investigated by @csaba.
 
-Messages handled in one event-loop turn
-leave as one merged RPC per peer, not one RPC each
+Messages handled in one event-loop turn leave as one merged RPC per peer, not one RPC each.
 
 A router that handles one message at a time emits one RPC per message per peer, which in this
 scenario would be fatal to realism: a slot carries 250 000 FFG votes of 240 bytes, each arriving in
@@ -400,14 +401,14 @@ them in one frame, not thirty.
 <details>
 <summary>Disciplined IWANT</summary>
 
-Modification investigated by @csaba
+Modification investigated by @csaba.
 
-Ask one announcer at a time instead of every announcer; cuts
-home-tier inbound traffic by a third and FFG p99 from 5.1 s to 1.6 s
+Ask one announcer at a time instead of every announcer. This cuts home-tier inbound traffic by a
+quarter and FFG p99 from 5.9 s to 1.8 s.
 
 `GossipParams.iWantPolicy`, commits `304d4ad0` and `9949de48`.
 
-Stock gossipsub answers an IHAVE for an unknown message id by immediately sending IWANT to *that*
+Stock GossipSub answers an IHAVE for an unknown message id by immediately sending IWANT to *that*
 announcer, with no check for a request already in flight. A node whose mesh delivery runs late
 therefore gets one extra copy for every IHAVE that beats the message. On the home tier this was the
 single largest source of traffic: 23.5 copies of each payload chunk against a mesh of 11.6.
@@ -424,10 +425,10 @@ on this scenario (single-slot runs, home tier):
 | FFG vote p99 | 5.89 s | **1.77 s** |
 | aggregate p99 | 5.63 s | **1.04 s** |
 
-Note what this is *not*: shrinking the mesh does not substitute for it. At `D = 4 / D_high = 4` the
-mesh fell from 11.7 to 3.9 while copies per chunk only went 22.4 → 18.3 (measured before the topic
-names were lengthened), because a leaner mesh
-delivers later and lets *more* IHAVEs win the race.
+Note what this is *not*: shrinking the mesh is no substitute for it. At `D = 4 / D_high = 4` the
+mesh fell from 11.7 to 3.9 while copies per chunk only went from 22.4 to 18.3 (measured before the
+topic names were lengthened), because a leaner mesh delivers later and lets *more* IHAVEs win the
+race.
 
 </details>
 
@@ -473,7 +474,7 @@ Notes on the two attestation rows, which are the fast-finality-specific part:
 
 - **2 slots of 12 s**; slot 0 is warm-up and excluded, all figures describe **slot 1**.
 - The warm-up slot publishes only its **last 4 seconds** (`dc.warmupFrom=8`). A measured slot needs
-  a predecessor — a cold slot reads ffg p99 at 1.61 s instead of 2.12 s and blob p50 at 787 ms
+  a predecessor — a cold slot reads FFG p99 at 1.61 s instead of 2.12 s and blob p50 at 787 ms
   instead of 492 ms — but a *full* warm-up slot costs as much wall clock as the measured one and
   changes the result by only a few percent, except for inflating the bulk-data tail the measured
   slot inherits.
@@ -483,9 +484,9 @@ Notes on the two attestation rows, which are the fast-finality-specific part:
 
 ## Traffic profile
 
-Inbound throughput per node, averaged over the group, in 100 ms buckets across the measured slot —
-the y axis is Mbit/s, so a tier's link capacity is the number printed on its link. The
-stack is decoded gossip, split per message type, with the first copy of a message in the darker
+Inbound throughput per node, averaged over the group, in 100 ms buckets across the measured slot.
+The y axis is Mbit/s, so a tier's link capacity is the number printed on its link. The stack is
+decoded gossip, split per message type, with the first copy of a message in the darker
 shade and its duplicates in the lighter one. The grey backdrop is raw UDP — the gap between it and
 the stack is QUIC and framing overhead.
 
@@ -542,15 +543,15 @@ empty. What is left there is the attestation sawtooth, which costs the same on e
 
 Two things to take from this:
 
-- **Bulk data scales with the link, as expected.** Doubling the link more than halves payload-chunk
-  p99, and doubling it again takes off another third. A node above the home tier is never in trouble on
-  blocks, payload or DA columns.
+- **Bulk data scales with the link, as expected.** Doubling the link more than halves the
+  payload-chunk p99, and doubling it again takes off another third. A node above the home tier is
+  never in trouble on blocks, payload or DA columns.
 - **The attestation and aggregate tails do not.** FFG p99 barely moves (1864 → 1719 → 1835 ms) and
-  the aggregate p99 is flat to the millisecond (1015 → 1010 → 1000 ms). Those tails are not produced by
-  the receiving node's downlink — they are produced by the votes that other home nodes publish
-  through their own congested uplinks. **A well-provisioned node cannot buy its way out of them**; they are a
-  property of the population, which is the other half of why the most constrained tier is the one to
-  design against.
+  the aggregate p99 is flat to within 15 ms (1015 → 1010 → 1000 ms). Those tails are not produced
+  by the receiving node's downlink but by the votes other home nodes publish through their own
+  congested uplinks. **A well-provisioned node cannot buy its way out of them**: they are a property
+  of the population, which is the other half of why the most constrained tier is the one to design
+  against.
 
 ### Validator pool (10 Gbit/s, all subnets)
 
