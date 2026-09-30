@@ -51,9 +51,11 @@ entirely of them is a different network, and a much slower one.
 
 Three runs, 2 of them might be considered as acceptable: 
 
-- ✅ A **4 slots** per epoch + **1 attestation subnet** subscription
-- ⚠️ B **4 slots** per epoch + **2 attestation subnet** subscription
-- ✅ C **8 slots** per epoch + **2 attestation subnets** subscription
+| | | slots per epoch | attestation subnets |
+|---|---|---|---|
+| ✅ | A | 4 | 1 |
+| ⚠️ | B | 4 | 2 |
+| ✅ | C | 8 | 2 |
 
 
 
@@ -73,15 +75,18 @@ vote may be before it stops counting is still open. The criteria are correspondi
   bulk-data burst should not be in a different league from the rest. Judged on the *worst* of the
   twelve waves, since those are the ones a design has to live with.
 
-Three runs, identical in everything else, two of which might be considered acceptable:
+Three configurations were run, identical in everything else:
 
-All figures are the home tier over the measured slot.
-
-| run | inbound | link at ≥ 95% | FFG p99 worst wave | FFG p95 worst wave | FFG p99 all waves | aggregate p99 worst wave | payload p99 | |
-|---|---|---|---|---|---|---|---|---|
-| **A** — 4-slot epoch, 1 subnet | 54.4 MB | 3.9 s of 12 | 2.86 s | 1.92 s | 1.86 s | 1.19 s | 2.27 s | ✅ baseline |
-| **B** — 4-slot epoch, 2 subnets | 68.2 MB | **7.2 s of 12** | **4.25 s** | 3.04 s | 3.15 s | 1.95 s | 2.93 s | ⚠️ link saturated half the slot, every tail worse |
-| **C** — 8-slot epoch, 2 subnets | **51.9 MB** | **3.6 s of 12** | **2.20 s** | **1.35 s** | **1.40 s** | 1.20 s | 2.32 s | ✅ cheapest and fastest |
+| home tier, per measured slot | **A** — 4-slot epoch, 1 subnet | **B** — 4-slot epoch, 2 subnets | **C** — 8-slot epoch, 2 subnets |
+|---|---|---|---|
+| inbound, raw UDP | 54.4 MB | 68.2 MB | **51.9 MB** |
+| link at ≥ 95% of 50 Mbit/s | 3.9 s of 12 | **7.2 s of 12** | 3.6 s of 12 |
+| FFG p99, worst wave | 2.86 s | **4.25 s** | **2.20 s** |
+| FFG p95, worst wave | 1.92 s | 3.04 s | 1.35 s |
+| FFG p99, all waves | 1.86 s | 3.15 s | 1.40 s |
+| aggregate p99, worst wave | 1.19 s | 1.95 s | 1.20 s |
+| payload chunk p99 | 2.27 s | 2.93 s | 2.32 s |
+| | baseline | **25% more bytes, link pinned twice as long, every tail worse** | **cheapest and fastest of the three** |
 
 **A — 4-slot epoch, one attestation subnet.** The bulk-data burst pins the link for 3.9 s, the
 twelve vote waves ride on top of it, and the slot drains with time to spare: from wave 6 on, every
