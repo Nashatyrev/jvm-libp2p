@@ -61,14 +61,17 @@ attestation tail gets, and that turns on a trade-off: how many attestation subne
 node carries against how many slots the epoch spreads its votes over.
 
 There is no dissemination deadline to test against — the design does not set one, and how late a
-vote may be before it stops counting is still open. So the comparison below is relative, on two
-things that are meaningful without a threshold:
+vote may be before it stops counting is still open. The criteria are correspondingly soft, and it is
+better to say so than to invent a threshold:
 
-- **How much of the slot the link spends at its ceiling.** A node pinned at 100% for most of the
-  slot has no headroom left for a bad slot, a re-org or a peer churn event.
-- **How far the attestation tail is from the rest of the distribution.** Latency judged on the
-  *worst* of the twelve waves, not the average, because the waves that land in the bulk-data window
-  are the ones a design has to live with.
+- **First and firmest: the link should not saturate.** This is the one that is not a matter of
+  taste. A node pinned at its ceiling has no headroom for a bad slot, a re-org or a peer churn
+  event, and past that point its latencies stop describing the protocol and start describing the
+  queue in front of it.
+- **Second, and softer: dissemination latency should stay in a reasonable spread.** No threshold,
+  just the shape — the tail should not run away from the median, and the waves that land in the
+  bulk-data burst should not be in a different league from the rest. Judged on the *worst* of the
+  twelve waves, since those are the ones a design has to live with.
 
 Three configurations were run, identical in everything else:
 
