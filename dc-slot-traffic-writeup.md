@@ -49,21 +49,26 @@ entirely of them is a different network, and a much slower one.
 
 ## Result: the slot fits, with room to spare in two configurations of three
 
+Three runs, 2 of them might be considered as acceptable: 
+
+- ✅ **4 slots** per epoch + **1 attestation subnet** subscription
+- ⚠️ **4 slots** per epoch + **2 attestation subnet** subscription
+- ✅ **8 slots** per epoch + **2 attestation subnets** subscription
+
+
+
 **A fast-finality slot — a block, a 1 MiB payload, 21 blobs' worth of DA columns, 250 000 FFG votes
 and 1024 aggregates — fits on a 50 / 25 Mbit/s node.** Everything arrives, in every configuration
 tried. What separates them is how much of the slot the link spends saturated and how long the
 attestation tail gets, and that turns on a trade-off: how many attestation subnets a constrained
 node carries against how many slots the epoch spreads its votes over.
 
-There is no dissemination deadline to test against — the design does not set one, and how late a
-vote may be before it stops counting is still open. The criteria are correspondingly soft, and it is
-better to say so than to invent a threshold:
+There is no dissemination deadline to test against — how late a
+vote may be before it stops counting is still open. The criteria are correspondingly soft:
 
-- **First and firmest: the link should not saturate.** This is the one that is not a matter of
-  taste. A node pinned at its ceiling has no headroom for a bad slot, a re-org or a peer churn
-  event, and past that point its latencies stop describing the protocol and start describing the
-  queue in front of it.
-- **Second, and softer: dissemination latency should stay in a reasonable spread.** No threshold,
+- **The link should not stay saturated.** A node pinned at its ceiling has no headroom for a bad slot, 
+  and past that point its latencies stop describing the protocol and start describing the queue in front of it.
+- **Dissemination latency should stay in a reasonable spread.** No threshold,
   just the shape — the tail should not run away from the median, and the waves that land in the
   bulk-data burst should not be in a different league from the rest. Judged on the *worst* of the
   twelve waves, since those are the ones a design has to live with.
