@@ -6,6 +6,8 @@ waves on top of it. This write-up shows what a slot actually looks like on the w
 are distributed in time, how they split per message type and per class of node, and how much of a
 home-grade link it all takes.
 
+Note: some parts of this write-up were composed by Claude.
+
 ## TL;DR
 
 - The aim was to check whether this traffic fits on the most constrained nodes, as defined by
