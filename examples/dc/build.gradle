@@ -13,6 +13,7 @@ dependencies {
   implementation project(':tools:quic-simulator')
 
   implementation("io.netty:netty-handler")
+  implementation("io.netty.incubator:netty-incubator-codec-classes-quic:0.0.76.Final-SNAPSHOT")
   // Scenario files. Plain YAML -> Map parsing; the overlay onto DcRunConfig defaults is hand-written
   // in DcRunConfigYaml so that unknown keys are rejected with a useful message.
   implementation("org.yaml:snakeyaml:1.33")
@@ -52,7 +53,7 @@ tasks.register('simulation', Test) {
   jvmArgs('-XX:MaxDirectMemorySize=130g')
   // Lets a scenario be swept without editing it, e.g.
   //   ./gradlew :examples:dc:simulation --tests "*large network*" -Ddc.validators=100000
-  ['dc.validators', 'dc.ffgCompression', 'dc.slots', 'dc.warmupSlots', 'dc.gossip', 'dc.ffg', 'dc.ethGossip', 'dc.homeDownMbps', 'dc.homeUpMbps', 'dc.iwant', 'dc.iwantScope', 'dc.homeFfgSubnets', 'dc.warmupFrom', 'dc.idontwant', 'dc.ffgSlots', 'dc.homeCount', 'dc.midHomeCount', 'dc.upperHomeCount', 'dc.homeValidators', 'dc.snappyStream', 'dc.ffgSnappyRatio', 'dc.aggSnappyRatio'].each { name ->
+  ['dc.validators', 'dc.ffgCompression', 'dc.slots', 'dc.warmupSlots', 'dc.gossip', 'dc.ffg', 'dc.ethGossip', 'dc.homeDownMbps', 'dc.homeUpMbps', 'dc.iwant', 'dc.iwantScope', 'dc.homeFfgSubnets', 'dc.warmupFrom', 'dc.idontwant', 'dc.ffgSlots', 'dc.homeCount', 'dc.midHomeCount', 'dc.upperHomeCount', 'dc.homeValidators', 'dc.snappyStream', 'dc.ffgSnappyRatio', 'dc.aggSnappyRatio', 'dc.quicStatsAtMs'].each { name ->
     if (System.getProperty(name) != null) {
       systemProperty name, System.getProperty(name)
     }

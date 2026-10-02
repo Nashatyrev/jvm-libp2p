@@ -129,6 +129,8 @@ data class DcRunConfig(
      * Applies only to the slots [warmupSlots] covers; the measured slots always publish in full.
      */
     val warmupSlotStart: Duration = Duration.ZERO,
+    /** Moments to snapshot every connection's QUIC congestion window and RTT; diagnostic. */
+    val quicStatsAt: List<Duration> = emptyList(),
     val randomSeed: Long = 0
 ) {
     init {
@@ -216,6 +218,9 @@ class DcNodeProgramFactory<R>(
         }
     }
 
+    /** Shared by every node; null unless [DcRunConfig.quicStatsAt] asks for snapshots. */
+    val quicStats: DcQuicStats? = if (config.quicStatsAt.isEmpty()) null else DcQuicStats()
+
     private val dialTargets = graph.dialTargets()
     private val nodePrograms = mutableListOf<DcNodeProgram>()
 
@@ -228,6 +233,8 @@ class DcNodeProgramFactory<R>(
             messageSchedules = messageSchedules,
             messageRecorders = messageRecorders,
             slotProfile = slotProfileParams,
+            quicStats = quicStats,
+            quicStatsAt = config.quicStatsAt,
             // Gossip params are a property of the node, not of the run; see DcNodeGroup.gossipParams.
             params = network.node(id).gossipParams,
             randomSeed = config.randomSeed + id
@@ -499,6 +506,9 @@ object DcScenario {
             nodeCount = network.nodeCount,
             groupNodes = groupNodesOf(network)
         )
+        result.nodeProgramFactory.quicStats?.let { stats ->
+            println(stats.render { network.node(it).groupName ?: DcGroupStats.UNNAMED })
+        }
         return result.nodeProgramFactory.report(traffic, traceRecorder)
     }
 }

@@ -37,6 +37,9 @@ class DcNodeProgram(
     private val messageRecorders: Map<DcSlotMessageType, DcSlotMessageRecorder> = emptyMap(),
     /** Shared by every node so their [GossipByteCounter]s all bucket wire bytes the same way. */
     private val slotProfile: DcSlotProfileParams? = null,
+    /** Collects QUIC path snapshots at [quicStatsAt]; diagnostic, null when not asked for. */
+    private val quicStats: DcQuicStats? = null,
+    private val quicStatsAt: List<Duration> = emptyList(),
     params: GossipParams = GossipParams(),
     scoreParams: GossipScoreParams = GossipScoreParams(),
     randomSeed: Long = 0
@@ -85,6 +88,11 @@ class DcNodeProgram(
         gossipByteCounter.currentTimeSupplier = { simContext.timer.elapsedTime() }
         subscribe(simContext)
         schedulePublications(simContext)
+        quicStats?.let { stats ->
+            quicStatsAt.forEach { at ->
+                publishAt(simContext, at) { now -> stats.sample(now, simNodeId, gossipRouter) }
+            }
+        }
         // Every node stops at the same simulated moment, whether or not it published, so the run ends
         // on the settle deadline instead of when the last publisher happens to finish.
         val delay = (completeAt - simContext.timer.elapsedTime()).coerceAtLeast(Duration.ZERO)

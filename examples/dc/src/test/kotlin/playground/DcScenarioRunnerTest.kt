@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test
 import kotlin.collections.flatten
 import kotlin.math.roundToInt
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -136,7 +137,7 @@ class DcScenarioRunnerTest {
         val report = DcScenario.run(
             network = network,
             graph = graph,
-            config = runConfig
+            config = withQuicStats(runConfig)
         )
         println(report)
     }
@@ -414,7 +415,7 @@ class DcScenarioRunnerTest {
         val report = DcScenario.run(
             network = network,
             graph = graph,
-            config = runConfig
+            config = withQuicStats(runConfig)
         )
         println(report)
     }
@@ -606,11 +607,22 @@ class DcScenarioRunnerTest {
         val report = DcScenario.run(
             network = network,
             graph = graph,
-            config = runConfig
+            config = withQuicStats(runConfig)
         )
         println(report)
     }
     companion object {
+
+        /**
+         * `-Ddc.quicStatsAtMs=-50,50,150`: snapshot every connection's QUIC cwnd/RTT at these
+         * offsets (ms) from the start of the last slot.
+         */
+        fun withQuicStats(config: DcRunConfig): DcRunConfig {
+            val offsets = System.getProperty("dc.quicStatsAtMs") ?: return config
+            return config.copy(
+                quicStatsAt = offsets.split(",").map { config.slotTimes.last() + it.trim().toLong().milliseconds }
+            )
+        }
 
         fun GossipParamsBuilder.disableGossip() = also {
             this
