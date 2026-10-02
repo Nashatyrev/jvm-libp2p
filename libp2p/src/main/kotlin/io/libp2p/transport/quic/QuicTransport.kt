@@ -115,7 +115,17 @@ class QuicTransport @JvmOverloads constructor(
             .initialMaxStreamsBidirectional(64)
             .initialMaxStreamDataBidirectionalRemote(1 shl 18)
             .initialMaxStreamDataBidirectionalLocal(1 shl 18)
+            .withDiagnosticCongestionOptions()
             .createConfig()
+
+        /**
+         * Simulation knob: `-Dlibp2p.quic.initialCwndPackets=N` overrides quiche's initial congestion
+         * window (10 packets by default). Unset leaves quiche's defaults alone.
+         */
+        fun <B : QuicCodecBuilder<B>> B.withDiagnosticCongestionOptions(): B {
+            System.getProperty("libp2p.quic.initialCwndPackets")?.toInt()?.let { initialCongestionWindowPackets(it) }
+            return this
+        }
 
     }
 
@@ -421,6 +431,7 @@ class QuicTransport @JvmOverloads constructor(
             .initialMaxStreamsBidirectional(64)
             .initialMaxStreamDataBidirectionalRemote(1 shl 18)
             .initialMaxStreamDataBidirectionalLocal(1 shl 18)
+            .withDiagnosticCongestionOptions()
             .streamHandler(InboundStreamHandler(incomingMultistreamProtocol, protocols))
             .build()
     }
