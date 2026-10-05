@@ -129,18 +129,18 @@ data class DcPeerGraph<R>(
 /**
  * Wires up the connection graph for this population.
  *
- * Three passes, in order of how hard the constraint is:
- * 1. **Subnet coverage.** Subscribers of each subnet are arranged in a shuffled ring (a circulant
- *    graph for [minPeersPerSubnet] above 2), giving every subscriber at least [minPeersPerSubnet]
- *    peers on that subnet. This runs first because it is the only requirement that cannot be
- *    satisfied by adding arbitrary edges later.
- * 2. **Degree fill.** Nodes still below their [DcNode.peerCount] are paired up at random with other
- *    nodes that are also below theirs.
+ * Three passes:
+ * 1. **Degree fill.** Nodes below their [DcNode.peerCount] are paired up at random with other nodes
+ *    that are also below theirs.
+ * 2. **Subnet coverage.** A subscription left with fewer than [minPeersPerSubnet] peers on its
+ *    subnet is topped up with that subnet's subscribers, preferring those with room under their
+ *    own target. Fill edges between two nodes the top-up pushed past their target are then
+ *    dropped, where that leaves both ends covered.
  * 3. **Connectivity.** If [ensureConnected], separate components are chained together so the
  *    gossip network is not split in two.
  *
- * Subnet coverage takes precedence over [DcNode.peerCount]: a node subscribed to many subnets can
- * finish above its target degree. Where coverage is impossible — a subnet with fewer than
+ * Subnet coverage takes precedence over [DcNode.peerCount]: a node subscribed to many rare
+ * subnets can still finish above its target degree. Where coverage is impossible — a subnet with fewer than
  * `minPeersPerSubnet + 1` subscribers — the graph reports it through
  * [DcPeerGraph.subnetDeficiencies] rather than failing, since that is a property of the population
  * rather than of the wiring.
@@ -176,27 +176,7 @@ fun <R> DcNetwork<R>.peerGraph(
         subnetEdges += if (a < b) a to b else b to a
     }
 
-    // 1. subnet coverage
-    if (minPeersPerSubnet > 0) {
-        subnetSubscriptions().forEach { subscription ->
-            val subscribers = nodesSubscribedTo(subscription.messageType, subscription.subnetId)
-            val shuffledSubscribers = subscribers.map { it.simNodeId }.shuffled(random)
-            if (shuffledSubscribers.size < 2) return@forEach
-            // Connecting each subscriber to the next `span` around the ring gives it 2*span subnet
-            // peers, capped by how many subscribers there are.
-            val span = ((minPeersPerSubnet + 1) / 2)
-                .coerceIn(1, (shuffledSubscribers.size - 1).coerceAtLeast(1))
-            shuffledSubscribers.indices.forEach { index ->
-                (1..span).forEach { step ->
-                    val peer = shuffledSubscribers[(index + step) % shuffledSubscribers.size]
-                    connect(shuffledSubscribers[index], peer)
-                    protect(shuffledSubscribers[index], peer)
-                }
-            }
-        }
-    }
-
-    // 2. fill up to the requested peer counts
+    // 1. fill up to the requested peer counts
     fun wants(simNodeId: SimNodeId) = node(simNodeId).peerCount - adjacency[simNodeId].size
     val pending = ArrayDeque(nodes.map { it.simNodeId }.filter { wants(it) > 0 }.shuffled(random))
     while (pending.isNotEmpty()) {
@@ -212,7 +192,7 @@ fun <R> DcNetwork<R>.peerGraph(
         if (wants(from) > 0) pending.addLast(from)
     }
 
-    // 2b. repair what greedy pairing could not place. Left alone, a handful of nodes end up one or
+    // 1b. repair what greedy pairing could not place. Left alone, a handful of nodes end up one or
     // two peers short simply because the others still wanting peers are already connected to them.
     // Rewiring an unrelated edge onto the short node fixes that without disturbing anyone's degree.
     fun edgesShuffled(): List<Pair<SimNodeId, SimNodeId>> =
@@ -269,6 +249,54 @@ fun <R> DcNetwork<R>.peerGraph(
                 }
             }
             repaired = true
+        }
+    }
+
+    // 2. subnet coverage, topped up only where the random fill left a subscription short. A subnet
+    // that most of the network subscribes to -- every payload-chunk subnet, say -- is covered by
+    // the fill already and adds nothing; building a ring per subnet regardless of that is what
+    // once put a 100-peer node at ~440 peers.
+    if (minPeersPerSubnet > 0) {
+        val subscribersOf = subnetSubscriptions().associateWith { subscription ->
+            nodesSubscribedTo(subscription.messageType, subscription.subnetId).mapTo(hashSetOf()) { it.simNodeId }
+        }
+        fun subnetPeerCount(at: SimNodeId, subscribers: Set<SimNodeId>) = adjacency[at].count { it in subscribers }
+        fun surplus(of: SimNodeId) = adjacency[of].size - node(of).peerCount
+
+        // Rarest subnets first: they have the fewest candidates, so they get first pick.
+        subscribersOf.entries.sortedBy { it.value.size }.forEach { (_, subscribers) ->
+            if (subscribers.size < 2) return@forEach
+            subscribers.shuffled(random).forEach { subscriber ->
+                while (subnetPeerCount(subscriber, subscribers) < minPeersPerSubnet) {
+                    val candidates = subscribers.filter { it != subscriber && it !in adjacency[subscriber] }
+                    if (candidates.isEmpty()) break
+                    // Prefer whoever has the most room left under their own target, so coverage
+                    // overshoots as few degrees as possible.
+                    val least = candidates.minOf { surplus(it) }
+                    val peer = candidates.filter { surplus(it) == least }.let { it[random.nextInt(it.size)] }
+                    connect(subscriber, peer)
+                    protect(subscriber, peer)
+                }
+            }
+        }
+
+        // 2b. Coverage edges push some nodes past their target. Drop fill edges between two such
+        // nodes, as long as neither end falls below minPeersPerSubnet on a subnet they share.
+        val subscriptionsOf = List(nodeCount) { node(it).subnetSubscriptions() }
+        fun keepsCoverage(a: SimNodeId, b: SimNodeId): Boolean =
+            (subscriptionsOf[a] intersect subscriptionsOf[b]).all { subscription ->
+                val subscribers = subscribersOf.getValue(subscription)
+                subnetPeerCount(a, subscribers) > minPeersPerSubnet && subnetPeerCount(b, subscribers) > minPeersPerSubnet
+            }
+        nodes.map { it.simNodeId }.shuffled(random).forEach { over ->
+            if (surplus(over) <= 0) return@forEach
+            adjacency[over].toList().shuffled(random).forEach { peer ->
+                if (surplus(over) <= 0) return@forEach
+                val edge = if (over < peer) over to peer else peer to over
+                if (edge !in subnetEdges && surplus(peer) > 0 && keepsCoverage(over, peer)) {
+                    disconnect(over, peer)
+                }
+            }
         }
     }
 
