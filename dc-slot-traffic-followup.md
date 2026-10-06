@@ -1,4 +1,4 @@
-# Decoupled Consensus: Gossip traffic profile for a slot — follow-up
+# DC gossip traffic profile: the peer-count fix
 
 A correction to [Gossip traffic profile for a slot](dc-slot-traffic-writeup.md). The peer graph the
 simulations ran on was about **4× denser than configured**: nodes asked for 100 peers got ~440.
