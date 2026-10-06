@@ -20,6 +20,7 @@ import org.assertj.core.api.Assertions
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import kotlin.collections.flatten
+import kotlin.math.roundToInt
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -223,6 +224,18 @@ class DcScenarioRunnerTest {
         // Models aggregation: N times fewer attestations, each N times larger, so the bytes
         // published per wave are unchanged and only the message count drops. 1 = no aggregation.
         val ffgCompression = System.getProperty("dc.ffgCompression")?.toInt() ?: 1
+        // -Ddc.snappyStream=true: Snappy over the whole gossip stream (64 KiB per-stream history)
+        // instead of per message, applied virtually by shrinking what votes and aggregates put on
+        // the wire. Ratios are the mainnet-recording figures from ethresearch-snappy-stream.md:
+        // attestations 42%, aggregates 63% of today's bytes -- the repeated AttestationData turns
+        // into a back-reference. Everything else is left at its size: blocks and columns barely
+        // compress (93% / 96%). Topic strings, which the stream would also shrink, stay full size.
+        val snappyStream = System.getProperty("dc.snappyStream") == "true"
+        val ffgWireRatio = if (snappyStream) System.getProperty("dc.ffgSnappyRatio")?.toDouble() ?: 0.42 else 1.0
+        val aggregateWireRatio = if (snappyStream) System.getProperty("dc.aggSnappyRatio")?.toDouble() ?: 0.63 else 1.0
+        val ffgWireSize = (ffgAttestationSize * ffgCompression * ffgWireRatio).roundToInt()
+        val aggregateWireSize = (aggregateSize * aggregateWireRatio).roundToInt()
+        println("FFG vote wire size: $ffgWireSize B, aggregate wire size: $aggregateWireSize B (snappyStream=$snappyStream)")
         // Extra slots exist to be thrown away: by default every slot but the last is warm-up, so the
         // headline figures describe a network that has already carried a slot's worth of traffic.
         // Two slots by default, because a measured slot with a predecessor is a different network
@@ -370,7 +383,7 @@ class DcScenarioRunnerTest {
                     .map { waveIdx ->
                         DcSlotMessageConfig(
                             type = DcSlotMessageType.FFG_ATTESTATION,
-                            sizeBytes = ffgAttestationSize * ffgCompression,
+                            sizeBytes = ffgWireSize,
                             publishOffset = (slotDuration / ffgWavesPerSlot) * waveIdx,
                             publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
                             messagesPerSlot = ffgAttestationsPerWave,
@@ -387,7 +400,7 @@ class DcScenarioRunnerTest {
                     .map { (waveOffset, wavesAtOffset) ->
                         DcSlotMessageConfig(
                             type = DcSlotMessageType.AGGREGATES,
-                            sizeBytes = aggregateSize,
+                            sizeBytes = aggregateWireSize,
                             publishOffset = waveOffset,
                             publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
                             messagesPerSlot = ffgSubnetsCount * wavesAtOffset,
