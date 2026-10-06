@@ -90,6 +90,27 @@ The pools are the exception to "IHAVE was a graph artefact". They keep 200 peers
 all 64 attestation subnets and all 128 DA columns, so their control traffic is still 303 MB per
 slot, nearly all of it IHAVE. That is a real cost of the protocol, not of the graph.
 
+### The home node's slot, before and after
+
+The same panel as in the write-up, for the 50 / 25 Mbit/s home group in configuration A, on one
+y scale. Inbound throughput per node, averaged over the group, in 100 ms buckets across the
+measured slot.
+
+![Configuration A before the peer-graph fix, home group](docs/dc-slot-traffic/fit-a-before-graph-fix.png)
+
+![Configuration A after the peer-graph fix, home group](docs/dc-slot-traffic/fit-a-after-graph-fix.png)
+
+- **The grey control band is the difference.** Before the fix it never dropped below ~5 Mbit/s,
+  and reached 10–16 Mbit/s late in the slot, where aggregates and votes add the most IHAVE. After
+  the fix it is 1–4 Mbit/s throughout.
+- **The bulk-data window still hits the link.** Payload and blobs saturate 50 Mbit/s from 1.2 s to
+  ~3 s in both runs; that collision with the vote waves is not a graph artefact.
+- **The link is no longer saturated after the burst.** Before, it stayed pinned until ~4.3 s and
+  the 9–11 s waves touched the ceiling on top of a thick control base. After, raw UDP falls away
+  from the line by ~3.5 s, and the late waves peak below it with room in between.
+- **Aggregates now dominate the end of the slot.** Gold is the largest band from 9 s on, once
+  control stops crowding them.
+
 ### FFG p99 per tier
 
 The write-up argued that the attestation tail belongs to the network rather than to the receiving
