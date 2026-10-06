@@ -1,5 +1,12 @@
 # Decoupled Consensus: Gossip traffic profile for a slot
 
+> **Update:** the simulations below ran on a peer graph about **4× denser than configured** — nodes
+> set to 100 peers had ~440, the pools ~730 instead of 200. This mostly inflated IHAVE traffic and
+> the attestation tail at the constrained node: re-measured with the fix, configuration A's home
+> tier has 27% less inbound traffic and FFG p99 of 835 ms instead of 1864 ms. The conclusions on fit
+> hold with more headroom; B and C have not been re-run yet. See the
+> [follow-up](dc-slot-traffic-followup.md) for the corrected numbers.
+
 Fast-finality designs move a lot more attestation and aggregate traffic than today's network, and
 that traffic is not spread evenly: a slot has a bulk-data burst at its start and a dozen attestation
 waves on top of it. This write-up shows what a slot actually looks like on the wire — how the bytes
