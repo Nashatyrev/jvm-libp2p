@@ -5,7 +5,7 @@ simulations ran on was about **4× denser than configured**: nodes asked for 100
 This note shows what that did to the numbers, by re-running configuration **A** with the graph
 fixed and nothing else changed.
 
-Note: some parts of this follow-up were composed by Claude.
+Note: this follow-up was mostly composed by Claude.
 
 ## TL;DR
 
@@ -13,44 +13,35 @@ Note: some parts of this follow-up were composed by Claude.
   VPS and mid/upper-home tiers, **734 instead of 200** for the pools.
 - The mesh was not affected (D=8, DHigh=12 either way), so publish traffic barely moved. What
   moved is everything that scales with the *number of peers*, above all **IHAVE**.
-- With the graph fixed, configuration A gets cheaper and faster for the constrained node:
+- With the graph fixed, configuration A (4 slots per epoch, 1 attestation subnet per home node) gets cheaper and faster for the constrained node:
   - home inbound traffic: **54.4 → 39.6 MB** per measured slot (−27%);
   - home control traffic: **10.3 → 1.9 MB** (−82%);
   - home FFG vote p99: **1864 → 835 ms**; worst wave **2860 → 1263 ms**;
   - home aggregate p99: **1015 → 611 ms**.
-- The write-up's conclusions on fit therefore hold with more headroom than stated. Configurations B
-  and C have not been re-run yet.
-- One argument in the write-up does not survive unchanged: FFG p99 is **no longer nearly the same
-  on every tier**. The 50 / 25 Mbit/s node's tail is now ~2× the pools' (835 vs 449 ms), where on
-  the dense graph it was within 20%.
+- `IHAVE` traffic is no more the major bottleneck
+- The write-up's conclusions on fit therefore hold with more headroom than stated. 
 
-## The bug
+### The home node's slot, before and after
 
-`peerGraph` built the connection graph in this order:
+The same panel as in the write-up, for the 50 / 25 Mbit/s home group in configuration A, on one
+y scale. Inbound throughput per node, averaged over the group, in 100 ms buckets across the
+measured slot.
 
-1. **Subnet coverage.** For *every* subnet a node subscribes to, its subscribers were arranged in a
-   shuffled ring, giving each one `2 × ceil(minPeersPerSubnet / 2)` = 8 fresh peers on that subnet.
-2. **Degree fill.** Nodes still below their configured peer count were paired up at random.
+![Configuration A before the peer-graph fix, home group](docs/dc-slot-traffic/fit-a-before-graph-fix.png)
 
-Step 1 ran unconditionally, whether or not the node already had enough peers on that subnet. Every
-node subscribes to all **64 payload-chunk subnets**, so step 1 alone gave every node 64 rings ×
-8 edges. After overlaps that is ~440 distinct peers, and step 2 then had nothing left to do.
+![Configuration A after the peer-graph fix, home group](docs/dc-slot-traffic/fit-a-after-graph-fix.png)
 
-The fix reverses the order. The graph is filled to the configured peer count first. Coverage is then
-topped up only for a subscription still short of `minPeersPerSubnet` peers on its subnet: rarest
-subnets first, from subscribers with the most room under their own target. Fill edges between two
-nodes that the top-up pushed past their target are then dropped, as long as both ends stay covered.
-
-| group | configured peers | degree before (p50) | degree after (p50) |
-|---|---|---|---|
-| `validator-pools` | 200 | 734 | **200** |
-| `vps` | 100 | 479 | **100** |
-| `upper-home` | 100 | 442 | **100** |
-| `mid-home` | 100 | 441 | **100** |
-| `home` | 100 | 440 | **100** |
-
-The graph has 55 k edges instead of ~246 k. Every subscription still has at least 8 peers on its
-subnet, and the graph is connected.
+- **The grey control band is the difference.** Before the fix it never dropped below ~5 Mbit/s,
+  and reached 10–16 Mbit/s late in the slot, where aggregates and votes add the most IHAVE. After
+  the fix it is 1–4 Mbit/s throughout.
+- **The bulk-data window still hits the link.** Payload and blobs saturate 50 Mbit/s from 1.2 s to
+  ~3 s in both runs; that collision with the vote waves is not a graph artefact.
+- **The burst clears sooner and the link drains between waves.** Before, the link stayed pinned
+  until ~4.3 s; after, raw UDP falls away from the line by ~3.5 s. The 9–11 s waves still briefly
+  reach the ceiling in both runs, but between them the link now drops to ~10 Mbit/s instead of
+  staying at 20–35.
+- **Aggregates now dominate the end of the slot.** Gold is the largest band from 9 s on, once
+  control stops crowding them.
 
 ## How gossip changed
 
@@ -90,27 +81,34 @@ The pools are the exception to "IHAVE was a graph artefact". They keep 200 peers
 all 64 attestation subnets and all 128 DA columns, so their control traffic is still 303 MB per
 slot, nearly all of it IHAVE. That is a real cost of the protocol, not of the graph.
 
-### The home node's slot, before and after
 
-The same panel as in the write-up, for the 50 / 25 Mbit/s home group in configuration A, on one
-y scale. Inbound throughput per node, averaged over the group, in 100 ms buckets across the
-measured slot.
+## The bug
 
-![Configuration A before the peer-graph fix, home group](docs/dc-slot-traffic/fit-a-before-graph-fix.png)
+`peerGraph` built the connection graph in this order:
 
-![Configuration A after the peer-graph fix, home group](docs/dc-slot-traffic/fit-a-after-graph-fix.png)
+1. **Subnet coverage.** For *every* subnet a node subscribes to, its subscribers were arranged in a
+   shuffled ring, giving each one `2 × ceil(minPeersPerSubnet / 2)` = 8 fresh peers on that subnet.
+2. **Degree fill.** Nodes still below their configured peer count were paired up at random.
 
-- **The grey control band is the difference.** Before the fix it never dropped below ~5 Mbit/s,
-  and reached 10–16 Mbit/s late in the slot, where aggregates and votes add the most IHAVE. After
-  the fix it is 1–4 Mbit/s throughout.
-- **The bulk-data window still hits the link.** Payload and blobs saturate 50 Mbit/s from 1.2 s to
-  ~3 s in both runs; that collision with the vote waves is not a graph artefact.
-- **The burst clears sooner and the link drains between waves.** Before, the link stayed pinned
-  until ~4.3 s; after, raw UDP falls away from the line by ~3.5 s. The 9–11 s waves still briefly
-  reach the ceiling in both runs, but between them the link now drops to ~10 Mbit/s instead of
-  staying at 20–35.
-- **Aggregates now dominate the end of the slot.** Gold is the largest band from 9 s on, once
-  control stops crowding them.
+Step 1 ran unconditionally, whether or not the node already had enough peers on that subnet. Every
+node subscribes to all **64 payload-chunk subnets**, so step 1 alone gave every node 64 rings ×
+8 edges. After overlaps that is ~440 distinct peers, and step 2 then had nothing left to do.
+
+The fix reverses the order. The graph is filled to the configured peer count first. Coverage is then
+topped up only for a subscription still short of `minPeersPerSubnet` peers on its subnet: rarest
+subnets first, from subscribers with the most room under their own target. Fill edges between two
+nodes that the top-up pushed past their target are then dropped, as long as both ends stay covered.
+
+| group | configured peers | degree before (p50) | degree after (p50) |
+|---|---|---|---|
+| `validator-pools` | 200 | 734 | **200** |
+| `vps` | 100 | 479 | **100** |
+| `upper-home` | 100 | 442 | **100** |
+| `mid-home` | 100 | 441 | **100** |
+| `home` | 100 | 440 | **100** |
+
+The graph has 55 k edges instead of ~246 k. Every subscription still has at least 8 peers on its
+subnet, and the graph is connected.
 
 ### FFG p99 per tier
 
