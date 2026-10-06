@@ -105,9 +105,10 @@ measured slot.
   the fix it is 1–4 Mbit/s throughout.
 - **The bulk-data window still hits the link.** Payload and blobs saturate 50 Mbit/s from 1.2 s to
   ~3 s in both runs; that collision with the vote waves is not a graph artefact.
-- **The link is no longer saturated after the burst.** Before, it stayed pinned until ~4.3 s and
-  the 9–11 s waves touched the ceiling on top of a thick control base. After, raw UDP falls away
-  from the line by ~3.5 s, and the late waves peak below it with room in between.
+- **The burst clears sooner and the link drains between waves.** Before, the link stayed pinned
+  until ~4.3 s; after, raw UDP falls away from the line by ~3.5 s. The 9–11 s waves still briefly
+  reach the ceiling in both runs, but between them the link now drops to ~10 Mbit/s instead of
+  staying at 20–35.
 - **Aggregates now dominate the end of the slot.** Gold is the largest band from 9 s on, once
   control stops crowding them.
 
