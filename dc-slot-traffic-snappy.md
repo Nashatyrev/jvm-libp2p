@@ -143,8 +143,8 @@ and an FFG p99 of 1163 ms. That part is its own downlink, and it is what still m
 for a 50 / 25 Mbit/s node.
 
 So the network-wide part of the tail is not a capacity limit of the network. It is a publishing
-problem at the constrained tier, and it has a publisher-side fix: let a node's own messages go out
-ahead of what it relays.
+problem at the constrained tier. That points at a publisher-side fix, not yet tested here: let a
+node's own messages go out ahead of what it relays.
 
 ## How it is modelled
 
