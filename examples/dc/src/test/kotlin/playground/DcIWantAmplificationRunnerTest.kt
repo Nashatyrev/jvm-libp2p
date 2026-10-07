@@ -4,10 +4,12 @@ import io.libp2p.etc.types.millis
 import io.libp2p.example.dc.Bandwidths
 import io.libp2p.example.dc.DcAttackOutcome.Percentiles
 import io.libp2p.example.dc.DcNetworkBuilder
+import io.libp2p.example.dc.DcNodeProgram
 import io.libp2p.example.dc.DcPublisherSelection
 import io.libp2p.example.dc.DcRunConfig
 import io.libp2p.example.dc.DcScenario
 import io.libp2p.example.dc.DcSlotMessageConfig
+import io.libp2p.example.dc.DcSlotMessageDelivery
 import io.libp2p.example.dc.DcSlotMessageTopics
 import io.libp2p.example.dc.DcSlotMessageType
 import io.libp2p.example.dc.peerGraph
@@ -27,21 +29,24 @@ import kotlin.time.Duration.Companion.seconds
  * still, which lets more IHAVEs in. On a fast link the mesh delivers first, nothing is asked for,
  * and copies per node settle near the mesh degree.
  *
- * 100 nodes with 30 peers each, all on symmetric links of one rate, eth ladder D=8/6/12/6 with a
- * 700 ms heartbeat, Gossip v1.2 (IDONTWANT on). One 1 MiB message per slot on a global topic, slots
- * far enough apart (60 s) that they never overlap.
+ * 100 nodes with 30 peers each on symmetric links, eth ladder D=8/6/12/6 with a 700 ms heartbeat,
+ * Gossip v1.2 (IDONTWANT on). A batch of messages per slot on a global topic from one publisher in the
+ * fast group, slots far enough apart (60 s) that they never overlap. Optionally [slowCount] of the 100
+ * run on a slow link among fast neighbours -- the shape of a home node in a datacentre-heavy network,
+ * where the neighbours have the message long before the slow node does and keep announcing it.
  *
  * ```
  * ./gradlew :examples:dc:simulation --tests "*DcIWantAmplificationRunnerTest*" \
- *   -Ddc.bandwidthsMbps=10,1000 -Ddc.iwant=all_announcers,disciplined,none
+ *   -Ddc.bandwidthsMbps=1000 -Ddc.slowCount=10 -Ddc.slowMbps=10 -Ddc.heap=24g -Ddc.directMemory=8g
  * ```
  *
- *  - `dc.bandwidthsMbps`: link rates swept, symmetric (default 10,20,50,100,1000)
+ *  - `dc.bandwidthsMbps`: link rates of the (fast) group, swept (default 10,20,50,100,1000)
+ *  - `dc.slowCount`, `dc.slowMbps`: nodes of the 100 on a slow link (default 0), and its rate (default 10)
  *  - `dc.iwant`: policies swept (default all_announcers,disciplined,none)
  *  - `dc.messageKiB`: message size (default 1024)
  *  - `dc.messagesPerSlot`: messages published at once by one publisher each slot (default 1); latency
- *    is then also reported for the whole batch -- a node has it once all of them have arrived
- *  - `dc.slots`: messages, one per slot; the first is warm-up and not counted (default 4)
+ *    is reported per message and for the whole batch -- a node has it once all of them have arrived
+ *  - `dc.slots`: batches, one per slot; the first is warm-up and not counted (default 4)
  */
 @Tag("simulation")
 class DcIWantAmplificationRunnerTest {
@@ -56,6 +61,8 @@ class DcIWantAmplificationRunnerTest {
         val messageBytes = prop("dc.messageKiB", "1024").toInt() * 1024
         val messagesPerSlot = prop("dc.messagesPerSlot", "1").toInt()
         val slots = prop("dc.slots", "4").toInt()
+        val slowCount = prop("dc.slowCount", "0").toInt()
+        val slowMbps = prop("dc.slowMbps", "10").toLong()
         val nodeCount = 100
         val peers = 30
 
@@ -70,6 +77,7 @@ class DcIWantAmplificationRunnerTest {
                 DcSlotMessageConfig(
                     type = DcSlotMessageType.BLOCK,
                     sizeBytes = messageBytes,
+                    publisherGroups = setOf("fast"),
                     publisherSelection = DcPublisherSelection.RANDOM_NODE,
                     messagesPerSlot = messagesPerSlot,
                     topics = DcSlotMessageTopics.Global
@@ -78,8 +86,9 @@ class DcIWantAmplificationRunnerTest {
             randomSeed = 1
         )
         println(
-            "IWANT amplification: nodes=$nodeCount peers=$peers message=$messagesPerSlot x ${messageBytes / 1024} KiB " +
-                "slots=$slots bandwidths=$bandwidths Mbit/s policies=$policies"
+            "IWANT amplification: nodes=$nodeCount (slow=$slowCount at $slowMbps Mbit/s) peers=$peers " +
+                "message=$messagesPerSlot x ${messageBytes / 1024} KiB slots=$slots " +
+                "bandwidths=$bandwidths Mbit/s policies=$policies"
         )
 
         val summary = mutableListOf<String>()
@@ -90,13 +99,25 @@ class DcIWantAmplificationRunnerTest {
                 .iWantPolicy(policy)
                 .build()
             val network = DcNetworkBuilder.world(randomSeed = 1)
-                .addGroup(count = nodeCount) {
-                    name = "nodes"
+                .addGroup(count = nodeCount - slowCount) {
+                    name = "fast"
                     spreadOverRegions()
                     bandwidth = Bandwidths.symmetric(Bandwidths.mbitPerSecond(mbps))
                     validators = 1
                     this.peers = peers
                     gossipParams = params
+                }
+                .also { builder ->
+                    if (slowCount > 0) {
+                        builder.addGroup(count = slowCount) {
+                            name = "slow"
+                            spreadOverRegions()
+                            bandwidth = Bandwidths.symmetric(Bandwidths.mbitPerSecond(slowMbps))
+                            validators = 1
+                            this.peers = peers
+                            gossipParams = params
+                        }
+                    }
                 }
                 .build()
             val graph = network.peerGraph(minPeersPerSubnet = 1, randomSeed = 1)
@@ -108,75 +129,101 @@ class DcIWantAmplificationRunnerTest {
 
             val measured = config.measuredSlots.toSet()
             val recorder = factory.messageRecorders.getValue(DcSlotMessageType.BLOCK)
-            val published = recorder.published().map { it.message }.filter { it.slotIndex in measured }
-            val deliveries = recorder.deliveries().filter { it.slotIndex in measured }
-            val expected = published.sumOf { factory.expectedDeliveriesOf(it) }
-            val latency = Percentiles.of(deliveries.map { it.latency })
-            val programs = factory.programs
+            val allPublished = recorder.published().map { it.message }
+            val allDeliveries = recorder.deliveries()
+            val publisherOf = allPublished.associate { it.slotIndex to it.publisherNodeId }
 
-            // One batch per slot, so what a node reads or asks for in a slot is about that batch.
-            // Copies arriving by IWANT are counted as the IWANT ids the node sent: in an honest
-            // network every request is answered, so the two match up to retransmission limits.
-            val slotPublisher = published.associate { it.slotIndex to it.publisherNodeId }
-            val copiesPerNodeSlot = programs.flatMap { program ->
-                slotPublisher.filterValues { it != program.simNodeId }.keys.map { slot ->
-                    (program.gossipByteCounter.publishMessagesReadBySlot[slot] ?: 0L).toDouble() / messagesPerSlot
+            /**
+             * Stats over the receivers in [nodes] and the slots in [inSlots]. One batch per slot, so
+             * what a node reads or asks for in a slot is about that batch. Copies arriving by IWANT
+             * are counted as the IWANT ids the node sent: in an honest network every request is
+             * answered, so the two match up to retransmission limits.
+             */
+            fun stats(nodes: List<DcNodeProgram>, inSlots: Set<Int>): Stats {
+                val ids = nodes.map { it.simNodeId }.toSet()
+                val nodeSlots = nodes.flatMap { program ->
+                    inSlots.filter { publisherOf[it] != program.simNodeId }.map { program to it }
                 }
-            }.sorted()
-            fun q(p: Double) = copiesPerNodeSlot[(p * copiesPerNodeSlot.size).toInt().coerceAtMost(copiesPerNodeSlot.size - 1)]
-            val copies = programs.sumOf { p -> measured.sumOf { p.gossipByteCounter.publishMessagesReadBySlot[it] ?: 0L } }
-                .toDouble() / deliveries.size
-            val pulled = programs.sumOf { p -> measured.sumOf { p.gossipByteCounter.iwantIdsWrittenBySlot[it] ?: 0L } }
-                .toDouble() / deliveries.size
-            val publishBytes = programs.sumOf { program ->
-                measured.sumOf { program.gossipByteCounter.publishBytesReadBySlot[it] ?: 0L }
-            }.toDouble()
-            val amplification = publishBytes / (deliveries.size.toDouble() * messageBytes)
-            val mesh = programs.flatMap { it.finalMeshSizes }.average()
-
-            // A node has the batch of a slot once its last message has arrived.
-            fun batchLatencies(inSlots: Set<Int>, all: List<io.libp2p.example.dc.DcSlotMessageDelivery>) =
-                all.filter { it.slotIndex in inSlots }
-                    .groupBy { it.slotIndex to it.receiverNodeId }
-                    .filterValues { it.size == messagesPerSlot }
-                    .values.map { got -> got.maxOf { it.latency } }
-            val batch = Percentiles.of(batchLatencies(measured, deliveries))
-
-            val label = "$mbps Mbit/s policy=${policy.name.lowercase()}"
-            println("=== $label  [${wallSeconds}s wall]")
-            println("  delivered ${deliveries.size}/$expected  per message ${latency ?: "-"}")
-            println("  whole batch ${batch ?: "-"}")
-            (0 until slots).forEach { slot ->
-                val inSlot = Percentiles.of(batchLatencies(setOf(slot), recorder.deliveries()))
-                val tag = if (slot in measured) "" else " (warm-up, not counted)"
-                val slotCopies = programs.sumOf { it.gossipByteCounter.publishMessagesReadBySlot[slot] ?: 0L }
-                val slotPulled = programs.sumOf { it.gossipByteCounter.iwantIdsWrittenBySlot[slot] ?: 0L }
-                val receivers = (nodeCount - 1).toDouble() * messagesPerSlot
-                println(
-                    "    slot $slot batch: ${inSlot ?: "-"}  copies/node/msg=%.2f of which iwant=%.2f$tag"
-                        .format(slotCopies / receivers, slotPulled / receivers)
+                val deliveries = allDeliveries.filter { it.slotIndex in inSlots && it.receiverNodeId in ids }
+                val reads = nodeSlots.map { (p, slot) -> p.gossipByteCounter.publishMessagesReadBySlot[slot] ?: 0L }
+                val pulls = nodeSlots.sumOf { (p, slot) -> p.gossipByteCounter.iwantIdsWrittenBySlot[slot] ?: 0L }
+                val bytes = nodeSlots.sumOf { (p, slot) -> p.gossipByteCounter.publishBytesReadBySlot[slot] ?: 0L }
+                return Stats(
+                    nodes = ids.size,
+                    expected = nodeSlots.size * messagesPerSlot,
+                    deliveries = deliveries,
+                    messagesPerSlot = messagesPerSlot,
+                    copies = reads.sum().toDouble() / deliveries.size,
+                    pulled = pulls.toDouble() / deliveries.size,
+                    copiesPerNodeSlot = reads.map { it.toDouble() / messagesPerSlot }.sorted(),
+                    amplification = bytes / (deliveries.size.toDouble() * messageBytes),
+                    mesh = nodes.flatMap { it.finalMeshSizes }.average()
                 )
             }
-            println(
-                "  copies/node/msg: mean=%.2f (mesh %.2f + iwant %.2f) per node-slot p10=%.1f p50=%.1f p90=%.1f max=%.1f  publish-bytes amplification=%.2fx  mesh=%.1f"
-                    .format(copies, copies - pulled, pulled, q(0.1), q(0.5), q(0.9), copiesPerNodeSlot.last(), amplification, mesh)
-            )
-            summary += listOf(
-                "$mbps", policy.name.lowercase(),
-                "%.4f".format(deliveries.size.toDouble() / expected),
-                latency?.p50?.inWholeMilliseconds ?: "-", latency?.p99?.inWholeMilliseconds ?: "-",
-                batch?.p50?.inWholeMilliseconds ?: "-", batch?.p90?.inWholeMilliseconds ?: "-",
-                batch?.p99?.inWholeMilliseconds ?: "-", batch?.max?.inWholeMilliseconds ?: "-",
-                "%.2f".format(copies), "%.2f".format(copies - pulled), "%.2f".format(pulled),
-                "%.1f".format(q(0.5)), "%.1f".format(q(0.9)), "%.1f".format(copiesPerNodeSlot.last()),
-                "%.2f".format(amplification), "%.1f".format(mesh)
-            ).joinToString(",")
+
+            val groups = factory.programs.groupBy { network.node(it.simNodeId).groupName!! }.toSortedMap()
+            println("=== $mbps Mbit/s policy=${policy.name.lowercase()}  [${wallSeconds}s wall]")
+            groups.forEach { (group, nodes) ->
+                val s = stats(nodes, measured)
+                println("  [$group] $s")
+                (0 until slots).forEach { slot ->
+                    val tag = if (slot in measured) "" else " (warm-up, not counted)"
+                    println("      slot $slot: ${stats(nodes, setOf(slot)).short()}$tag")
+                }
+                summary += (listOf("$mbps", policy.name.lowercase(), group) + s.csv()).joinToString(",")
+            }
         }
         println("\nSUMMARY")
-        println(
-            "mbps,policy,delivered,msg_p50_ms,msg_p99_ms,batch_p50_ms,batch_p90_ms,batch_p99_ms,batch_max_ms," +
-                "copies_mean,copies_mesh,copies_iwant,copies_p50,copies_p90,copies_max,byte_amplification,mesh"
-        )
+        println("mbps,policy,group,${Stats.CSV_HEADER}")
         summary.forEach(::println)
+    }
+
+    private class Stats(
+        val nodes: Int,
+        val expected: Int,
+        val deliveries: List<DcSlotMessageDelivery>,
+        val messagesPerSlot: Int,
+        val copies: Double,
+        val pulled: Double,
+        val copiesPerNodeSlot: List<Double>,
+        val amplification: Double,
+        val mesh: Double
+    ) {
+        val perMessage = Percentiles.of(deliveries.map { it.latency })
+
+        /** A node has the batch of a slot once its last message has arrived. */
+        val batch = Percentiles.of(
+            deliveries.groupBy { it.slotIndex to it.receiverNodeId }
+                .filterValues { it.size == messagesPerSlot }
+                .values.map { got -> got.maxOf { it.latency } }
+        )
+
+        fun q(p: Double) = copiesPerNodeSlot[(p * copiesPerNodeSlot.size).toInt().coerceAtMost(copiesPerNodeSlot.size - 1)]
+
+        fun short() = "batch ${batch ?: "-"}  copies/msg=%.2f of which iwant=%.2f".format(copies, pulled)
+
+        override fun toString() =
+            "nodes=$nodes delivered ${deliveries.size}/$expected  per message ${perMessage ?: "-"}\n" +
+                "      whole batch ${batch ?: "-"}\n" +
+                (
+                    "      copies/msg: mean=%.2f (mesh %.2f + iwant %.2f) per node-slot p50=%.1f p90=%.1f max=%.1f  " +
+                        "publish-bytes amplification=%.2fx  mesh=%.1f"
+                    )
+                    .format(copies, copies - pulled, pulled, q(0.5), q(0.9), copiesPerNodeSlot.last(), amplification, mesh)
+
+        fun csv(): List<Any> = listOf(
+            "%.4f".format(deliveries.size.toDouble() / expected),
+            perMessage?.p50?.inWholeMilliseconds ?: "-", perMessage?.p99?.inWholeMilliseconds ?: "-",
+            batch?.p50?.inWholeMilliseconds ?: "-", batch?.p90?.inWholeMilliseconds ?: "-",
+            batch?.p99?.inWholeMilliseconds ?: "-", batch?.max?.inWholeMilliseconds ?: "-",
+            "%.2f".format(copies), "%.2f".format(copies - pulled), "%.2f".format(pulled),
+            "%.1f".format(q(0.5)), "%.1f".format(q(0.9)), "%.1f".format(copiesPerNodeSlot.last()),
+            "%.2f".format(amplification), "%.1f".format(mesh)
+        )
+
+        companion object {
+            const val CSV_HEADER = "delivered,msg_p50_ms,msg_p99_ms,batch_p50_ms,batch_p90_ms,batch_p99_ms,batch_max_ms," +
+                "copies_mean,copies_mesh,copies_iwant,copies_p50,copies_p90,copies_max,byte_amplification,mesh"
+        }
     }
 }
