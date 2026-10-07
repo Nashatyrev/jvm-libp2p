@@ -177,11 +177,24 @@ class DcPeerGraphTest {
         val graph = population(nodeCount = 40, peers = 6, subnetsPerNode = 2, subnetCount = 8)
             .peerGraph(randomSeed = 8)
 
-        val dialled = graph.dialTargets().entries.sumOf { it.value.size }
-        assertThat(dialled).isEqualTo(graph.edgeCount)
-        graph.dialTargets().forEach { (from, targets) ->
-            targets.forEach { to -> assertThat(to).isGreaterThan(from) }
-        }
+        val targets = graph.dialTargets()
+        val dialled = targets.entries.flatMap { (from, to) -> to.map { setOf(from, it) } }
+        assertThat(dialled).hasSize(graph.edgeCount)
+        assertThat(dialled.toSet()).hasSize(graph.edgeCount)
+        targets.forEach { (from, to) -> to.forEach { assertThat(graph.peersOf(from)).contains(it) } }
+    }
+
+    @Test
+    fun `dial direction is random per edge rather than by id`() {
+        val graph = population(nodeCount = 40, peers = 6, subnetsPerNode = 2, subnetCount = 8)
+            .peerGraph(randomSeed = 8)
+        val targets = graph.dialTargets()
+        val upward = targets.entries.sumOf { (from, to) -> to.count { it > from } }
+        // ~half each way; the old rule sent every edge upward
+        assertThat(upward.toDouble() / graph.edgeCount).isBetween(0.3, 0.7)
+        // the highest id is no longer only ever dialled
+        assertThat(targets.getValue(39)).isNotEmpty()
+        assertThat(graph.dialTargets()).isEqualTo(targets)
     }
 
     @Test

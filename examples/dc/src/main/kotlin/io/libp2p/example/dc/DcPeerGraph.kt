@@ -45,9 +45,33 @@ data class DcPeerGraph<R>(
     /**
      * Each edge assigned to exactly one of its two ends, so that feeding this to node programs
      * dials every connection once instead of twice.
+     *
+     * Which end dials is a coin flip per edge, fixed by [randomSeed]. It is not a detail: gossipsub
+     * treats outbound peers differently -- a heartbeat keeps `DOut` of them in the mesh, and a GRAFT
+     * from one is accepted even past `DHigh`. Letting the lower id always dial made the last nodes
+     * built (the last group added) dialled by every neighbour and dialling nobody, which put them in
+     * everyone's outbound quota and held their meshes at ~DHigh (11.6 against 9.1 elsewhere, at
+     * D=8/DHigh=12), whatever their link.
      */
-    fun dialTargets(): Map<SimNodeId, List<SimNodeId>> =
-        adjacency.indices.associateWith { from -> adjacency[from].filter { it > from }.sorted() }
+    fun dialTargets(randomSeed: Long = 0): Map<SimNodeId, List<SimNodeId>> {
+        val targets = adjacency.indices.associateWith { mutableListOf<SimNodeId>() }
+        adjacency.forEachIndexed { a, peers ->
+            peers.filter { it > a }.forEach { b ->
+                if (lowerEndDials(a, b, randomSeed)) targets.getValue(a) += b else targets.getValue(b) += a
+            }
+        }
+        return targets.mapValues { (_, to) -> to.sorted() }
+    }
+
+    /** A per-edge coin flip that does not depend on the order edges are visited in. */
+    private fun lowerEndDials(a: SimNodeId, b: SimNodeId, seed: Long): Boolean {
+        // splitmix64 finaliser over the edge and the seed
+        var z = ((a.toLong() shl 32) or b.toLong()) xor (seed * -0x61c8864680b583ebL)
+        z = (z xor (z ushr 30)) * -0x40a7b892e31b1a47L
+        z = (z xor (z ushr 27)) * -0x6b2fb644ecceee15L
+        z = z xor (z ushr 31)
+        return z and 1L == 0L
+    }
 
     /** Subscriptions that ended up with fewer subnet peers than [minPeersPerSubnet]. */
     fun subnetDeficiencies(): List<SubnetDeficiency> =

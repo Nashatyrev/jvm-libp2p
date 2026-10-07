@@ -62,6 +62,11 @@ class DcNodeProgram(
         private set
 
     // An attacker's handler puts the byte counter in front of itself, so both still see every stream.
+    /** Which copies came from mesh peers and which from outside the mesh; set once connected. */
+    @Volatile
+    var copySources: DcCopySources? = null
+        private set
+
     override fun createDebugGossipHandler(): ChannelHandler = withholdingHandler ?: gossipByteCounter
 
     // Ethereum StrictNoSign: message ID = SHA256(data)[0:20], no from/seqno/signature on wire.
@@ -96,6 +101,7 @@ class DcNodeProgram(
             handler.scheduler = { delay, task -> simContext.scheduler.executeAfterDelay(delay) { task() } }
             handler.currentTimeSupplier = { simContext.timer.elapsedTime() }
         }
+        copySources = DcCopySources(gossipRouter).also { gossipRouter.eventBroadcaster.listeners += it }
         subscribe(simContext)
         schedulePublications(simContext)
         quicStats?.let { stats ->

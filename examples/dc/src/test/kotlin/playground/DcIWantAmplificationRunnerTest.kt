@@ -148,6 +148,7 @@ class DcIWantAmplificationRunnerTest {
                 val reads = nodeSlots.map { (p, slot) -> p.gossipByteCounter.publishMessagesReadBySlot[slot] ?: 0L }
                 val pulls = nodeSlots.sumOf { (p, slot) -> p.gossipByteCounter.iwantIdsWrittenBySlot[slot] ?: 0L }
                 val bytes = nodeSlots.sumOf { (p, slot) -> p.gossipByteCounter.publishBytesReadBySlot[slot] ?: 0L }
+                val sources = nodeSlots.mapNotNull { (p, slot) -> p.copySources?.bySlot()?.get(slot) }
                 return Stats(
                     nodes = ids.size,
                     expected = nodeSlots.size * messagesPerSlot,
@@ -157,7 +158,11 @@ class DcIWantAmplificationRunnerTest {
                     pulled = pulls.toDouble() / deliveries.size,
                     copiesPerNodeSlot = reads.map { it.toDouble() / messagesPerSlot }.sorted(),
                     amplification = bytes / (deliveries.size.toDouble() * messageBytes),
-                    mesh = nodes.flatMap { it.finalMeshSizes }.average()
+                    mesh = nodes.flatMap { it.finalMeshSizes }.average(),
+                    fromMesh = sources.sumOf { it.meshCopies }.toDouble() / deliveries.size,
+                    fromOutsideMesh = sources.sumOf { it.nonMeshCopies }.toDouble() / deliveries.size,
+                    meshAtFirstCopy = sources.sumOf { it.meshSizeAtFirstCopySum }.toDouble() / sources.sumOf { it.messages },
+                    distinctMeshSenders = sources.sumOf { it.distinctMeshSendersSum }.toDouble() / sources.sumOf { it.messages }
                 )
             }
 
@@ -187,7 +192,11 @@ class DcIWantAmplificationRunnerTest {
         val pulled: Double,
         val copiesPerNodeSlot: List<Double>,
         val amplification: Double,
-        val mesh: Double
+        val mesh: Double,
+        val fromMesh: Double,
+        val fromOutsideMesh: Double,
+        val meshAtFirstCopy: Double,
+        val distinctMeshSenders: Double
     ) {
         val perMessage = Percentiles.of(deliveries.map { it.latency })
 
@@ -200,7 +209,8 @@ class DcIWantAmplificationRunnerTest {
 
         fun q(p: Double) = copiesPerNodeSlot[(p * copiesPerNodeSlot.size).toInt().coerceAtMost(copiesPerNodeSlot.size - 1)]
 
-        fun short() = "batch ${batch ?: "-"}  copies/msg=%.2f of which iwant=%.2f".format(copies, pulled)
+        fun short() = "batch ${batch ?: "-"}  copies/msg=%.2f of which iwant=%.2f; from mesh %.2f outside %.2f, mesh at first copy %.1f"
+            .format(copies, pulled, fromMesh, fromOutsideMesh, meshAtFirstCopy)
 
         override fun toString() =
             "nodes=$nodes delivered ${deliveries.size}/$expected  per message ${perMessage ?: "-"}\n" +
@@ -209,7 +219,12 @@ class DcIWantAmplificationRunnerTest {
                     "      copies/msg: mean=%.2f (mesh %.2f + iwant %.2f) per node-slot p50=%.1f p90=%.1f max=%.1f  " +
                         "publish-bytes amplification=%.2fx  mesh=%.1f"
                     )
-                    .format(copies, copies - pulled, pulled, q(0.5), q(0.9), copiesPerNodeSlot.last(), amplification, mesh)
+                    .format(copies, copies - pulled, pulled, q(0.5), q(0.9), copiesPerNodeSlot.last(), amplification, mesh) +
+                (
+                    "\n      by sender: from mesh peers %.2f (distinct mesh senders %.2f, mesh size at first copy %.2f), " +
+                        "from outside the mesh %.2f; iwant ids sent %.2f"
+                    )
+                    .format(fromMesh, distinctMeshSenders, meshAtFirstCopy, fromOutsideMesh, pulled)
 
         fun csv(): List<Any> = listOf(
             "%.4f".format(deliveries.size.toDouble() / expected),
@@ -218,12 +233,14 @@ class DcIWantAmplificationRunnerTest {
             batch?.p99?.inWholeMilliseconds ?: "-", batch?.max?.inWholeMilliseconds ?: "-",
             "%.2f".format(copies), "%.2f".format(copies - pulled), "%.2f".format(pulled),
             "%.1f".format(q(0.5)), "%.1f".format(q(0.9)), "%.1f".format(copiesPerNodeSlot.last()),
-            "%.2f".format(amplification), "%.1f".format(mesh)
+            "%.2f".format(amplification), "%.1f".format(mesh),
+            "%.2f".format(fromMesh), "%.2f".format(fromOutsideMesh), "%.2f".format(distinctMeshSenders), "%.2f".format(meshAtFirstCopy)
         )
 
         companion object {
             const val CSV_HEADER = "delivered,msg_p50_ms,msg_p99_ms,batch_p50_ms,batch_p90_ms,batch_p99_ms,batch_max_ms," +
-                "copies_mean,copies_mesh,copies_iwant,copies_p50,copies_p90,copies_max,byte_amplification,mesh"
+                "copies_mean,copies_mesh,copies_iwant,copies_p50,copies_p90,copies_max,byte_amplification,mesh," +
+                "from_mesh,from_outside_mesh,distinct_mesh_senders,mesh_at_first_copy"
         }
     }
 }
