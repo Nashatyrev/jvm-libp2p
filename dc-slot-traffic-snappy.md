@@ -15,7 +15,8 @@ Note: this note was mostly composed by Claude.
     with a 64 KiB history, instead of each message on its own; peers have to negotiate it.
   - **implementation-only changes**, which need no protocol change and stay compatible with
     today's peers:
-    - disciplined IWANT: ask one announcer at a time, not every announcer;
+    - disciplined IWANT: ask one announcer at a time, not every announcer. It has security
+      implications that are being investigated separately;
     - batch publishing, as in the original write-up.
 - **The ceiling is a 3-slot epoch.** 8, 4 and 3 slots fit; 2 slots still delivers, but not well;
   1 slot breaks down.
@@ -185,7 +186,9 @@ measures the implementation changes on their own.
   one announcer at a time and retries after 200 ms, instead of asking every announcer at once. It
   changes no message and no protocol id. Here it runs on the 50 / 25 Mbit/s tier only; the other
   tiers keep stock IWANT. In the original write-up it cut that tier's copies per payload chunk
-  from 23.5 to 12.4.
+  from 23.5 to 12.4. **It has security implications**, since a node now depends on fewer
+  announcers for each message it pulls. These are being investigated separately, and the results
+  here assume they can be addressed without giving up most of the traffic saving.
 - **Batch publishing: an implementation change.** The messages a node handles in one event-loop
   turn leave as one merged RPC per peer instead of one RPC each. It is on in every run, as in the
   original write-up.
