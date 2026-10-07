@@ -49,11 +49,13 @@ tasks.register('simulation', Test) {
   // OutOfMemoryError (JUnit records the test as skipped). Rebalancing heap against direct
   // buffers does not help, since the kernel sees only the sum -- a heavier run needs fewer
   // validators or fewer slots, not a different split.
-  maxHeapSize = '330g'
-  jvmArgs('-XX:MaxDirectMemorySize=130g')
+  // -Ddc.heap=24g for a 64 GB machine: with a 330g ceiling the JVM barely collects and keeps
+  // growing across the runs of a sweep until the OS kills it (exit 137).
+  maxHeapSize = System.getProperty('dc.heap') ?: '330g'
+  jvmArgs('-XX:MaxDirectMemorySize=' + (System.getProperty('dc.directMemory') ?: '130g'))
   // Lets a scenario be swept without editing it, e.g.
   //   ./gradlew :examples:dc:simulation --tests "*large network*" -Ddc.validators=100000
-  ['dc.validators', 'dc.ffgCompression', 'dc.slots', 'dc.warmupSlots', 'dc.gossip', 'dc.ffg', 'dc.ethGossip', 'dc.homeDownMbps', 'dc.homeUpMbps', 'dc.iwant', 'dc.iwantScope', 'dc.homeFfgSubnets', 'dc.warmupFrom', 'dc.idontwant', 'dc.ffgSlots', 'dc.homeCount', 'dc.midHomeCount', 'dc.upperHomeCount', 'dc.homeValidators', 'dc.snappyStream', 'dc.ffgSnappyRatio', 'dc.aggSnappyRatio', 'dc.quicStatsAtMs', 'dc.attackFractions', 'dc.bandwidthsMbps', 'dc.messageKiB', 'dc.attackIHave', 'dc.attackSlots', 'dc.attackSeeds', 'dc.settleSeconds', 'libp2p.quic.initialCwndPackets'].each { name ->
+  ['dc.validators', 'dc.ffgCompression', 'dc.slots', 'dc.warmupSlots', 'dc.gossip', 'dc.ffg', 'dc.ethGossip', 'dc.homeDownMbps', 'dc.homeUpMbps', 'dc.iwant', 'dc.iwantScope', 'dc.homeFfgSubnets', 'dc.warmupFrom', 'dc.idontwant', 'dc.ffgSlots', 'dc.homeCount', 'dc.midHomeCount', 'dc.upperHomeCount', 'dc.homeValidators', 'dc.snappyStream', 'dc.ffgSnappyRatio', 'dc.aggSnappyRatio', 'dc.quicStatsAtMs', 'dc.attackFractions', 'dc.bandwidthsMbps', 'dc.messageKiB', 'dc.messagesPerSlot', 'dc.attackIHave', 'dc.attackSlots', 'dc.attackSeeds', 'dc.settleSeconds', 'libp2p.quic.initialCwndPackets'].each { name ->
     if (System.getProperty(name) != null) {
       systemProperty name, System.getProperty(name)
     }

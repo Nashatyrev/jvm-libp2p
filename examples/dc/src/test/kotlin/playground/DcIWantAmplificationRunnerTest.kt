@@ -39,6 +39,8 @@ import kotlin.time.Duration.Companion.seconds
  *  - `dc.bandwidthsMbps`: link rates swept, symmetric (default 10,20,50,100,1000)
  *  - `dc.iwant`: policies swept (default all_announcers,disciplined,none)
  *  - `dc.messageKiB`: message size (default 1024)
+ *  - `dc.messagesPerSlot`: messages published at once by one publisher each slot (default 1); latency
+ *    is then also reported for the whole batch -- a node has it once all of them have arrived
  *  - `dc.slots`: messages, one per slot; the first is warm-up and not counted (default 4)
  */
 @Tag("simulation")
@@ -52,6 +54,7 @@ class DcIWantAmplificationRunnerTest {
         val policies = prop("dc.iwant", "all_announcers,disciplined,none").split(",")
             .map { IWantPolicy.valueOf(it.trim().uppercase()) }
         val messageBytes = prop("dc.messageKiB", "1024").toInt() * 1024
+        val messagesPerSlot = prop("dc.messagesPerSlot", "1").toInt()
         val slots = prop("dc.slots", "4").toInt()
         val nodeCount = 100
         val peers = 30
@@ -68,13 +71,14 @@ class DcIWantAmplificationRunnerTest {
                     type = DcSlotMessageType.BLOCK,
                     sizeBytes = messageBytes,
                     publisherSelection = DcPublisherSelection.RANDOM_NODE,
+                    messagesPerSlot = messagesPerSlot,
                     topics = DcSlotMessageTopics.Global
                 )
             ),
             randomSeed = 1
         )
         println(
-            "IWANT amplification: nodes=$nodeCount peers=$peers message=${messageBytes / 1024} KiB " +
+            "IWANT amplification: nodes=$nodeCount peers=$peers message=$messagesPerSlot x ${messageBytes / 1024} KiB " +
                 "slots=$slots bandwidths=$bandwidths Mbit/s policies=$policies"
         )
 
@@ -110,62 +114,68 @@ class DcIWantAmplificationRunnerTest {
             val latency = Percentiles.of(deliveries.map { it.latency })
             val programs = factory.programs
 
-            // One message per slot, so what a node reads or asks for in a slot is about that message.
+            // One batch per slot, so what a node reads or asks for in a slot is about that batch.
             // Copies arriving by IWANT are counted as the IWANT ids the node sent: in an honest
             // network every request is answered, so the two match up to retransmission limits.
-            data class NodeMessage(val copies: Long, val pulled: Long)
-            val perNodeMessage = programs.flatMap { program ->
-                val counter = program.gossipByteCounter
-                published
-                    .filter { it.publisherNodeId != program.simNodeId }
-                    .map {
-                        NodeMessage(
-                            counter.publishMessagesReadBySlot[it.slotIndex] ?: 0L,
-                            counter.iwantIdsWrittenBySlot[it.slotIndex] ?: 0L
-                        )
-                    }
-            }
-            val copiesSorted = perNodeMessage.map { it.copies }.sorted()
-            fun q(p: Double) = copiesSorted[(p * copiesSorted.size).toInt().coerceAtMost(copiesSorted.size - 1)]
-            val copies = perNodeMessage.sumOf { it.copies }.toDouble() / deliveries.size
-            val pulled = perNodeMessage.sumOf { it.pulled }.toDouble() / deliveries.size
+            val slotPublisher = published.associate { it.slotIndex to it.publisherNodeId }
+            val copiesPerNodeSlot = programs.flatMap { program ->
+                slotPublisher.filterValues { it != program.simNodeId }.keys.map { slot ->
+                    (program.gossipByteCounter.publishMessagesReadBySlot[slot] ?: 0L).toDouble() / messagesPerSlot
+                }
+            }.sorted()
+            fun q(p: Double) = copiesPerNodeSlot[(p * copiesPerNodeSlot.size).toInt().coerceAtMost(copiesPerNodeSlot.size - 1)]
+            val copies = programs.sumOf { p -> measured.sumOf { p.gossipByteCounter.publishMessagesReadBySlot[it] ?: 0L } }
+                .toDouble() / deliveries.size
+            val pulled = programs.sumOf { p -> measured.sumOf { p.gossipByteCounter.iwantIdsWrittenBySlot[it] ?: 0L } }
+                .toDouble() / deliveries.size
             val publishBytes = programs.sumOf { program ->
                 measured.sumOf { program.gossipByteCounter.publishBytesReadBySlot[it] ?: 0L }
             }.toDouble()
             val amplification = publishBytes / (deliveries.size.toDouble() * messageBytes)
             val mesh = programs.flatMap { it.finalMeshSizes }.average()
 
+            // A node has the batch of a slot once its last message has arrived.
+            fun batchLatencies(inSlots: Set<Int>, all: List<io.libp2p.example.dc.DcSlotMessageDelivery>) =
+                all.filter { it.slotIndex in inSlots }
+                    .groupBy { it.slotIndex to it.receiverNodeId }
+                    .filterValues { it.size == messagesPerSlot }
+                    .values.map { got -> got.maxOf { it.latency } }
+            val batch = Percentiles.of(batchLatencies(measured, deliveries))
+
             val label = "$mbps Mbit/s policy=${policy.name.lowercase()}"
             println("=== $label  [${wallSeconds}s wall]")
-            println("  delivered ${deliveries.size}/$expected  latency ${latency ?: "-"}")
-            recorder.published().map { it.message }.forEach { message ->
-                val perMessage = Percentiles.of(recorder.deliveries().filter { it.messageId == message.id }.map { it.latency })
-                val tag = if (message.slotIndex in measured) "" else " (warm-up, not counted)"
-                val slotCopies = programs.sumOf { it.gossipByteCounter.publishMessagesReadBySlot[message.slotIndex] ?: 0L }
-                val slotPulled = programs.sumOf { it.gossipByteCounter.iwantIdsWrittenBySlot[message.slotIndex] ?: 0L }
-                val receivers = factory.expectedDeliveriesOf(message).toDouble()
+            println("  delivered ${deliveries.size}/$expected  per message ${latency ?: "-"}")
+            println("  whole batch ${batch ?: "-"}")
+            (0 until slots).forEach { slot ->
+                val inSlot = Percentiles.of(batchLatencies(setOf(slot), recorder.deliveries()))
+                val tag = if (slot in measured) "" else " (warm-up, not counted)"
+                val slotCopies = programs.sumOf { it.gossipByteCounter.publishMessagesReadBySlot[slot] ?: 0L }
+                val slotPulled = programs.sumOf { it.gossipByteCounter.iwantIdsWrittenBySlot[slot] ?: 0L }
+                val receivers = (nodeCount - 1).toDouble() * messagesPerSlot
                 println(
-                    "    slot ${message.slotIndex}: ${perMessage ?: "-"}  copies/node=%.2f of which iwant=%.2f$tag"
+                    "    slot $slot batch: ${inSlot ?: "-"}  copies/node/msg=%.2f of which iwant=%.2f$tag"
                         .format(slotCopies / receivers, slotPulled / receivers)
                 )
             }
             println(
-                "  copies/node/msg: mean=%.2f (mesh %.2f + iwant %.2f) p10=%d p50=%d p90=%d max=%d  publish-bytes amplification=%.2fx  mesh=%.1f"
-                    .format(copies, copies - pulled, pulled, q(0.1), q(0.5), q(0.9), copiesSorted.last(), amplification, mesh)
+                "  copies/node/msg: mean=%.2f (mesh %.2f + iwant %.2f) per node-slot p10=%.1f p50=%.1f p90=%.1f max=%.1f  publish-bytes amplification=%.2fx  mesh=%.1f"
+                    .format(copies, copies - pulled, pulled, q(0.1), q(0.5), q(0.9), copiesPerNodeSlot.last(), amplification, mesh)
             )
             summary += listOf(
                 "$mbps", policy.name.lowercase(),
                 "%.4f".format(deliveries.size.toDouble() / expected),
-                latency?.p50?.inWholeMilliseconds ?: "-", latency?.p90?.inWholeMilliseconds ?: "-",
-                latency?.p99?.inWholeMilliseconds ?: "-", latency?.max?.inWholeMilliseconds ?: "-",
+                latency?.p50?.inWholeMilliseconds ?: "-", latency?.p99?.inWholeMilliseconds ?: "-",
+                batch?.p50?.inWholeMilliseconds ?: "-", batch?.p90?.inWholeMilliseconds ?: "-",
+                batch?.p99?.inWholeMilliseconds ?: "-", batch?.max?.inWholeMilliseconds ?: "-",
                 "%.2f".format(copies), "%.2f".format(copies - pulled), "%.2f".format(pulled),
-                "${q(0.5)}", "${q(0.9)}", "${copiesSorted.last()}", "%.2f".format(amplification), "%.1f".format(mesh)
+                "%.1f".format(q(0.5)), "%.1f".format(q(0.9)), "%.1f".format(copiesPerNodeSlot.last()),
+                "%.2f".format(amplification), "%.1f".format(mesh)
             ).joinToString(",")
         }
         println("\nSUMMARY")
         println(
-            "mbps,policy,delivered,p50_ms,p90_ms,p99_ms,max_ms,copies_mean,copies_mesh,copies_iwant," +
-                "copies_p50,copies_p90,copies_max,byte_amplification,mesh"
+            "mbps,policy,delivered,msg_p50_ms,msg_p99_ms,batch_p50_ms,batch_p90_ms,batch_p99_ms,batch_max_ms," +
+                "copies_mean,copies_mesh,copies_iwant,copies_p50,copies_p90,copies_max,byte_amplification,mesh"
         )
         summary.forEach(::println)
     }
