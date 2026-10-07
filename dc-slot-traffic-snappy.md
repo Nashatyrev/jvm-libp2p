@@ -10,17 +10,18 @@ Note: this note was mostly composed by Claude.
 
 ## TL;DR
 
-- **The ceiling is a 3-slot epoch.** 8, 4 and 3 slots fit; 2 does not.
+- **The ceiling is a 3-slot epoch.** 8, 4 and 3 slots fit; 2 slots still delivers, but not well.
 - **8 and 4 slots fit with room to spare.** The home link clears the bulk-data burst by ~4 s, and
   every vote wave after it has p99 under 570 ms.
 - **3 slots fits without margin.** FFG p99 is 1068 ms, the worst wave 1.5 s, and the late aggregates
   reach 800–900 ms. But the link still drains between the waves, and from 6 s on the vote tail is back at
   380–510 ms.
-- **2 slots does not fit.** The home link stays saturated until 5.5 s, then reaches its ceiling
-  on every later wave. Every wave's p99 stays above 1.2 s, and the last waves are not fully
-  delivered on any tier.
-- **The tail is set by the network, not by the receiving node.** At 2 slots the 10 Gbit/s pools
-  have an FFG p99 of 1753 ms, against 1943 ms at the home tier.
+- **2 slots is past the comfortable range.** The home link stays saturated until 5.5 s, then
+  reaches its ceiling on every later wave. Every wave's p99 stays above 1.2 s, and a few
+  hundredths of a percent of the last waves' deliveries are still missing when the run ends.
+- **The tail everyone sees comes from votes the 50 / 25 Mbit/s nodes publish.** At 2 slots the
+  10 Gbit/s pools have an FFG p99 of 1753 ms, but their p90 is still 260 ms: only the slowest
+  ~10% of votes are late, about the home tier's share of publishers.
 
 ## Result
 
@@ -29,7 +30,7 @@ Note: this note was mostly composed by Claude.
 | ✅ | 8 | 2 |
 | ✅ | 4 | 2 |
 | ✅ | 3 | 2 |
-| ❌ | 2 | 2 |
+| ⚠️ | 2 | 2 |
 
 The criteria are the write-up's: the link should not stay saturated, and the vote tail should not
 run away from the median, judged on the worst of the twelve waves.
@@ -82,32 +83,11 @@ them. What changes with the epoch length is how much vote traffic lands on top o
 
 ## Per-wave latency
 
-FFG votes, home tier, p50 / p99 in ms:
+Home tier, p50 and p99 of each wave. Hover a point for its value.
 
-| wave @ | 8 slots | 4 slots | 3 slots | 2 slots |
-|---|---|---|---|---|
-| 0 s | 191 / 353 | 197 / 364 | 210 / 422 | 227 / 775 |
-| 1 s | 208 / 800 | 232 / 1146 | 252 / 1161 | 291 / 1770 |
-| 2 s | 425 / 938 | 463 / 1059 | 485 / **1529** | 592 / **3016** |
-| 3 s | 240 / 551 | 267 / 999 | 319 / 1389 | 466 / 2513 |
-| 4 s | 194 / 345 | 206 / 567 | 217 / 1152 | 271 / 1947 |
-| 5 s | 191 / 340 | 198 / 352 | 206 / 707 | 226 / 1668 |
-| 6 s | 191 / 339 | 195 / 357 | 204 / 416 | 222 / 1599 |
-| 7 s | 191 / 340 | 193 / 343 | 202 / 379 | 217 / 1318 |
-| 8 s | 190 / 340 | 194 / 355 | 201 / 405 | 216 / 1349 |
-| 9 s | 191 / 345 | 197 / 380 | 205 / 431 | 219 / 1212 |
-| 10 s | 191 / 346 | 197 / 388 | 206 / 486 | 221 / 1781 |
-| 11 s | 191 / 348 | 199 / 402 | 207 / 507 | 223 / 1634 |
+![FFG votes per wave, home group, by epoch length](docs/dc-slot-traffic/wave-ffg-epoch-sweep.svg)
 
-Aggregates, home tier, p50 / p99 in ms:
-
-| wave @ | 8 slots | 4 slots | 3 slots | 2 slots |
-|---|---|---|---|---|
-| 6 s | 225 / 382 | 235 / 407 | 250 / 459 | 296 / 566 |
-| 8 s | 224 / 379 | 235 / 405 | 245 / 451 | 293 / 559 |
-| 9 s | 234 / 398 | 248 / 460 | 264 / 527 | 324 / 782 |
-| 10 s | 234 / 399 | 253 / 479 | 280 / 906 | 344 / 1106 |
-| 11 s | 234 / 407 | 252 / 488 | 282 / 784 | 348 / 1070 |
+![Aggregates per wave, home group, by epoch length](docs/dc-slot-traffic/wave-aggregates-epoch-sweep.svg)
 
 In every configuration the worst vote waves are the ones published into the bulk-data window at
 1–3 s. What separates them is the recovery.
@@ -117,26 +97,36 @@ In every configuration the worst vote waves are the ones published into the bulk
 - **3 slots** takes one wave longer to recover, and from 6 s on its tail sits at 380–510 ms. Its late
   aggregates reach 800–900 ms. This is the last configuration that passes the criteria, and it does
   so without margin.
-- **2 slots** never recovers: every wave from 1 s to 11 s has p99 above 1.2 s. When the run ends, a
-  few hundredths of a percent of the deliveries for the 9–11 s waves are still missing on every
-  tier. Even at 101 B per vote, 500 000 votes per slot is more than the network carries in time.
+- **2 slots** never recovers: every wave from 1 s to 11 s has p99 above 1.2 s, and aggregates reach
+  1.1 s. When the run ends, a few hundredths of a percent of the deliveries for the 9–11 s waves
+  are still missing on every tier. Votes still get through, and the median stays near 220 ms, but
+  the tail never comes back down.
 
-## The tail belongs to the network
+## The tail comes from the constrained publishers
 
-FFG p99 by tier:
+FFG latency by tier, p90 / p99 in ms:
 
-| FFG p99, ms | `home` 50/25 | `mid-home` | `upper-home` | `vps` 500M | `validator-pools` 10G |
+| slots per epoch | `home` 50/25 | `mid-home` | `upper-home` | `vps` 500M | `validator-pools` 10G |
 |---|---|---|---|---|---|
-| 8 slots | 628 | 388 | 375 | 375 | 286 |
-| 4 slots | 779 | 510 | 517 | 488 | 373 |
-| 3 slots | 1068 | 791 | 840 | 785 | 741 |
-| 2 slots | 1943 | 1816 | 1895 | 1812 | **1753** |
+| 8 | 339 / 628 | 306 / 388 | 305 / 375 | 306 / 375 | 231 / 286 |
+| 4 | 384 / 779 | 309 / 510 | 308 / 517 | 308 / 488 | 235 / 373 |
+| 3 | 444 / 1068 | 320 / 791 | 316 / 840 | 315 / 785 | 239 / 741 |
+| 2 | 701 / 1943 | 339 / 1816 | 336 / 1895 | 333 / 1812 | 260 / **1753** |
 
-At 8 and 4 slots the home tier's tail is clearly its own, about 2.1–2.2× that of the pools. From 3
-slots on, the tiers converge. At 2 slots the pools see nearly the home tier's tail on a link 200×
-wider. The votes are stuck in the uplinks of the nodes that publish and relay them, not in the
-receiver's downlink. A pool node receives 407 MB in the measured slot at 8 slots, 753 MB at 4,
-979 MB at 3 and 1434 MB at 2.
+Two things grow as the epoch shortens.
+
+- **Every tier's p99, but not its p90.** At the pools, p90 moves from 231 to 260 ms across the
+  whole sweep while p99 goes from 286 to 1753 ms. If the network as a whole were congested, p90
+  would rise with p99. Only the slowest ~5–10% of votes are slow, and every group hosts the same
+  number of validators, so the 50 / 25 Mbit/s nodes publish about 10% of all votes.
+  This is the mechanism the [original write-up](dc-slot-traffic-writeup.md) measured. A vote
+  published from a 25 Mbit/s uplink waits behind that node's own relaying before its first hop,
+  and mesh redundancy cannot route around the publisher. There, making the home tier relay-only
+  took the pools' FFG p99 from 1592 to 281 ms with the same traffic. Shorter epochs and a second
+  subnet make that queue longer, since a home node relays more votes per wave.
+- **The home tier's own p90.** It rises from 339 to 701 ms, while the other tiers stay at 305–339 ms.
+  That is the home node's downlink being saturated (47 saturated buckets at 2 slots), and it adds to
+  what the home tier receives. It does not slow anyone else.
 
 ## How it is modelled
 

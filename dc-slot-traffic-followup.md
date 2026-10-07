@@ -1,7 +1,7 @@
 # DC gossip traffic profile: the peer-count fix
 
 > **Update:** with stream-Snappy on the fixed graph and 2 attestation subnets, an epoch of 8, 4 or
-> 3 slots fits on the 50 / 25 Mbit/s tier and 2 slots does not. See
+> 3 slots fits on the 50 / 25 Mbit/s tier; 2 slots is past the comfortable range. See
 > [the epoch-length ceiling with stream-Snappy](dc-slot-traffic-snappy.md).
 
 A correction to [Gossip traffic profile for a slot](dc-slot-traffic-writeup.md). The peer graph the

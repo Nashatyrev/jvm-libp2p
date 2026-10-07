@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="590" viewBox="0 0 1000 590" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="1000" height="590" fill="#ffffff"/>
+<text x="24" y="36" font-size="22" font-weight="700" fill="#2c2c2a">Aggregates per wave — home group, by epoch length</text>
+<text x="24" y="62" font-size="14" fill="#6b6a65">home group (100 nodes, 50 / 25 Mbit/s), measured slot; stream-Snappy, fixed peer graph</text>
+<text x="24" y="81" font-size="14" fill="#6b6a65">1M validators, 2 of 64 attestation subnets per residential node; eth gossip D=8, 700 ms heartbeat</text>
+<text x="24" y="100" font-size="14" fill="#6b6a65">1024 aggregates per slot at 6 / 8 / 9 / 10 / 11 s; bitvector grows as the epoch shortens</text>
+<line x1="78" x2="890" y1="520.0" y2="520.0" stroke="#e6e5df" stroke-width="1"/>
+<text x="68" y="524.0" font-size="13" fill="#6b6a65" text-anchor="end">0</text>
+<line x1="78" x2="890" y1="460.0" y2="460.0" stroke="#e6e5df" stroke-width="1"/>
+<text x="68" y="464.0" font-size="13" fill="#6b6a65" text-anchor="end">200</text>
+<line x1="78" x2="890" y1="400.0" y2="400.0" stroke="#e6e5df" stroke-width="1"/>
+<text x="68" y="404.0" font-size="13" fill="#6b6a65" text-anchor="end">400</text>
+<line x1="78" x2="890" y1="340.0" y2="340.0" stroke="#e6e5df" stroke-width="1"/>
+<text x="68" y="344.0" font-size="13" fill="#6b6a65" text-anchor="end">600</text>
+<line x1="78" x2="890" y1="280.0" y2="280.0" stroke="#e6e5df" stroke-width="1"/>
+<text x="68" y="284.0" font-size="13" fill="#6b6a65" text-anchor="end">800</text>
+<line x1="78" x2="890" y1="220.0" y2="220.0" stroke="#e6e5df" stroke-width="1"/>
+<text x="68" y="224.0" font-size="13" fill="#6b6a65" text-anchor="end">1000</text>
+<line x1="78" x2="890" y1="160.0" y2="160.0" stroke="#e6e5df" stroke-width="1"/>
+<text x="68" y="164.0" font-size="13" fill="#6b6a65" text-anchor="end">1200</text>
+<text x="22" y="340.0" font-size="13" fill="#6b6a65" text-anchor="middle" transform="rotate(-90 22 340.0)">delivery latency, ms</text>
+<text x="172.7" y="542" font-size="13" fill="#6b6a65" text-anchor="middle">6 s</text>
+<text x="421.7" y="542" font-size="13" fill="#6b6a65" text-anchor="middle">8 s</text>
+<text x="546.3" y="542" font-size="13" fill="#6b6a65" text-anchor="middle">9 s</text>
+<text x="670.8" y="542" font-size="13" fill="#6b6a65" text-anchor="middle">10 s</text>
+<text x="795.3" y="542" font-size="13" fill="#6b6a65" text-anchor="middle">11 s</text>
+<text x="484.0" y="572" font-size="13" fill="#6b6a65" text-anchor="middle">wave published at, s into the slot</text>
+<line x1="78" x2="890" y1="520" y2="520" stroke="#6b6a65" stroke-width="1"/>
+<polyline points="172.7,452.4 421.7,452.9 546.3,449.7 670.8,449.9 795.3,449.8" fill="none" stroke="#86b6ef" stroke-width="2" stroke-dasharray="6 5" stroke-linejoin="round"/>
+<circle cx="172.7" cy="452.4" r="3.5" fill="#86b6ef" stroke="#ffffff" stroke-width="2"><title>8 slots, p50, wave @6 s: 225 ms</title></circle>
+<circle cx="421.7" cy="452.9" r="3.5" fill="#86b6ef" stroke="#ffffff" stroke-width="2"><title>8 slots, p50, wave @8 s: 224 ms</title></circle>
+<circle cx="546.3" cy="449.7" r="3.5" fill="#86b6ef" stroke="#ffffff" stroke-width="2"><title>8 slots, p50, wave @9 s: 234 ms</title></circle>
+<circle cx="670.8" cy="449.9" r="3.5" fill="#86b6ef" stroke="#ffffff" stroke-width="2"><title>8 slots, p50, wave @10 s: 234 ms</title></circle>
+<circle cx="795.3" cy="449.8" r="3.5" fill="#86b6ef" stroke="#ffffff" stroke-width="2"><title>8 slots, p50, wave @11 s: 234 ms</title></circle>
+<polyline points="172.7,449.6 421.7,449.5 546.3,445.5 670.8,444.2 795.3,444.5" fill="none" stroke="#3987e5" stroke-width="2" stroke-dasharray="6 5" stroke-linejoin="round"/>
+<circle cx="172.7" cy="449.6" r="3.5" fill="#3987e5" stroke="#ffffff" stroke-width="2"><title>4 slots, p50, wave @6 s: 235 ms</title></circle>
+<circle cx="421.7" cy="449.5" r="3.5" fill="#3987e5" stroke="#ffffff" stroke-width="2"><title>4 slots, p50, wave @8 s: 235 ms</title></circle>
+<circle cx="546.3" cy="445.5" r="3.5" fill="#3987e5" stroke="#ffffff" stroke-width="2"><title>4 slots, p50, wave @9 s: 248 ms</title></circle>
+<circle cx="670.8" cy="444.2" r="3.5" fill="#3987e5" stroke="#ffffff" stroke-width="2"><title>4 slots, p50, wave @10 s: 253 ms</title></circle>
+<circle cx="795.3" cy="444.5" r="3.5" fill="#3987e5" stroke="#ffffff" stroke-width="2"><title>4 slots, p50, wave @11 s: 252 ms</title></circle>
+<polyline points="172.7,445.0 421.7,446.6 546.3,440.9 670.8,436.0 795.3,435.5" fill="none" stroke="#1c5cab" stroke-width="2" stroke-dasharray="6 5" stroke-linejoin="round"/>
+<circle cx="172.7" cy="445.0" r="3.5" fill="#1c5cab" stroke="#ffffff" stroke-width="2"><title>3 slots, p50, wave @6 s: 250 ms</title></circle>
+<circle cx="421.7" cy="446.6" r="3.5" fill="#1c5cab" stroke="#ffffff" stroke-width="2"><title>3 slots, p50, wave @8 s: 245 ms</title></circle>
+<circle cx="546.3" cy="440.9" r="3.5" fill="#1c5cab" stroke="#ffffff" stroke-width="2"><title>3 slots, p50, wave @9 s: 264 ms</title></circle>
+<circle cx="670.8" cy="436.0" r="3.5" fill="#1c5cab" stroke="#ffffff" stroke-width="2"><title>3 slots, p50, wave @10 s: 280 ms</title></circle>
+<circle cx="795.3" cy="435.5" r="3.5" fill="#1c5cab" stroke="#ffffff" stroke-width="2"><title>3 slots, p50, wave @11 s: 282 ms</title></circle>
+<polyline points="172.7,431.2 421.7,432.1 546.3,422.7 670.8,416.7 795.3,415.6" fill="none" stroke="#0d366b" stroke-width="2" stroke-dasharray="6 5" stroke-linejoin="round"/>
+<circle cx="172.7" cy="431.2" r="3.5" fill="#0d366b" stroke="#ffffff" stroke-width="2"><title>2 slots, p50, wave @6 s: 296 ms</title></circle>
+<circle cx="421.7" cy="432.1" r="3.5" fill="#0d366b" stroke="#ffffff" stroke-width="2"><title>2 slots, p50, wave @8 s: 293 ms</title></circle>
+<circle cx="546.3" cy="422.7" r="3.5" fill="#0d366b" stroke="#ffffff" stroke-width="2"><title>2 slots, p50, wave @9 s: 324 ms</title></circle>
+<circle cx="670.8" cy="416.7" r="3.5" fill="#0d366b" stroke="#ffffff" stroke-width="2"><title>2 slots, p50, wave @10 s: 344 ms</title></circle>
+<circle cx="795.3" cy="415.6" r="3.5" fill="#0d366b" stroke="#ffffff" stroke-width="2"><title>2 slots, p50, wave @11 s: 348 ms</title></circle>
+<polyline points="172.7,405.3 421.7,406.4 546.3,400.7 670.8,400.2 795.3,397.9" fill="none" stroke="#86b6ef" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="172.7" cy="405.3" r="4.5" fill="#86b6ef" stroke="#ffffff" stroke-width="2"><title>8 slots, p99, wave @6 s: 382 ms</title></circle>
+<circle cx="421.7" cy="406.4" r="4.5" fill="#86b6ef" stroke="#ffffff" stroke-width="2"><title>8 slots, p99, wave @8 s: 379 ms</title></circle>
+<circle cx="546.3" cy="400.7" r="4.5" fill="#86b6ef" stroke="#ffffff" stroke-width="2"><title>8 slots, p99, wave @9 s: 398 ms</title></circle>
+<circle cx="670.8" cy="400.2" r="4.5" fill="#86b6ef" stroke="#ffffff" stroke-width="2"><title>8 slots, p99, wave @10 s: 399 ms</title></circle>
+<circle cx="795.3" cy="397.9" r="4.5" fill="#86b6ef" stroke="#ffffff" stroke-width="2"><title>8 slots, p99, wave @11 s: 407 ms</title></circle>
+<polyline points="172.7,397.8 421.7,398.6 546.3,382.1 670.8,376.3 795.3,373.6" fill="none" stroke="#3987e5" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="172.7" cy="397.8" r="4.5" fill="#3987e5" stroke="#ffffff" stroke-width="2"><title>4 slots, p99, wave @6 s: 407 ms</title></circle>
+<circle cx="421.7" cy="398.6" r="4.5" fill="#3987e5" stroke="#ffffff" stroke-width="2"><title>4 slots, p99, wave @8 s: 405 ms</title></circle>
+<circle cx="546.3" cy="382.1" r="4.5" fill="#3987e5" stroke="#ffffff" stroke-width="2"><title>4 slots, p99, wave @9 s: 460 ms</title></circle>
+<circle cx="670.8" cy="376.3" r="4.5" fill="#3987e5" stroke="#ffffff" stroke-width="2"><title>4 slots, p99, wave @10 s: 479 ms</title></circle>
+<circle cx="795.3" cy="373.6" r="4.5" fill="#3987e5" stroke="#ffffff" stroke-width="2"><title>4 slots, p99, wave @11 s: 488 ms</title></circle>
+<polyline points="172.7,382.3 421.7,384.6 546.3,362.0 670.8,248.2 795.3,284.9" fill="none" stroke="#1c5cab" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="172.7" cy="382.3" r="4.5" fill="#1c5cab" stroke="#ffffff" stroke-width="2"><title>3 slots, p99, wave @6 s: 459 ms</title></circle>
+<circle cx="421.7" cy="384.6" r="4.5" fill="#1c5cab" stroke="#ffffff" stroke-width="2"><title>3 slots, p99, wave @8 s: 451 ms</title></circle>
+<circle cx="546.3" cy="362.0" r="4.5" fill="#1c5cab" stroke="#ffffff" stroke-width="2"><title>3 slots, p99, wave @9 s: 527 ms</title></circle>
+<circle cx="670.8" cy="248.2" r="4.5" fill="#1c5cab" stroke="#ffffff" stroke-width="2"><title>3 slots, p99, wave @10 s: 906 ms</title></circle>
+<circle cx="795.3" cy="284.9" r="4.5" fill="#1c5cab" stroke="#ffffff" stroke-width="2"><title>3 slots, p99, wave @11 s: 784 ms</title></circle>
+<polyline points="172.7,350.1 421.7,352.3 546.3,285.3 670.8,188.1 795.3,198.9" fill="none" stroke="#0d366b" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="172.7" cy="350.1" r="4.5" fill="#0d366b" stroke="#ffffff" stroke-width="2"><title>2 slots, p99, wave @6 s: 566 ms</title></circle>
+<circle cx="421.7" cy="352.3" r="4.5" fill="#0d366b" stroke="#ffffff" stroke-width="2"><title>2 slots, p99, wave @8 s: 559 ms</title></circle>
+<circle cx="546.3" cy="285.3" r="4.5" fill="#0d366b" stroke="#ffffff" stroke-width="2"><title>2 slots, p99, wave @9 s: 782 ms</title></circle>
+<circle cx="670.8" cy="188.1" r="4.5" fill="#0d366b" stroke="#ffffff" stroke-width="2"><title>2 slots, p99, wave @10 s: 1106 ms</title></circle>
+<circle cx="795.3" cy="198.9" r="4.5" fill="#0d366b" stroke="#ffffff" stroke-width="2"><title>2 slots, p99, wave @11 s: 1070 ms</title></circle>
+<text x="809.3" y="401.9" font-size="13" fill="#2c2c2a">8 slots</text>
+<text x="809.3" y="377.6" font-size="13" fill="#2c2c2a">4 slots</text>
+<text x="809.3" y="288.9" font-size="13" fill="#2c2c2a">3 slots</text>
+<text x="809.3" y="202.9" font-size="13" fill="#2c2c2a">2 slots</text>
+<line x1="78" x2="104" y1="134" y2="134" stroke="#86b6ef" stroke-width="3"/>
+<text x="112" y="139" font-size="14" fill="#2c2c2a">8 slots</text>
+<line x1="208" x2="234" y1="134" y2="134" stroke="#3987e5" stroke-width="3"/>
+<text x="242" y="139" font-size="14" fill="#2c2c2a">4 slots</text>
+<line x1="338" x2="364" y1="134" y2="134" stroke="#1c5cab" stroke-width="3"/>
+<text x="372" y="139" font-size="14" fill="#2c2c2a">3 slots</text>
+<line x1="468" x2="494" y1="134" y2="134" stroke="#0d366b" stroke-width="3"/>
+<text x="502" y="139" font-size="14" fill="#2c2c2a">2 slots</text>
+<text x="608" y="139" font-size="14" fill="#6b6a65">solid = p99, dashed = p50</text>
+</svg>
