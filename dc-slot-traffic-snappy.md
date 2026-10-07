@@ -20,20 +20,6 @@ Note: this note was mostly composed by Claude.
     - batch publishing, as in the original write-up.
 - **The ceiling is a 3-slot epoch.** 8, 4 and 3 slots fit; 2 slots still delivers, but not well;
   1 slot breaks down.
-- **8 and 4 slots fit with room to spare.** The home link clears the bulk-data burst by ~4 s, and
-  every vote wave after it has p99 under 570 ms.
-- **3 slots fits without margin.** FFG p99 is 1068 ms, the worst wave 1.5 s, and the late aggregates
-  reach 800–900 ms. But the link still drains between the waves, and from 6 s on the vote tail is back at
-  380–510 ms.
-- **2 slots is past the comfortable range.** The home link stays saturated until 5.5 s, then
-  reaches its ceiling on every later wave. Every wave's p99 stays above 1.2 s, and a few
-  hundredths of a percent of the last waves' deliveries are still missing when the run ends.
-- **1 slot does not work.** The home link is saturated for 101 of the slot's 120 buckets. The
-  *median* vote takes a second to reach a home node, p99 is 6.5 s, and 1.6% of all vote deliveries
-  are still missing when the run ends.
-- **The tail everyone sees comes from votes the 50 / 25 Mbit/s nodes publish.** At 2 slots the
-  10 Gbit/s pools have an FFG p99 of 1753 ms. With the home tier only relaying, the same run gives
-  them 286 ms, as at 8 slots. What is left at 2 slots is the home tier's own saturated downlink.
 
 ## Result
 
