@@ -57,6 +57,7 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
         Array(params.bucketCount) { AtomicLong(0) }
     }
     private val _controlBreakdownRead = ControlAccumulator()
+    private val _iwantIdsWrittenBySlot = ConcurrentHashMap<Int, AtomicLong>()
     private val _controlBreakdownWritten = ControlAccumulator()
 
     /** (type, message id) pairs this node has already seen, so a later copy is marked a duplicate. */
@@ -131,12 +132,31 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
         super.channelRead(ctx, msg)
     }
 
+    /**
+     * IWANT message ids this node sent, by the slot whose window ([DcSlotProfileParams.anchor] plus
+     * whole slot durations) they were sent in. An IWANT names a message by hash, not by slot, so time
+     * is the only attribution available; it is exact as long as a slot's traffic is over before the
+     * next slot starts. Empty until [currentTimeSupplier] is set, and without a [slotProfile].
+     */
+    val iwantIdsWrittenBySlot: Map<Int, Long> get() = _iwantIdsWrittenBySlot.mapValues { it.value.get() }
+
     override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
         if (msg is Rpc.RPC) {
             count(msg, _publishBytesWritten, _controlBytesWritten, _writtenBySlot, _publishMessagesWritten)
             _controlBreakdownWritten.add(msg)
+            countIWantBySlot(msg)
         }
         super.write(ctx, msg, promise)
+    }
+
+    private fun countIWantBySlot(rpc: Rpc.RPC) {
+        if (!rpc.hasControl() || rpc.control.iwantCount == 0) return
+        val params = slotProfile ?: return
+        val now = currentTimeSupplier?.invoke() ?: return
+        if (now < params.anchor) return
+        val slot = ((now - params.anchor) / params.slotDuration).toInt()
+        val ids = rpc.control.iwantList.sumOf { it.messageIDsCount }.toLong()
+        _iwantIdsWrittenBySlot.computeIfAbsent(slot) { AtomicLong(0) }.addAndGet(ids)
     }
 
     /**
