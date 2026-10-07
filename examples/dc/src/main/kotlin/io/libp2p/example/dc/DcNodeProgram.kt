@@ -40,6 +40,8 @@ class DcNodeProgram(
     /** Collects QUIC path snapshots at [quicStatsAt]; diagnostic, null when not asked for. */
     private val quicStats: DcQuicStats? = null,
     private val quicStatsAt: List<Duration> = emptyList(),
+    /** Non-null only on an attacking node: see [DcWithholdingAttack]. */
+    attack: DcWithholdingAttack? = null,
     params: GossipParams = GossipParams(),
     scoreParams: GossipScoreParams = GossipScoreParams(),
     randomSeed: Long = 0
@@ -47,6 +49,9 @@ class DcNodeProgram(
 
     private val random = Random(randomSeed)
     val gossipByteCounter = GossipByteCounter(slotProfile)
+
+    /** The withholding side of [DcWithholdingAttack], or null on an honest node. */
+    val withholdingHandler: DcWithholdingHandler? = attack?.let { DcWithholdingHandler(it, gossipByteCounter) }
 
     /**
      * Mesh peer counts per topic, sampled at [completeAt] on this node's own event thread — the
@@ -56,7 +61,8 @@ class DcNodeProgram(
     var finalMeshSizes: List<Int> = emptyList()
         private set
 
-    override fun createDebugGossipHandler(): ChannelHandler = gossipByteCounter
+    // An attacker's handler puts the byte counter in front of itself, so both still see every stream.
+    override fun createDebugGossipHandler(): ChannelHandler = withholdingHandler ?: gossipByteCounter
 
     // Ethereum StrictNoSign: message ID = SHA256(data)[0:20], no from/seqno/signature on wire.
     override fun configureGossipRouterBuilder(builder: GossipRouterBuilder) {
@@ -86,6 +92,10 @@ class DcNodeProgram(
     override fun onAllConnected(simContext: SimContext, networkContext: NetworkContext) {
         // Set before subscribing, so no publish this node's mesh peers send it can arrive un-bucketed.
         gossipByteCounter.currentTimeSupplier = { simContext.timer.elapsedTime() }
+        withholdingHandler?.let { handler ->
+            handler.scheduler = { delay, task -> simContext.scheduler.executeAfterDelay(delay) { task() } }
+            handler.currentTimeSupplier = { simContext.timer.elapsedTime() }
+        }
         subscribe(simContext)
         schedulePublications(simContext)
         quicStats?.let { stats ->

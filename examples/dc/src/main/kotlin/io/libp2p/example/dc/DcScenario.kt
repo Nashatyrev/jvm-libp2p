@@ -131,6 +131,8 @@ data class DcRunConfig(
     val warmupSlotStart: Duration = Duration.ZERO,
     /** Moments to snapshot every connection's QUIC congestion window and RTT; diagnostic. */
     val quicStatsAt: List<Duration> = emptyList(),
+    /** Nodes that stop passing payloads on part way through the run, or null for an honest network. */
+    val attack: DcWithholdingAttack? = null,
     val randomSeed: Long = 0
 ) {
     init {
@@ -224,6 +226,9 @@ class DcNodeProgramFactory<R>(
     private val dialTargets = graph.dialTargets()
     private val nodePrograms = mutableListOf<DcNodeProgram>()
 
+    /** Every node program created so far, for analyses [report] does not cover. */
+    val programs: List<DcNodeProgram> get() = nodePrograms
+
     override fun createNode(id: SimNodeId): NodeProgram =
         DcNodeProgram(
             simNodeId = id,
@@ -235,6 +240,7 @@ class DcNodeProgramFactory<R>(
             slotProfile = slotProfileParams,
             quicStats = quicStats,
             quicStatsAt = config.quicStatsAt,
+            attack = config.attack?.takeIf { it.isAttacker(id) },
             // Gossip params are a property of the node, not of the run; see DcNodeGroup.gossipParams.
             params = network.node(id).gossipParams,
             randomSeed = config.randomSeed + id
