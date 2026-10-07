@@ -1,8 +1,8 @@
 # DC gossip traffic profile: the peer-count fix
 
-> **Update:** B and C have since been re-run on the fixed graph, with and without stream-Snappy,
-> and the epoch shortened to 3 and 2 slots. Without Snappy, B still does not fit; with it, B fits,
-> and the ceiling is a 3-slot epoch. See [stream-Snappy and the epoch-length ceiling](dc-slot-traffic-snappy.md).
+> **Update:** with stream-Snappy on the fixed graph and 2 attestation subnets, an epoch of 8, 4 or
+> 3 slots fits on the 50 / 25 Mbit/s tier and 2 slots does not. See
+> [the epoch-length ceiling with stream-Snappy](dc-slot-traffic-snappy.md).
 
 A correction to [Gossip traffic profile for a slot](dc-slot-traffic-writeup.md). The peer graph the
 simulations ran on was about **4× denser than configured**: nodes asked for 100 peers got ~440.
