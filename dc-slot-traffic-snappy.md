@@ -170,8 +170,10 @@ node's own messages go out ahead of what it relays.
 
 ## Assumptions
 
-All runs depend on changes to GossipSub as it is deployed today. Without them the same slots do not
-fit; see the [original write-up](dc-slot-traffic-writeup.md) for what each one is worth on its own.
+All runs depend on changes to GossipSub as it is deployed today. Without them the ceiling sits
+lower. Without Snappy, for example, a 4-slot epoch with 2 subnets did not fit even on the fixed
+graph (FFG p99 1606 ms, worst wave 2.5 s). The [original write-up](dc-slot-traffic-writeup.md)
+measures the implementation changes on their own.
 
 - **Stream-Snappy compression: a protocol change.** Today each gossip message is Snappy-compressed
   on its own. Here the whole gossip stream is compressed, keeping a 64 KiB history across messages,
