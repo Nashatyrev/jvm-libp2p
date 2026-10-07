@@ -20,8 +20,8 @@ Note: this note was mostly composed by Claude.
   reaches its ceiling on every later wave. Every wave's p99 stays above 1.2 s, and a few
   hundredths of a percent of the last waves' deliveries are still missing when the run ends.
 - **The tail everyone sees comes from votes the 50 / 25 Mbit/s nodes publish.** At 2 slots the
-  10 Gbit/s pools have an FFG p99 of 1753 ms, but their p90 is still 260 ms: only the slowest
-  ~10% of votes are late, about the home tier's share of publishers.
+  10 Gbit/s pools have an FFG p99 of 1753 ms. With the home tier only relaying, the same run gives
+  them 286 ms, as at 8 slots. What is left at 2 slots is the home tier's own saturated downlink.
 
 ## Result
 
@@ -127,6 +127,24 @@ Two things grow as the epoch shortens.
 - **The home tier's own p90.** It rises from 339 to 701 ms, while the other tiers stay at 305–339 ms.
   That is the home node's downlink being saturated (47 saturated buckets at 2 slots), and it adds to
   what the home tier receives. It does not slow anyone else.
+
+**Checked at 2 slots.** The same run was repeated with the 50 / 25 Mbit/s tier only relaying
+(`-Ddc.homeValidators=false`). Its validators are spread over the other groups, so the network keeps
+1M validators and every wave keeps its size. FFG p99, ms:
+
+| | `home` 50/25 | `mid-home` | `upper-home` | `vps` 500M | `validator-pools` 10G |
+|---|---|---|---|---|---|
+| home tier publishes | 1943 | 1816 | 1895 | 1812 | 1753 |
+| home tier relay-only | **1163** | **393** | **368** | **365** | **286** |
+
+Every other tier's tail falls back to where it was at 8 slots. Aggregate p99 at the pools goes from
+954 to 339 ms, and every vote is delivered. The home tier itself still has 47 saturated buckets
+and an FFG p99 of 1163 ms. That part is its own downlink, and it is what still marks 2 slots as ⚠️
+for a 50 / 25 Mbit/s node.
+
+So the network-wide part of the tail is not a capacity limit of the network. It is a publishing
+problem at the constrained tier, and it has a publisher-side fix: let a node's own messages go out
+ahead of what it relays.
 
 ## How it is modelled
 
