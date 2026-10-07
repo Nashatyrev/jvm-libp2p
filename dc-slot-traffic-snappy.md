@@ -10,6 +10,13 @@ Note: this note was mostly composed by Claude.
 
 ## TL;DR
 
+- **These results assume changes to GossipSub as it is today:**
+  - **a protocol change:** stream-Snappy compression. The gossip stream is compressed as a whole,
+    with a 64 KiB history, instead of each message on its own; peers have to negotiate it.
+  - **implementation-only changes**, which need no protocol change and stay compatible with
+    today's peers:
+    - disciplined IWANT: ask one announcer at a time, not every announcer;
+    - batch publishing, as in the original write-up.
 - **The ceiling is a 3-slot epoch.** 8, 4 and 3 slots fit; 2 slots still delivers, but not well;
   1 slot breaks down.
 - **8 and 4 slots fit with room to spare.** The home link clears the bulk-data burst by ~4 s, and
@@ -160,6 +167,26 @@ for a 50 / 25 Mbit/s node.
 So the network-wide part of the tail is not a capacity limit of the network. It is a publishing
 problem at the constrained tier. That points at a publisher-side fix, not yet tested here: let a
 node's own messages go out ahead of what it relays.
+
+## Assumptions
+
+All runs depend on changes to GossipSub as it is deployed today. Without them the same slots do not
+fit; see the [original write-up](dc-slot-traffic-writeup.md) for what each one is worth on its own.
+
+- **Stream-Snappy compression: a protocol change.** Today each gossip message is Snappy-compressed
+  on its own. Here the whole gossip stream is compressed, keeping a 64 KiB history across messages,
+  so the `AttestationData` and the topic string repeated across a slot's votes and aggregates
+  become back-references. Both ends must support it, so it needs a negotiated protocol (for
+  example a `/snappy-stream` variant of the gossip protocol id). It is what turns a 240 B vote
+  into 101 B on the wire.
+- **Disciplined IWANT: an implementation change.** On an IHAVE for an unknown message, a node asks
+  one announcer at a time and retries after 200 ms, instead of asking every announcer at once. It
+  changes no message and no protocol id. Here it runs on the 50 / 25 Mbit/s tier only; the other
+  tiers keep stock IWANT. In the original write-up it cut that tier's copies per payload chunk
+  from 23.5 to 12.4.
+- **Batch publishing: an implementation change.** The messages a node handles in one event-loop
+  turn leave as one merged RPC per peer instead of one RPC each. It is on in every run, as in the
+  original write-up.
 
 ## How it is modelled
 
