@@ -207,6 +207,7 @@ class DcIWantAmplificationRunnerTest {
                                 e.ihaveAt.forEach { row("ihave", it) }
                                 e.idontwantAt.forEach { row("idontwant", it) }
                                 e.iwantSentAt.forEach { row("iwant_sent", it) }
+                                e.copyAt.forEach { row("copy", it) }
                             }
                         }
                     }

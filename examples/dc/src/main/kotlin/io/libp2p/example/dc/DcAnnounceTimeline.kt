@@ -20,13 +20,16 @@ class DcAnnounceTimeline {
         var publishedAt: Duration? = null
         var slotIndex: Int? = null
         var firstCopyAt: Duration? = null
+
+        /** Every copy read off the wire, the first included. */
+        val copyAt = mutableListOf<Duration>()
         val ihaveAt = mutableListOf<Duration>()
         val idontwantAt = mutableListOf<Duration>()
         val iwantSentAt = mutableListOf<Duration>()
     }
 
     private val entries = hashMapOf<ByteString, Entry>()
-    private val seenDcIds = hashSetOf<Int>()
+    private val idByDcId = hashMapOf<Int, ByteString>()
 
     @Synchronized
     fun entries(): Map<ByteString, Entry> = entries.toMap()
@@ -38,11 +41,16 @@ class DcAnnounceTimeline {
         rpc.publishList.forEach { message ->
             val dcId = DcMessagePayload.idOf(message.data) ?: return@forEach
             // Hash only the first copy: the id is what IHAVE/IDONTWANT name, and copies are identical.
-            if (!seenDcIds.add(dcId)) return@forEach
+            idByDcId[dcId]?.let { known ->
+                entry(known).copyAt += now
+                return@forEach
+            }
             val id = ByteString.copyFrom(sha256(message.data.toByteArray()).copyOf(DEFAULT_PUBSUB_MESSAGE_ID_LENGTH))
             val headerBytes = message.data.substring(0, DcMessagePayload.HEADER_BYTES).toByteArray()
             val header = DcMessagePayload.decode(headerBytes)
+            idByDcId[dcId] = id
             entry(id).apply {
+                copyAt += now
                 firstCopyAt = now
                 publishedAt = header?.publishedAt
                 slotIndex = header?.slotIndex
