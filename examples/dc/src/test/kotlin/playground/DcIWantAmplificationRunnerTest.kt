@@ -2,6 +2,7 @@ package playground
 
 import io.libp2p.etc.types.millis
 import io.libp2p.example.dc.Bandwidths
+import io.libp2p.example.dc.DcAnnounceTimeline
 import io.libp2p.example.dc.DcAttackOutcome.Percentiles
 import io.libp2p.example.dc.DcNetworkBuilder
 import io.libp2p.example.dc.DcNodeProgram
@@ -42,6 +43,8 @@ import kotlin.time.Duration.Companion.seconds
  *
  *  - `dc.bandwidthsMbps`: link rates of the (fast) group, swept (default 10,20,50,100,1000)
  *  - `dc.peers`: peers per node (default 30)
+ *  - `dc.timelineDir`: record when each IHAVE/IDONTWANT reaches each node, print the distributions
+ *    and write every event to a CSV there
  *  - `dc.slowCount`, `dc.slowMbps`: nodes of the 100 on a slow link (default 0), and its rate (default 10)
  *  - `dc.iwant`: policies swept (default all_announcers,disciplined,none)
  *  - `dc.messageKiB`: message size (default 1024)
@@ -66,6 +69,8 @@ class DcIWantAmplificationRunnerTest {
         val slowMbps = prop("dc.slowMbps", "10").toLong()
         val nodeCount = 100
         val peers = prop("dc.peers", "30").toInt()
+        // Directory for per-event timeline CSVs; also switches the timeline report on.
+        val timelineDir = System.getProperty("dc.timelineDir")?.let { java.io.File(it).apply { mkdirs() } }
 
         val config = DcRunConfig(
             slotCount = slots,
@@ -84,6 +89,7 @@ class DcIWantAmplificationRunnerTest {
                     topics = DcSlotMessageTopics.Global
                 )
             ),
+            recordAnnounceTimeline = timelineDir != null,
             randomSeed = 1
         )
         println(
@@ -179,11 +185,96 @@ class DcIWantAmplificationRunnerTest {
                     println("      slot $slot: ${stats(nodes, setOf(slot)).short()}$tag")
                 }
                 summary += (listOf("$mbps", policy.name.lowercase(), group) + s.csv()).joinToString(",")
+                if (timelineDir != null) println(announceTimeline(group, nodes, measured, publisherOf))
+            }
+            timelineDir?.let { dir ->
+                val shape = "${messagesPerSlot}x${messageBytes / 1024}k-p$peers-slow$slowCount"
+                val file = java.io.File(dir, "timeline-$shape-${mbps}m-${policy.name.lowercase()}.csv")
+                file.printWriter().use { out ->
+                    out.println("group,node,slot,message,kind,ms_after_publish,ms_after_first_copy")
+                    groups.forEach { (group, nodes) ->
+                        nodes.forEach { node ->
+                            node.announceTimeline!!.entries().values.forEachIndexed { index, e ->
+                                val slot = e.slotIndex ?: return@forEachIndexed
+                                val published = e.publishedAt ?: return@forEachIndexed
+                                if (slot !in measured || publisherOf[slot] == node.simNodeId) return@forEachIndexed
+                                val first = e.firstCopyAt!!
+                                fun row(kind: String, t: kotlin.time.Duration) = out.println(
+                                    "$group,${node.simNodeId},$slot,$index,$kind," +
+                                        "${(t - published).inWholeMilliseconds},${(t - first).inWholeMilliseconds}"
+                                )
+                                row("first_copy", first)
+                                e.ihaveAt.forEach { row("ihave", it) }
+                                e.idontwantAt.forEach { row("idontwant", it) }
+                                e.iwantSentAt.forEach { row("iwant_sent", it) }
+                            }
+                        }
+                    }
+                }
+                println("  timeline events -> $file")
             }
         }
         println("\nSUMMARY")
         println("mbps,policy,group,${Stats.CSV_HEADER}")
         summary.forEach(::println)
+    }
+
+    /**
+     * When IDONTWANTs (from mesh peers) and IHAVEs (from everyone else) for a message reach a node,
+     * against the publish time and against each other, over (node, message) pairs of [group].
+     */
+    private fun announceTimeline(
+        group: String,
+        nodes: List<DcNodeProgram>,
+        measured: Set<Int>,
+        publisherOf: Map<Int, io.libp2p.quicsim.sim.SimNodeId>
+    ): String {
+        val pairs = nodes.flatMap { node ->
+            node.announceTimeline!!.entries().values.filter { e ->
+                e.slotIndex in measured && e.publishedAt != null && publisherOf[e.slotIndex] != node.simNodeId
+            }
+        }
+        fun ms(values: List<Long>): String {
+            if (values.isEmpty()) return "-"
+            val sorted = values.sorted()
+            fun at(q: Double) = sorted[(q * sorted.size).toInt().coerceAtMost(sorted.size - 1)]
+            return "p10=${at(0.1)} p50=${at(0.5)} p90=${at(0.9)} (n=${sorted.size})"
+        }
+        fun rel(pick: (DcAnnounceTimeline.Entry) -> List<kotlin.time.Duration>) =
+            ms(pairs.flatMap { e -> pick(e).map { (it - e.publishedAt!!).inWholeMilliseconds } })
+        val bothKinds = pairs.filter { it.ihaveAt.isNotEmpty() && it.idontwantAt.isNotEmpty() }
+        val idwFirst = bothKinds.count { it.idontwantAt.minOf { t -> t } < it.ihaveAt.minOf { t -> t } }
+        val gaps = bothKinds.map { (it.ihaveAt.minOf { t -> t } - it.idontwantAt.minOf { t -> t }).inWholeMilliseconds }
+        val ihaveBeforeCopy = pairs.sumOf { e -> e.ihaveAt.count { it < e.firstCopyAt!! } }
+        val ihaveBeforeCopyAfterIdw = pairs.sumOf { e ->
+            val firstIdw = e.idontwantAt.minOrNull() ?: return@sumOf 0
+            e.ihaveAt.count { it < e.firstCopyAt!! && it > firstIdw }
+        }
+        val idwBeforeCopy = pairs.sumOf { e -> e.idontwantAt.count { it < e.firstCopyAt!! } }
+        val n = pairs.size.toDouble()
+        return buildString {
+            appendLine("    timeline [$group], ms after publish, over ${pairs.size} (node, message) pairs:")
+            appendLine("      first copy          ${rel { listOfNotNull(it.firstCopyAt) }}")
+            appendLine("      first IDONTWANT     ${rel { listOfNotNull(it.idontwantAt.minOrNull()) }}")
+            appendLine("      all IDONTWANT       ${rel { it.idontwantAt }}")
+            appendLine("      first IHAVE         ${rel { listOfNotNull(it.ihaveAt.minOrNull()) }}")
+            appendLine("      all IHAVE           ${rel { it.ihaveAt }}")
+            appendLine("      IWANT sent          ${rel { it.iwantSentAt }}")
+            appendLine(
+                "      per message: IDONTWANT %.1f (%.1f before the copy), IHAVE %.1f (%.1f before the copy, %.1f of them after the first IDONTWANT)"
+                    .format(
+                        pairs.sumOf { it.idontwantAt.size } / n,
+                        idwBeforeCopy / n,
+                        pairs.sumOf { it.ihaveAt.size } / n,
+                        ihaveBeforeCopy / n,
+                        ihaveBeforeCopyAfterIdw / n
+                    )
+            )
+            append(
+                "      first IDONTWANT before first IHAVE in %.1f%% of %d pairs; first IHAVE - first IDONTWANT: %s"
+                    .format(100.0 * idwFirst / bothKinds.size.coerceAtLeast(1), bothKinds.size, ms(gaps))
+            )
+        }
     }
 
     private class Stats(

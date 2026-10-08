@@ -133,6 +133,8 @@ data class DcRunConfig(
     val quicStatsAt: List<Duration> = emptyList(),
     /** Nodes that stop passing payloads on part way through the run, or null for an honest network. */
     val attack: DcWithholdingAttack? = null,
+    /** Keep every node's per-message IHAVE/IDONTWANT/IWANT timeline; see [DcAnnounceTimeline]. */
+    val recordAnnounceTimeline: Boolean = false,
     val randomSeed: Long = 0
 ) {
     init {
@@ -241,6 +243,7 @@ class DcNodeProgramFactory<R>(
             quicStats = quicStats,
             quicStatsAt = config.quicStatsAt,
             attack = config.attack?.takeIf { it.isAttacker(id) },
+            announceTimeline = if (config.recordAnnounceTimeline) DcAnnounceTimeline() else null,
             // Gossip params are a property of the node, not of the run; see DcNodeGroup.gossipParams.
             params = network.node(id).gossipParams,
             randomSeed = config.randomSeed + id

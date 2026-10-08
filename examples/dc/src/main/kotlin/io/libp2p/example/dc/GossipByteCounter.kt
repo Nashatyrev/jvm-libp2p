@@ -42,6 +42,9 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
     /** Set once this node's simulated clock is available; reads before that are not bucketed. */
     var currentTimeSupplier: (() -> Duration)? = null
 
+    /** Per-message IHAVE/IDONTWANT/IWANT/first-copy times, when the run asks for them. */
+    var timeline: DcAnnounceTimeline? = null
+
     private val _publishBytesRead = AtomicLong(0)
     private val _publishBytesWritten = AtomicLong(0)
     private val _controlBytesRead = AtomicLong(0)
@@ -129,6 +132,7 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
             count(msg, _publishBytesRead, _controlBytesRead, _readBySlot, _publishMessagesRead)
             _controlBreakdownRead.add(msg)
             countSlotProfile(msg)
+            timeline?.let { t -> currentTimeSupplier?.let { t.onRead(msg, it()) } }
             if (msg.hasControl() && msg.control.ihaveCount > 0) {
                 countBySlot(_ihaveIdsReadBySlot, msg.control.ihaveList.sumOf { it.messageIDsCount }.toLong())
             }
@@ -152,6 +156,7 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
             count(msg, _publishBytesWritten, _controlBytesWritten, _writtenBySlot, _publishMessagesWritten)
             _controlBreakdownWritten.add(msg)
             countIWantBySlot(msg)
+            timeline?.let { t -> currentTimeSupplier?.let { t.onWrite(msg, it()) } }
         }
         super.write(ctx, msg, promise)
     }

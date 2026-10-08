@@ -42,13 +42,15 @@ class DcNodeProgram(
     private val quicStatsAt: List<Duration> = emptyList(),
     /** Non-null only on an attacking node: see [DcWithholdingAttack]. */
     attack: DcWithholdingAttack? = null,
+    /** Per-message announcement timeline, recorded only when the run asks for it. */
+    val announceTimeline: DcAnnounceTimeline? = null,
     params: GossipParams = GossipParams(),
     scoreParams: GossipScoreParams = GossipScoreParams(),
     randomSeed: Long = 0
 ) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed) {
 
     private val random = Random(randomSeed)
-    val gossipByteCounter = GossipByteCounter(slotProfile)
+    val gossipByteCounter = GossipByteCounter(slotProfile).also { it.timeline = announceTimeline }
 
     /** The withholding side of [DcWithholdingAttack], or null on an honest node. */
     val withholdingHandler: DcWithholdingHandler? = attack?.let { DcWithholdingHandler(it, gossipByteCounter) }
