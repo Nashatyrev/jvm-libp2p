@@ -41,6 +41,7 @@ import kotlin.time.Duration.Companion.seconds
  * ```
  *
  *  - `dc.bandwidthsMbps`: link rates of the (fast) group, swept (default 10,20,50,100,1000)
+ *  - `dc.peers`: peers per node (default 30)
  *  - `dc.slowCount`, `dc.slowMbps`: nodes of the 100 on a slow link (default 0), and its rate (default 10)
  *  - `dc.iwant`: policies swept (default all_announcers,disciplined,none)
  *  - `dc.messageKiB`: message size (default 1024)
@@ -64,7 +65,7 @@ class DcIWantAmplificationRunnerTest {
         val slowCount = prop("dc.slowCount", "0").toInt()
         val slowMbps = prop("dc.slowMbps", "10").toLong()
         val nodeCount = 100
-        val peers = 30
+        val peers = prop("dc.peers", "30").toInt()
 
         val config = DcRunConfig(
             slotCount = slots,
@@ -147,6 +148,7 @@ class DcIWantAmplificationRunnerTest {
                 val deliveries = allDeliveries.filter { it.slotIndex in inSlots && it.receiverNodeId in ids }
                 val reads = nodeSlots.map { (p, slot) -> p.gossipByteCounter.publishMessagesReadBySlot[slot] ?: 0L }
                 val pulls = nodeSlots.sumOf { (p, slot) -> p.gossipByteCounter.iwantIdsWrittenBySlot[slot] ?: 0L }
+                val announced = nodeSlots.sumOf { (p, slot) -> p.gossipByteCounter.ihaveIdsReadBySlot[slot] ?: 0L }
                 val bytes = nodeSlots.sumOf { (p, slot) -> p.gossipByteCounter.publishBytesReadBySlot[slot] ?: 0L }
                 val sources = nodeSlots.mapNotNull { (p, slot) -> p.copySources?.bySlot()?.get(slot) }
                 return Stats(
@@ -161,6 +163,7 @@ class DcIWantAmplificationRunnerTest {
                     mesh = nodes.flatMap { it.finalMeshSizes }.average(),
                     fromMesh = sources.sumOf { it.meshCopies }.toDouble() / deliveries.size,
                     fromOutsideMesh = sources.sumOf { it.nonMeshCopies }.toDouble() / deliveries.size,
+                    ihaveReceived = announced.toDouble() / deliveries.size,
                     meshAtFirstCopy = sources.sumOf { it.meshSizeAtFirstCopySum }.toDouble() / sources.sumOf { it.messages },
                     distinctMeshSenders = sources.sumOf { it.distinctMeshSendersSum }.toDouble() / sources.sumOf { it.messages }
                 )
@@ -196,7 +199,8 @@ class DcIWantAmplificationRunnerTest {
         val fromMesh: Double,
         val fromOutsideMesh: Double,
         val meshAtFirstCopy: Double,
-        val distinctMeshSenders: Double
+        val distinctMeshSenders: Double,
+        val ihaveReceived: Double
     ) {
         val perMessage = Percentiles.of(deliveries.map { it.latency })
 
@@ -222,9 +226,9 @@ class DcIWantAmplificationRunnerTest {
                     .format(copies, copies - pulled, pulled, q(0.5), q(0.9), copiesPerNodeSlot.last(), amplification, mesh) +
                 (
                     "\n      by sender: from mesh peers %.2f (distinct mesh senders %.2f, mesh size at first copy %.2f), " +
-                        "from outside the mesh %.2f; iwant ids sent %.2f"
+                        "from outside the mesh %.2f; iwant ids sent %.2f, ihave ids received %.2f"
                     )
-                    .format(fromMesh, distinctMeshSenders, meshAtFirstCopy, fromOutsideMesh, pulled)
+                    .format(fromMesh, distinctMeshSenders, meshAtFirstCopy, fromOutsideMesh, pulled, ihaveReceived)
 
         fun csv(): List<Any> = listOf(
             "%.4f".format(deliveries.size.toDouble() / expected),
@@ -234,13 +238,14 @@ class DcIWantAmplificationRunnerTest {
             "%.2f".format(copies), "%.2f".format(copies - pulled), "%.2f".format(pulled),
             "%.1f".format(q(0.5)), "%.1f".format(q(0.9)), "%.1f".format(copiesPerNodeSlot.last()),
             "%.2f".format(amplification), "%.1f".format(mesh),
-            "%.2f".format(fromMesh), "%.2f".format(fromOutsideMesh), "%.2f".format(distinctMeshSenders), "%.2f".format(meshAtFirstCopy)
+            "%.2f".format(fromMesh), "%.2f".format(fromOutsideMesh), "%.2f".format(distinctMeshSenders), "%.2f".format(meshAtFirstCopy),
+            "%.2f".format(ihaveReceived)
         )
 
         companion object {
             const val CSV_HEADER = "delivered,msg_p50_ms,msg_p99_ms,batch_p50_ms,batch_p90_ms,batch_p99_ms,batch_max_ms," +
                 "copies_mean,copies_mesh,copies_iwant,copies_p50,copies_p90,copies_max,byte_amplification,mesh," +
-                "from_mesh,from_outside_mesh,distinct_mesh_senders,mesh_at_first_copy"
+                "from_mesh,from_outside_mesh,distinct_mesh_senders,mesh_at_first_copy,ihave_received"
         }
     }
 }

@@ -58,6 +58,7 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
     }
     private val _controlBreakdownRead = ControlAccumulator()
     private val _iwantIdsWrittenBySlot = ConcurrentHashMap<Int, AtomicLong>()
+    private val _ihaveIdsReadBySlot = ConcurrentHashMap<Int, AtomicLong>()
     private val _controlBreakdownWritten = ControlAccumulator()
 
     /** (type, message id) pairs this node has already seen, so a later copy is marked a duplicate. */
@@ -128,6 +129,9 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
             count(msg, _publishBytesRead, _controlBytesRead, _readBySlot, _publishMessagesRead)
             _controlBreakdownRead.add(msg)
             countSlotProfile(msg)
+            if (msg.hasControl() && msg.control.ihaveCount > 0) {
+                countBySlot(_ihaveIdsReadBySlot, msg.control.ihaveList.sumOf { it.messageIDsCount }.toLong())
+            }
         }
         super.channelRead(ctx, msg)
     }
@@ -140,6 +144,9 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
      */
     val iwantIdsWrittenBySlot: Map<Int, Long> get() = _iwantIdsWrittenBySlot.mapValues { it.value.get() }
 
+    /** IHAVE message ids this node received, by slot window, the same way as [iwantIdsWrittenBySlot]. */
+    val ihaveIdsReadBySlot: Map<Int, Long> get() = _ihaveIdsReadBySlot.mapValues { it.value.get() }
+
     override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
         if (msg is Rpc.RPC) {
             count(msg, _publishBytesWritten, _controlBytesWritten, _writtenBySlot, _publishMessagesWritten)
@@ -151,12 +158,15 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
 
     private fun countIWantBySlot(rpc: Rpc.RPC) {
         if (!rpc.hasControl() || rpc.control.iwantCount == 0) return
+        countBySlot(_iwantIdsWrittenBySlot, rpc.control.iwantList.sumOf { it.messageIDsCount }.toLong())
+    }
+
+    private fun countBySlot(bySlot: ConcurrentHashMap<Int, AtomicLong>, count: Long) {
         val params = slotProfile ?: return
         val now = currentTimeSupplier?.invoke() ?: return
         if (now < params.anchor) return
         val slot = ((now - params.anchor) / params.slotDuration).toInt()
-        val ids = rpc.control.iwantList.sumOf { it.messageIDsCount }.toLong()
-        _iwantIdsWrittenBySlot.computeIfAbsent(slot) { AtomicLong(0) }.addAndGet(ids)
+        bySlot.computeIfAbsent(slot) { AtomicLong(0) }.addAndGet(count)
     }
 
     /**
