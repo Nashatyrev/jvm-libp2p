@@ -20,6 +20,9 @@ import java.util.concurrent.atomic.AtomicLong
 
 private val logger = LoggerFactory.getLogger(P2PService::class.java)
 
+/** The lane of a peer's regular stream, see [P2PService.StreamHandler.lane] */
+const val MAIN_LANE = 0
+
 private class NullOnEndIterator<T : Any>(
     private val delegate: Iterator<T>
 ) {
@@ -202,8 +205,11 @@ abstract class P2PService(
 
     /**
      * Represents a single stream
+     *
+     * @param lane [MAIN_LANE] for the peer's regular stream, or the lane of an additional stream
+     * the service runs to the same peer, see [P2PServiceSemiDuplex]
      */
-    open inner class StreamHandler(val stream: Stream) : ChannelInboundHandlerAdapter() {
+    open inner class StreamHandler(val stream: Stream, val lane: Int = MAIN_LANE) : ChannelInboundHandlerAdapter() {
         var ctx: ChannelHandlerContext? = null
         var closed = false
         var aborted = false // indicates that stream was closed on init and [peerHandler] may not be initialized
@@ -401,6 +407,12 @@ abstract class P2PService(
         open val peerId = streamHandler.stream.remotePeerId()
         open fun writeAndFlush(msg: Any): CompletableFuture<Unit> = streamHandler.ctx!!.writeAndFlush(msg).toVoidCompletableFuture()
         open fun enqueueWrite(messageSupplier: Sequence<Any>): CompletableFuture<Unit> = streamHandler.enqueueWrite { messageSupplier }
+
+        /** Like [writeAndFlush] but over the stream of [lane] when the peer has one, see [StreamHandler.lane] */
+        open fun writeAndFlush(lane: Int, msg: Any): CompletableFuture<Unit> = writeAndFlush(msg)
+
+        /** Like [enqueueWrite] but over the stream of [lane] when the peer has one, see [StreamHandler.lane] */
+        open fun enqueueWrite(lane: Int, messageSupplier: Sequence<Any>): CompletableFuture<Unit> = enqueueWrite(messageSupplier)
         open fun isActive() = streamHandler.ctx != null
         open fun getInboundHandler(): StreamHandler? = streamHandler
         open fun getOutboundHandler(): StreamHandler? = streamHandler

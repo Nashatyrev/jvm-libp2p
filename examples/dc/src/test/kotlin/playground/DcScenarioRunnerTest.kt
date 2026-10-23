@@ -11,6 +11,7 @@ import io.libp2p.example.dc.DcScenario
 import io.libp2p.example.dc.DcSlotMessageConfig
 import io.libp2p.example.dc.DcSlotMessageTopics
 import io.libp2p.example.dc.DcSlotMessageType
+import io.libp2p.example.dc.DcStreamLanes
 import io.libp2p.example.dc.peerGraph
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.pubsub.gossip.IWantPolicy
@@ -137,7 +138,7 @@ class DcScenarioRunnerTest {
         val report = DcScenario.run(
             network = network,
             graph = graph,
-            config = withQuicStats(runConfig)
+            config = withStreamLanes(withQuicStats(runConfig))
         )
         println(report)
     }
@@ -415,7 +416,7 @@ class DcScenarioRunnerTest {
         val report = DcScenario.run(
             network = network,
             graph = graph,
-            config = withQuicStats(runConfig)
+            config = withStreamLanes(withQuicStats(runConfig))
         )
         println(report)
     }
@@ -468,6 +469,12 @@ class DcScenarioRunnerTest {
         val ffgCompression = 10
         val slotCount = 1
         val warmupSlots = 0
+        // -Ddc.poolCount / -Ddc.homeCount shrink the population to what a 64 GB machine holds:
+        // 20 pools and 80 home nodes run in a couple of minutes, 80 pools do not fit.
+        val poolCount = System.getProperty("dc.poolCount")?.toInt() ?: 100
+        val homeCount = System.getProperty("dc.homeCount")?.toInt() ?: 900
+        // Per node, so the network total stays at validatorCount whatever the population.
+        val validatorsPerNode = validatorCount / (poolCount + homeCount)
 
         val network = DcNetworkBuilder
             .world(
@@ -482,7 +489,7 @@ class DcScenarioRunnerTest {
                 allMessageSubnets(DcSlotMessageType.PAYLOAD_CHUNK)
                 gossipParams = nodeGossipParams
             }
-            .addGroup(count = 100) {
+            .addGroup(count = poolCount) {
                 name = "validator-pools"
                 regionWeights = mapOf(
                     ContinentRegion.EUROPE to 0.4,
@@ -490,7 +497,7 @@ class DcScenarioRunnerTest {
                     ContinentRegion.US_WEST to 0.2,
                 )
                 bandwidth = Bandwidths.FAST_DATACENTER
-                validators = validatorCount / 1000
+                validators = validatorsPerNode
                 peers = 80
 
                 allMessageSubnets(DcSlotMessageType.BLOB_COLUMN)
@@ -506,14 +513,12 @@ class DcScenarioRunnerTest {
 //                randomMessageSubnets(DcSlotMessageType.BLOB_COLUMN, 16)
 //                randomMessageSubnets(DcSlotMessageType.FFG_ATTESTATION, 4)
 //            }
-            .addGroup(count = 900) {
+            .addGroup(count = homeCount) {
                 // business
                 name = "home"
                 spreadOverRegions()
                 bandwidth = homeLink
-                // Per node, so the divisor tracks the group size: 1000 nodes keeps the network
-                // total at validatorCount rather than 10x it.
-                validators = validatorCount / 1000
+                validators = validatorsPerNode
                 peers = 80
 
                 // Model the current validator custody requirement: eight of 128 DA columns per node.
@@ -602,12 +607,14 @@ class DcScenarioRunnerTest {
                         )
                     }
             ).flatten(),
+            // -Ddc.seed draws other meshes and publishers, to tell an effect from run-to-run noise
+            randomSeed = System.getProperty("dc.seed")?.toLong() ?: 0,
         )
 
         val report = DcScenario.run(
             network = network,
             graph = graph,
-            config = withQuicStats(runConfig)
+            config = withStreamLanes(withQuicStats(runConfig))
         )
         println(report)
     }
@@ -622,6 +629,18 @@ class DcScenarioRunnerTest {
             return config.copy(
                 quicStatsAt = offsets.split(",").map { config.slotTimes.last() + it.trim().toLong().milliseconds }
             )
+        }
+
+        /**
+         * `-Ddc.lanes=block,ffg-vote,aggregates|payload-c|blob`: every node sends each message type
+         * on a QUIC stream of the type's lane, lane 0 the most urgent; see [DcStreamLanes.parse].
+         * `-Ddc.controlLane=N` moves GRAFT/PRUNE/IWANT/IDONTWANT off lane 0.
+         */
+        fun withStreamLanes(config: DcRunConfig): DcRunConfig {
+            val spec = System.getProperty("dc.lanes") ?: return config
+            val lanes = DcStreamLanes.parse(spec, controlLane = System.getProperty("dc.controlLane")?.toInt() ?: 0)
+            println("Stream lanes: $lanes")
+            return config.copy(streamLanes = lanes)
         }
 
         fun GossipParamsBuilder.disableGossip() = also {

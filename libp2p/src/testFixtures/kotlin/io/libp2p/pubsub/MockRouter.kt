@@ -44,8 +44,8 @@ open class MockRouter(executor: ScheduledExecutorService) : AbstractRouter(
         }
     }
 
-    public override fun send(peer: PeerHandler, msg: Rpc.RPC): CompletableFuture<Unit> {
-        return super.send(peer, msg)
+    public override fun send(peer: PeerHandler, msg: Rpc.RPC, lane: Int): CompletableFuture<Unit> {
+        return super.send(peer, msg, lane)
     }
 
     override fun onInbound(peer: PeerHandler, msg: Any) {

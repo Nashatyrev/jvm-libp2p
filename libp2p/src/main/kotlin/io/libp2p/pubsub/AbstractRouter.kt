@@ -6,6 +6,7 @@ import io.libp2p.core.Stream
 import io.libp2p.core.crypto.sha256
 import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.etc.types.*
+import io.libp2p.etc.util.MAIN_LANE
 import io.libp2p.etc.util.P2PServiceSemiDuplex
 import io.libp2p.etc.util.netty.protobuf.LimitedProtobufVarint32FrameDecoder
 import io.netty.channel.ChannelHandler
@@ -63,13 +64,16 @@ abstract class AbstractRouter(
     protected open val subscribedTopics = linkedSetOf<Topic>()
     protected open val pendingRpcParts = PendingRpcPartsMap<RpcPartsQueue> { DefaultRpcPartsQueue() }
     protected open val pendingMessagePromises = MultiSet<PeerHandler, CompletableFuture<Unit>>()
+
     /**
      * A peer queue is consumed lazily by the stream write queue.  While that stream is
      * backpressured, additional flushes must not enqueue more lazy consumers for the
      * same [pendingRpcParts] queue: they would retain one pending write and its
      * completion machinery per flush instead of extending the existing drain.
+     * Each lane of the queue (see [RpcPartsQueue.laneCount]) drains on its own; the value is
+     * the drain's completion.
      */
-    private val drainingPeers = mutableSetOf<PeerHandler>()
+    private val drainingLanes = mutableMapOf<PeerHandler, MutableMap<Int, CompletableFuture<Unit>>>()
 
     protected class PendingRpcPartsMap<out TPartsQueue : RpcPartsQueue>(
         private val queueFactory: () -> TPartsQueue
@@ -124,23 +128,33 @@ abstract class AbstractRouter(
     }
 
     protected fun flushPending(peer: PeerHandler) {
-        if (peer in drainingPeers) return
-
         val peerQueue = pendingRpcParts.getQueue(peer)
-        if (peerQueue.isEmpty()) {
+        for (lane in 0 until peerQueue.laneCount) {
+            flushLane(peer, peerQueue, lane)
+        }
+        val sendPromises = pendingMessagePromises.removeAll(peer) ?: return
+        // A drain keeps popping its lane until it is empty, so the publishes are sent once every running drain is done
+        val drains = drainingLanes[peer]?.values
+        if (drains.isNullOrEmpty()) {
             // Keep the previous completion behaviour for publishes removed before their queue was flushed.
-            pendingMessagePromises.removeAll(peer)?.forEach { it.complete(Unit) }
-            return
+            sendPromises.forEach { it.complete(Unit) }
+        } else {
+            val allSendPromise = drains.toList().thenApplyAll { Unit }
+            sendPromises.forEach {
+                allSendPromise.forward(it)
+            }
         }
-        drainingPeers += peer
-        val allSendPromise = enqueueSend(peer,
-            generateSequence { peerQueue.popMerged() })
-        pendingMessagePromises.removeAll(peer)?.forEach {
-            allSendPromise.forward(it)
-        }
-        allSendPromise.whenComplete { _, err ->
+    }
+
+    private fun flushLane(peer: PeerHandler, peerQueue: RpcPartsQueue, lane: Int) {
+        val laneDrains = drainingLanes.getOrPut(peer) { mutableMapOf() }
+        if (lane in laneDrains || peerQueue.isEmpty(lane)) return
+
+        val laneSendPromise = enqueueSend(peer, lane, generateSequence { peerQueue.popMerged(lane) })
+        laneDrains[lane] = laneSendPromise
+        laneSendPromise.whenComplete { _, err ->
             runOnEventThread {
-                drainingPeers -= peer
+                drainingLanes[peer]?.remove(lane, laneSendPromise)
                 // Only chase the rest of the queue after a send that actually went out. A failure
                 // leaves the queue as it was -- a semi-duplex peer with no outbound stream yet fails
                 // immediately without consuming anything -- so flushing again here would meet the
@@ -160,6 +174,15 @@ abstract class AbstractRouter(
     override fun addNewStream(stream: Stream) = addNewStreamWithHandler(stream, null)
     protected fun addNewStreamWithHandler(stream: Stream, handler: ChannelHandler?) {
         initChannelWithHandler(StreamHandler(stream), handler)
+    }
+
+    /**
+     * Adds an additional stream of [lane] to a peer whose main streams were added with [addPeer],
+     * see [io.libp2p.etc.util.P2PServiceSemiDuplex]
+     */
+    fun addLaneStream(stream: Stream, lane: Int, debugHandler: ChannelHandler? = null) {
+        require(lane != MAIN_LANE) { "Lane $MAIN_LANE is the main stream added with addPeer" }
+        initChannelWithHandler(StreamHandler(stream, lane), debugHandler)
     }
 
     override fun initChannel(streamHandler: StreamHandler) = initChannelWithHandler(streamHandler, null)
@@ -350,7 +373,7 @@ abstract class AbstractRouter(
     }
 
     override fun onPeerDisconnected(peer: PeerHandler) {
-        drainingPeers -= peer
+        drainingLanes -= peer
         super.onPeerDisconnected(peer)
         peersTopics.removeAllByFirst(peer)
     }
@@ -419,11 +442,11 @@ abstract class AbstractRouter(
         }
     }
 
-    protected fun enqueueSend(peer: PeerHandler, messageSupplier: Sequence<Rpc.RPC>): CompletableFuture<Unit> {
-        return peer.enqueueWrite(messageSupplier)
+    protected fun enqueueSend(peer: PeerHandler, lane: Int, messageSupplier: Sequence<Rpc.RPC>): CompletableFuture<Unit> {
+        return peer.enqueueWrite(lane, messageSupplier)
     }
-    protected open fun send(peer: PeerHandler, msg: Rpc.RPC): CompletableFuture<Unit> {
-        return peer.writeAndFlush(msg)
+    protected open fun send(peer: PeerHandler, msg: Rpc.RPC, lane: Int = MAIN_LANE): CompletableFuture<Unit> {
+        return peer.writeAndFlush(lane, msg)
     }
 
     override fun initHandler(handler: (PubsubMessage) -> CompletableFuture<ValidationResult>) {

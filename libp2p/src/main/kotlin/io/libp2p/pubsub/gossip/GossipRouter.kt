@@ -5,6 +5,7 @@ import io.libp2p.core.PeerId
 import io.libp2p.core.multiformats.Multiaddr
 import io.libp2p.core.pubsub.ValidationResult
 import io.libp2p.etc.types.*
+import io.libp2p.etc.util.MAIN_LANE
 import io.libp2p.etc.util.P2PService
 import io.libp2p.pubsub.*
 import org.slf4j.LoggerFactory
@@ -86,6 +87,8 @@ open class GossipRouter(
     val score: GossipScore,
     val gossipExtensionsConfig: GossipExtensionsConfig = GossipExtensionsConfig(),
     partialMessagesHandler: PartialMessagesHandler<*>? = null,
+    /** Splits the outbound traffic to every peer across prioritized streams; a single stream when null */
+    val streamLanes: GossipStreamLanes? = null,
 
     subscriptionTopicSubscriptionFilter: TopicSubscriptionFilter,
     protocol: PubsubProtocol,
@@ -158,7 +161,9 @@ open class GossipRouter(
         )
     }
     private val acceptRequestsWhitelist = mutableMapOf<PeerHandler, AcceptRequestsWhitelistEntry>()
-    override val pendingRpcParts = PendingRpcPartsMap<GossipRpcPartsQueue> { DefaultGossipRpcPartsQueue(params) }
+    override val pendingRpcParts = PendingRpcPartsMap<GossipRpcPartsQueue> {
+        streamLanes?.let { LanedGossipRpcPartsQueue(params, it) } ?: DefaultGossipRpcPartsQueue(params)
+    }
 
     val gossipExtensionsState = GossipExtensionsState(gossipExtensionsConfig)
     @Suppress("UNCHECKED_CAST")
@@ -1168,7 +1173,7 @@ open class GossipRouter(
                     .addMessageIDs(messageId.toProtobuf())
             )
         ).build()
-        send(peer, iDontWant)
+        send(peer, iDontWant, streamLanes?.controlLane ?: MAIN_LANE)
     }
 
     private fun sendControlExtensions(peer: PeerHandler) {

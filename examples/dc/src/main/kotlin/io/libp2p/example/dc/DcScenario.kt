@@ -135,6 +135,8 @@ data class DcRunConfig(
     val attack: DcWithholdingAttack? = null,
     /** Keep every node's per-message IHAVE/IDONTWANT/IWANT timeline; see [DcAnnounceTimeline]. */
     val recordAnnounceTimeline: Boolean = false,
+    /** Every node sends each message type on a prioritized stream of its own, or null for one stream per peer. */
+    val streamLanes: DcStreamLanes? = null,
     val randomSeed: Long = 0
 ) {
     init {
@@ -246,6 +248,7 @@ class DcNodeProgramFactory<R>(
             announceTimeline = if (config.recordAnnounceTimeline) DcAnnounceTimeline() else null,
             // Gossip params are a property of the node, not of the run; see DcNodeGroup.gossipParams.
             params = network.node(id).gossipParams,
+            streamLanes = config.streamLanes?.gossipStreamLanes,
             randomSeed = config.randomSeed + id
         ).also { nodePrograms += it }
 

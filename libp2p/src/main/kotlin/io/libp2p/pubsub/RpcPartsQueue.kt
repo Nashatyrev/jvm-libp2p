@@ -29,6 +29,16 @@ interface RpcPartsQueue {
     fun popMerged(): Rpc.RPC?
 
     fun takeMerged(): List<Rpc.RPC>
+
+    /**
+     * Number of lanes the parts are split into. Each lane is flushed on its own, to the peer's stream
+     * of that lane (see [io.libp2p.etc.util.P2PService.StreamHandler.lane]), with [popMerged] of the lane
+     */
+    val laneCount: Int get() = 1
+
+    fun isEmpty(lane: Int): Boolean = isEmpty()
+
+    fun popMerged(lane: Int): Rpc.RPC? = popMerged()
 }
 
 /** Optional protocol extensions attached to a topic subscription. */

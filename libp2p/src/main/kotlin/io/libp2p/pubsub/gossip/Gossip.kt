@@ -7,10 +7,14 @@ import io.libp2p.core.PeerId
 import io.libp2p.core.Stream
 import io.libp2p.core.multistream.ProtocolBinding
 import io.libp2p.core.multistream.ProtocolDescriptor
+import io.libp2p.core.multistream.ProtocolId
+import io.libp2p.core.multistream.ProtocolMatcher
 import io.libp2p.core.pubsub.PubsubApi
+import io.libp2p.etc.util.MAIN_LANE
 import io.libp2p.pubsub.PubsubApiImpl
 import io.libp2p.pubsub.PubsubProtocol
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
+import io.libp2p.transport.quic.QuicStream
 import io.netty.channel.ChannelHandler
 import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
@@ -48,10 +52,10 @@ class Gossip @JvmOverloads constructor(
         router.reportFeedback(topic, peerId, kind)
     }
 
-    override val protocolDescriptor =
+    private val announceProtocols =
         when (router.protocol) {
             PubsubProtocol.Gossip_V_1_3 -> {
-                ProtocolDescriptor(
+                listOf(
                     PubsubProtocol.Gossip_V_1_3.announceStr,
                     PubsubProtocol.Gossip_V_1_2.announceStr,
                     PubsubProtocol.Gossip_V_1_1.announceStr,
@@ -59,30 +63,71 @@ class Gossip @JvmOverloads constructor(
                 )
             }
             PubsubProtocol.Gossip_V_1_2 -> {
-                ProtocolDescriptor(
+                listOf(
                     PubsubProtocol.Gossip_V_1_2.announceStr,
                     PubsubProtocol.Gossip_V_1_1.announceStr,
                     PubsubProtocol.Gossip_V_1_0.announceStr
                 )
             }
             PubsubProtocol.Gossip_V_1_1 -> {
-                ProtocolDescriptor(
+                listOf(
                     PubsubProtocol.Gossip_V_1_1.announceStr,
                     PubsubProtocol.Gossip_V_1_0.announceStr
                 )
             }
             else -> {
-                ProtocolDescriptor(PubsubProtocol.Gossip_V_1_0.announceStr)
+                listOf(PubsubProtocol.Gossip_V_1_0.announceStr)
             }
         }
 
+    // Lane streams are accepted whether or not this side opens lanes of its own
+    override val protocolDescriptor = ProtocolDescriptor(
+        announceProtocols,
+        object : ProtocolMatcher {
+            override fun matches(proposed: ProtocolId) = proposed in announceProtocols || laneOfProtocol(proposed) != null
+        }
+    )
+
     override fun handleConnection(conn: Connection) {
-        conn.muxerSession().createStream(listOf(this))
+        val mainStream = conn.muxerSession().createStream(listOf(this))
+        val lanes = router.streamLanes ?: return
+        // Opened once the main stream is up, so the remote already has the peer to add them to
+        mainStream.controller.thenRun {
+            (MAIN_LANE + 1 until lanes.count).forEach { lane ->
+                conn.muxerSession().createStream(listOf(toInitiator(listOf(laneProtocol(lane)))))
+                    .controller.whenComplete { _, err ->
+                        if (err != null) logger.debug("Gossip lane {} stream to {} failed: {}", lane, conn.secureSession().remoteId, err.toString())
+                    }
+            }
+        }
     }
 
     override fun initChannel(ch: P2PChannel, selectedProtocol: String): CompletableFuture<out Unit> {
         logger.trace("Gossip initChannel - selected protocol: {}", selectedProtocol)
-        router.addPeerWithDebugHandler(ch as Stream, debugGossipHandler)
+        val stream = ch as Stream
+        val lane = laneOfProtocol(selectedProtocol) ?: MAIN_LANE
+        if (stream.isInitiator) {
+            router.streamLanes?.priorities?.getOrNull(lane)?.let { (stream as? QuicStream)?.setPriority(it.urgency, it.incremental) }
+        }
+        if (lane == MAIN_LANE) {
+            router.addPeerWithDebugHandler(stream, debugGossipHandler)
+        } else {
+            router.addLaneStream(stream, lane, debugGossipHandler)
+        }
         return CompletableFuture.completedFuture(Unit)
+    }
+
+    companion object {
+        /** Protocol of the additional streams of [GossipStreamLanes], followed by the lane number */
+        const val LANE_PROTOCOL_PREFIX = "/meshsub-lane/1.0.0/"
+
+        fun laneProtocol(lane: Int): ProtocolId = "$LANE_PROTOCOL_PREFIX$lane"
+
+        fun laneOfProtocol(protocol: ProtocolId): Int? =
+            if (protocol.startsWith(LANE_PROTOCOL_PREFIX)) {
+                protocol.removePrefix(LANE_PROTOCOL_PREFIX).toIntOrNull()?.takeIf { it > MAIN_LANE }
+            } else {
+                null
+            }
     }
 }

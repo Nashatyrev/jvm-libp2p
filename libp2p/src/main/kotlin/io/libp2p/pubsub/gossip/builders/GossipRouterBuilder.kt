@@ -41,6 +41,7 @@ open class GossipRouterBuilder(
     val gossipRouterEventListeners: MutableList<GossipRouterEventListener> = mutableListOf(),
     val enabledGossipExtensions: List<GossipExtension> = mutableListOf(),
     var partialMessagesHandler: PartialMessagesHandler<*>? = null,
+    var streamLanes: GossipStreamLanes? = null,
 ) {
 
     var seenCache: SeenCache<Optional<ValidationResult>> by lazyVar { TTLSeenCache(SimpleSeenCache(), params.seenTTL, currentTimeSupplier) }
@@ -72,6 +73,7 @@ open class GossipRouterBuilder(
             messageValidator = messageValidator,
             gossipExtensionsConfig = buildGossipExtensionsConfig(),
             partialMessagesHandler = partialMessagesHandler,
+            streamLanes = streamLanes,
         )
 
         router.eventBroadcaster.listeners += gossipRouterEventListeners

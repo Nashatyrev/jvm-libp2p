@@ -7,6 +7,7 @@ import io.libp2p.pubsub.AbstractPubsubMessage
 import io.libp2p.pubsub.DEFAULT_PUBSUB_MESSAGE_ID_LENGTH
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.pubsub.gossip.GossipScoreParams
+import io.libp2p.pubsub.gossip.GossipStreamLanes
 import io.libp2p.pubsub.gossip.builders.GossipRouterBuilder
 import io.libp2p.quicsim.program.GossipNodeProgram
 import io.libp2p.quicsim.sim.NetworkContext
@@ -46,6 +47,8 @@ class DcNodeProgram(
     val announceTimeline: DcAnnounceTimeline? = null,
     params: GossipParams = GossipParams(),
     scoreParams: GossipScoreParams = GossipScoreParams(),
+    /** Prioritized streams per peer, see [DcRunConfig.streamLanes]; null for one stream per peer. */
+    private val streamLanes: GossipStreamLanes? = null,
     randomSeed: Long = 0
 ) : GossipNodeProgram(simNodeId, connectToNodeIds, params, scoreParams, randomSeed) {
 
@@ -74,6 +77,7 @@ class DcNodeProgram(
     // Ethereum StrictNoSign: message ID = SHA256(data)[0:20], no from/seqno/signature on wire.
     override fun configureGossipRouterBuilder(builder: GossipRouterBuilder) {
         super.configureGossipRouterBuilder(builder)
+        builder.streamLanes = streamLanes
         builder.messageFactory = { msg: Rpc.Message ->
             object : AbstractPubsubMessage() {
                 override val protobufMessage: Rpc.Message = Rpc.Message.newBuilder()
