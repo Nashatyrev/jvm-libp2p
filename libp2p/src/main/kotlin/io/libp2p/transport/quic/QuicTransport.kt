@@ -124,6 +124,13 @@ class QuicTransport @JvmOverloads constructor(
          */
         fun <B : QuicCodecBuilder<B>> B.withDiagnosticCongestionOptions(): B {
             System.getProperty("libp2p.quic.initialCwndPackets")?.toInt()?.let { initialCongestionWindowPackets(it) }
+            // `-Dlibp2p.quic.initialMaxStreamData=N` / `-Dlibp2p.quic.initialMaxData=N`: initial flow-control
+            // credit per stream and per connection. quiche grows a window only as it carries traffic, so
+            // credit that outlasts a run takes flow control out of a comparison.
+            System.getProperty("libp2p.quic.initialMaxStreamData")?.toLong()?.let {
+                initialMaxStreamDataBidirectionalLocal(it).initialMaxStreamDataBidirectionalRemote(it)
+            }
+            System.getProperty("libp2p.quic.initialMaxData")?.toLong()?.let { initialMaxData(it) }
             return this
         }
 
