@@ -18,7 +18,18 @@ public class QuicKuboTestJava {
   @Test
   void pingKubo() throws Exception {
     if (System.getProperty("os.name").toLowerCase().startsWith("windows")) return;
-    PeerId peerId = PeerId.fromBase58(getKuboPeerId());
+    String kuboPeerId;
+    try {
+      kuboPeerId = getKuboPeerId();
+    } catch (ConnectException e) {
+      // CI starts a kubo daemon first (install-run-ipfs.sh), so there a missing daemon is a failure;
+      // elsewhere the test needs one started by hand (`ipfs daemon`) and is skipped without it.
+      Assumptions.assumeTrue(
+          "true".equalsIgnoreCase(System.getenv("CI")),
+          "no kubo daemon at localhost:5001; start one with `ipfs daemon` to run this test");
+      throw e;
+    }
+    PeerId peerId = PeerId.fromBase58(kuboPeerId);
 
     Host clientHost =
         new HostBuilder().keyType(KeyType.ED25519).secureTransport(QuicTransport::ECDSA).build();
