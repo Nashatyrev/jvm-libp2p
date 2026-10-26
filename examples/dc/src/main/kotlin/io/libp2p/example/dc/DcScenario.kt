@@ -3,6 +3,8 @@ package io.libp2p.example.dc
 import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.program.NodeProgram
 import io.libp2p.quicsim.program.NodeProgramFactory
+import io.libp2p.quicsim.runner.BandwidthQueueDiscipline
+import io.libp2p.quicsim.runner.DatagramPacketTraceRecorder
 import io.libp2p.quicsim.runner.DatagramTrafficAggregate
 import io.libp2p.quicsim.runner.SimulatedQuicScenarioRunner
 import io.libp2p.quicsim.scenario.QuicScenario
@@ -497,7 +499,13 @@ object DcScenario {
         graph: DcPeerGraph<R>,
         config: DcRunConfig = DcRunConfig(),
         latencyWindowParallelism: Int = Runtime.getRuntime().availableProcessors(),
-        messageSchedules: List<DcSlotMessageSchedule> = defaultMessageSchedules(network, config)
+        /** How every shaped link queues; the simulator's default models hosts the way Shadow does. */
+        bandwidthQueueDiscipline: BandwidthQueueDiscipline = BandwidthQueueDiscipline.SHADOW_LIKE,
+        messageSchedules: List<DcSlotMessageSchedule> = defaultMessageSchedules(network, config),
+        /** Sees the finished run's node programs and datagram counts, for analyses [DcRunReport] does not cover. */
+        onComplete: (DcNodeProgramFactory<R>, DatagramTrafficAggregate) -> Unit = { _, _ -> },
+        /** Sees every datagram too, alongside the run's own traffic counts; e.g. [DcDatagramSizes]. */
+        extraDatagramRecorder: DatagramPacketTraceRecorder? = null
     ): DcRunReport {
         // Folds each datagram into per-node, per-bucket counters instead of retaining it: a 500k
         // run traces hundreds of millions of them, and holding the events was what put a third of a
@@ -509,7 +517,10 @@ object DcScenario {
         )
         val result = SimulatedQuicScenarioRunner(
             latencyWindowParallelism = latencyWindowParallelism,
-            datagramPacketTraceRecorder = traceRecorder
+            bandwidthQueueDiscipline = bandwidthQueueDiscipline,
+            datagramPacketTraceRecorder = extraDatagramRecorder
+                ?.let { DcCompositeDatagramRecorder(listOf(traceRecorder, it)) }
+                ?: traceRecorder
         ).run(of(network, graph, config, messageSchedules))
         val traffic = DcTrafficReport.of(
             traffic = traceRecorder,
@@ -521,6 +532,7 @@ object DcScenario {
         result.nodeProgramFactory.quicStats?.let { stats ->
             println(stats.render { network.node(it).groupName ?: DcGroupStats.UNNAMED })
         }
+        onComplete(result.nodeProgramFactory, traceRecorder)
         return result.nodeProgramFactory.report(traffic, traceRecorder)
     }
 }

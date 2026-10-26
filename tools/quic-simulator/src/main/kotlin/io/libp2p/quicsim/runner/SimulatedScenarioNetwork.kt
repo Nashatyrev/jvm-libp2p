@@ -52,7 +52,7 @@ fun QuicNetworkLink.toUdpSimLink(
         UnshapedUdpSimBandwidthQueue()
     } else when (bandwidthQueueDiscipline) {
         BandwidthQueueDiscipline.FIFO -> FifoUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
-        BandwidthQueueDiscipline.FQ_CODEL -> FqCodelUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)
+        BandwidthQueueDiscipline.FQ_CODEL -> FqCodelUdpSimBandwidthQueue(bandwidth)
         BandwidthQueueDiscipline.CODEL -> CodelUdpSimBandwidthQueue(bandwidth)
         BandwidthQueueDiscipline.SHADOW_LIKE -> if (isFromEndpoint) {
             FifoUdpSimBandwidthQueue(bandwidth, this.maxQueueWaitTime)

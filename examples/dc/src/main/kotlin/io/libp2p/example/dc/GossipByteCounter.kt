@@ -63,6 +63,7 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
     private val _iwantIdsWrittenBySlot = ConcurrentHashMap<Int, AtomicLong>()
     private val _ihaveIdsReadBySlot = ConcurrentHashMap<Int, AtomicLong>()
     private val _controlBreakdownWritten = ControlAccumulator()
+    private val _controlBreakdownReadMeasured = ControlAccumulator()
 
     /** (type, message id) pairs this node has already seen, so a later copy is marked a duplicate. */
     private val _seenMessages = ConcurrentHashMap.newKeySet<Pair<DcSlotMessageType, Int>>()
@@ -126,6 +127,13 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
      * only the sent side says how much a group is asking for.
      */
     val controlBreakdownWritten: DcControlBreakdown get() = _controlBreakdownWritten.snapshot(controlBytesWritten)
+
+    /**
+     * [controlBreakdownRead] over the measured slots only -- the window [controlBytesReadByBucket]
+     * covers -- rather than the whole run with its mesh formation and warm-up slots.
+     */
+    val controlBreakdownReadMeasured: DcControlBreakdown
+        get() = _controlBreakdownReadMeasured.snapshot(controlBytesReadByBucket.sum())
 
     override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
         if (msg is Rpc.RPC) {
@@ -202,6 +210,7 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
         }
         val totalBytes = rpc.serializedSize + VARINT_OVERHEAD
         _controlBytesReadByBucket?.get(bucket)?.addAndGet(totalBytes - publishBytes)
+        _controlBreakdownReadMeasured.add(rpc)
     }
 
     /** Bytes and message count for one slot, so both are attributed in a single map lookup. */
