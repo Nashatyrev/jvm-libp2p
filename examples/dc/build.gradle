@@ -55,9 +55,25 @@ tasks.register('simulation', Test) {
   jvmArgs('-XX:MaxDirectMemorySize=' + (System.getProperty('dc.directMemory') ?: '130g'))
   // Lets a scenario be swept without editing it, e.g.
   //   ./gradlew :examples:dc:simulation --tests "*large network*" -Ddc.validators=100000
-  ['dc.validators', 'dc.ffgCompression', 'dc.slots', 'dc.warmupSlots', 'dc.gossip', 'dc.ffg', 'dc.ethGossip', 'dc.homeDownMbps', 'dc.homeUpMbps', 'dc.iwant', 'dc.iwantScope', 'dc.homeFfgSubnets', 'dc.warmupFrom', 'dc.idontwant', 'dc.ffgSlots', 'dc.homeCount', 'dc.midHomeCount', 'dc.upperHomeCount', 'dc.homeValidators', 'dc.snappyStream', 'dc.ffgSnappyRatio', 'dc.aggSnappyRatio', 'dc.quicStatsAtMs', 'dc.attackFractions', 'dc.bandwidthsMbps', 'dc.messageKiB', 'dc.messagesPerSlot', 'dc.slowCount', 'dc.peers', 'dc.timelineDir', 'dc.slowMbps', 'dc.attackIHave', 'dc.attackSlots', 'dc.attackSeeds', 'dc.settleSeconds', 'dc.lanes', 'dc.controlLane', 'dc.poolCount', 'dc.seed', 'dc.ethSlotSimRun', 'dc.queue', 'dc.queueTraces', 'dc.queueOut', 'dc.closedLoopOut', 'libp2p.quic.initialCwndPackets'].each { name ->
+  ['dc.validators', 'dc.ffgCompression', 'dc.slots', 'dc.warmupSlots', 'dc.gossip', 'dc.ffg', 'dc.ethGossip', 'dc.homeDownMbps', 'dc.homeUpMbps', 'dc.iwant', 'dc.iwantScope', 'dc.homeFfgSubnets', 'dc.warmupFrom', 'dc.idontwant', 'dc.ffgSlots', 'dc.homeCount', 'dc.midHomeCount', 'dc.upperHomeCount', 'dc.homeValidators', 'dc.snappyStream', 'dc.ffgSnappyRatio', 'dc.aggSnappyRatio', 'dc.quicStatsAtMs', 'dc.attackFractions', 'dc.bandwidthsMbps', 'dc.messageKiB', 'dc.messagesPerSlot', 'dc.slowCount', 'dc.peers', 'dc.timelineDir', 'dc.slowMbps', 'dc.attackIHave', 'dc.attackSlots', 'dc.attackSeeds', 'dc.settleSeconds', 'dc.lanes', 'dc.controlLane', 'dc.poolCount', 'dc.seed', 'dc.ethSlotSimRun', 'libp2p.quic.maxSendUdpPayloadSize', 'libp2p.quic.localConnectionIdLength', 'libp2p.quic.hystart', 'libp2p.quic.cc', 'io.netty.incubator.codec.quic.pacing', 'io.netty.incubator.codec.quic.pacingStats', 'dc.queue', 'dc.queueTraces', 'dc.queueOut', 'dc.closedLoopOut', 'dc.closedLoopReceivers', 'dc.closedLoopVotes', 'libp2p.quic.initialCwndPackets', 'libp2p.quic.initialMaxStreamData', 'libp2p.quic.initialMaxData'].each { name ->
     if (System.getProperty(name) != null) {
       systemProperty name, System.getProperty(name)
+    }
+  }
+  // Simulations run QUIC with quic-go-like settings unless told otherwise: go-libp2p's 32-packet initial
+  // window and 1280-byte packets, 4-byte connection ids, and flow-control credit large enough to stand
+  // in for quic-go's window auto-tuning (quiche's own growth stalls a cold 1 MiB transfer for several
+  // RTTs). A -Dlibp2p.quic.* on the command line still wins; -Ddc.quicDefaults=quiche keeps quiche's
+  // defaults instead. Only for these study runs: QuicTransport's own defaults are unchanged.
+  if (System.getProperty('dc.quicDefaults') != 'quiche') {
+    ['libp2p.quic.initialCwndPackets': '32',
+     'libp2p.quic.initialMaxStreamData': '16777216',
+     'libp2p.quic.initialMaxData': '33554432',
+     'libp2p.quic.maxSendUdpPayloadSize': '1280',
+     'libp2p.quic.localConnectionIdLength': '4'].each { name, value ->
+      if (System.getProperty(name) == null) {
+        systemProperty name, value
+      }
     }
   }
   useJUnitPlatform {

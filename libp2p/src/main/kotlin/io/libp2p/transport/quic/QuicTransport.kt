@@ -131,8 +131,30 @@ class QuicTransport @JvmOverloads constructor(
                 initialMaxStreamDataBidirectionalLocal(it).initialMaxStreamDataBidirectionalRemote(it)
             }
             System.getProperty("libp2p.quic.initialMaxData")?.toLong()?.let { initialMaxData(it) }
-            return this
+            // `-Dlibp2p.quic.maxSendUdpPayloadSize=N`: largest datagram quiche sends (1200 by default).
+            System.getProperty("libp2p.quic.maxSendUdpPayloadSize")?.toLong()?.let { maxSendUdpPayloadSize(it) }
+            // `-Dlibp2p.quic.hystart=false`: leave slow start only on loss, not on HyStart++'s RTT signal.
+            System.getProperty("libp2p.quic.hystart")?.toBoolean()?.let { hystart(it) }
+            // `-Dlibp2p.quic.cc=CUBIC|RENO|BBR` (CUBIC by default). BBR is quiche's BBR2 (gcongestion), the
+            // only controller whose SendInfo.at actually paces; RENO and CUBIC always return "now".
+            System.getProperty("libp2p.quic.cc")?.let { congestionControlAlgorithm(QuicCongestionControlAlgorithm.valueOf(it)) }
+            return withDiagnosticConnectionIdLength()
         }
+
+        /**
+         * Simulation knob: `-Dlibp2p.quic.localConnectionIdLength=N` sets the connection ids this side
+         * issues (20 bytes by default), which every short-header packet carries. A codec option rather
+         * than a quiche one, so the client sets it on its codec builder too.
+         */
+        fun <B : QuicCodecBuilder<B>> B.withDiagnosticConnectionIdLength(): B =
+            localConnectionIdLength(localConnectionIdLength())
+
+        /** The dialler's own connection address must have the same length as the ids it issues. */
+        fun localConnectionIdLength(): Int =
+            System.getProperty("libp2p.quic.localConnectionIdLength")?.toInt() ?: DEFAULT_CONNECTION_ID_LENGTH
+
+        /** Netty's and quiche's maximum, and what this transport has always used. */
+        private const val DEFAULT_CONNECTION_ID_LENGTH = 20
 
     }
 
@@ -224,7 +246,7 @@ class QuicTransport @JvmOverloads constructor(
                     .option(ChannelOption.AUTO_READ, true)
                     .option(ChannelOption.ALLOCATOR, allocator)
                     .remoteAddress(fromMultiaddr(addr))
-                    .localConnectionAddress(QuicConnectionAddress(deterministicRandom.generateSeed(20)))
+                    .localConnectionAddress(QuicConnectionAddress(deterministicRandom.generateSeed(localConnectionIdLength())))
                     .streamHandler(InboundStreamHandler(multistreamProtocol, protocols))
                     .connect()
                     .toCompletableFuture()
@@ -305,6 +327,7 @@ class QuicTransport @JvmOverloads constructor(
             .sslEngineProvider { q -> sslContext.newEngine(q.alloc()) }
             .sslTaskExecutor(null) // IMMEDIATE Executor
             .quicheConfig(clientQuicheConfig)
+            .withDiagnosticConnectionIdLength()
             .build()
     }
 

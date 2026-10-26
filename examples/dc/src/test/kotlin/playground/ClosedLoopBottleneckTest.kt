@@ -46,11 +46,14 @@ class ClosedLoopBottleneckTest {
         val queue = BandwidthQueueDiscipline.valueOf(System.getProperty("dc.queue") ?: "FQ_CODEL")
 
         val chunks = mutableListOf<Pair<String, DataChunk>>()
+        // -Ddc.closedLoopReceivers=1,7 picks the payload receivers, -Ddc.closedLoopVotes=false drops the votes.
+        val receivers = (System.getProperty("dc.closedLoopReceivers") ?: "1,2,3,4,5,6,7").split(",").map { it.trim().toInt() }
+        val votes = System.getProperty("dc.closedLoopVotes")?.toBoolean() ?: true
         repeat(ROUNDS) { round ->
             val t0 = FIRST_ROUND + ROUND_GAP * round
-            (1..7).forEach { to -> chunks += "payload" to DataChunk(PAYLOAD_BYTES, t0, 0, to) }
+            receivers.forEach { to -> chunks += "payload" to DataChunk(PAYLOAD_BYTES, t0, 0, to) }
             var t = Duration.ZERO
-            while (t < VOTE_SPAN) {
+            while (votes && t < VOTE_SPAN) {
                 chunks += "vote-own" to DataChunk(VOTE_BYTES, t0 + t, 0, 8)
                 chunks += "vote-shared" to DataChunk(VOTE_BYTES, t0 + t, 0, 1)
                 t += VOTE_GAP
@@ -58,7 +61,7 @@ class ClosedLoopBottleneckTest {
         }
 
         val runEnd = FIRST_ROUND + ROUND_GAP * ROUNDS + 10.seconds
-        val traffic = DatagramTrafficAggregate(100.milliseconds, NODES, runEnd + 10.seconds)
+        val traffic = DatagramTrafficAggregate(SERIES_STEP, NODES, runEnd + 10.seconds)
         val sizes = DcDatagramSizes(NODES, from = FIRST_ROUND, until = runEnd)
         val scenario = QuicScenario(
             name = "closed-loop-bottleneck",
@@ -93,6 +96,17 @@ class ClosedLoopBottleneckTest {
                 w.println("$n,${t.bytesSent},${t.bytesReceived},${t.packetsSent},${t.packetsReceived},$acks")
             }
         }
+        // The first round at SERIES_STEP resolution: the cold-connection ramp-up.
+        File(out, "series.csv").printWriter().use { w ->
+            w.println("t_ms,sender_sent,sender_recv,receivers_recv")
+            var t = FIRST_ROUND
+            while (t < FIRST_ROUND + 4.seconds) {
+                val sender = traffic.totals(setOf(0), t, t + SERIES_STEP)
+                val receivers = traffic.totals((1 until NODES).toSet(), t, t + SERIES_STEP)
+                w.println("${(t - FIRST_ROUND).inWholeMilliseconds},${sender.bytesSent},${sender.bytesReceived},${receivers.bytesReceived}")
+                t += SERIES_STEP
+            }
+        }
         File(out, "sizes.csv").printWriter().use { w ->
             w.println("node,size,count")
             (0 until NODES).forEach { n -> sizes.sentSizes(n).forEach { (size, count) -> w.println("$n,$size,$count") } }
@@ -123,6 +137,7 @@ class ClosedLoopBottleneckTest {
         val ROUND_GAP = 6.seconds
         val VOTE_SPAN = 3.seconds
         val VOTE_GAP = 20.milliseconds
+        val SERIES_STEP = 10.milliseconds
 
         /** Sender side 0.25 ms; receiver i the rest of its 20 + 15 (i - 1) ms one-way latency. */
         fun accessLatency(node: Int): Duration =
