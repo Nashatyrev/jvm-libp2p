@@ -439,6 +439,9 @@ class DcScenarioRunnerTest {
             }
             // Applied last: with gossip off, DLazy must stay 0 whatever the mesh params say.
             .also { if (!gossipEnabled) it.disableGossip() }
+            // -Ddc.maxPublishedMessages=1: one message per RPC, as go-libp2p-pubsub sends. Unset merges
+            // everything queued for a peer into one RPC up to maxGossipMessageSize.
+            .also { b -> System.getProperty("dc.maxPublishedMessages")?.toInt()?.let { b.maxPublishedMessages(it) } }
             .build()
 
         val validatorCount = System.getProperty("dc.validators")?.toInt() ?: 1_000_000
@@ -467,8 +470,9 @@ class DcScenarioRunnerTest {
         // Models aggregation: N times fewer attestations, each N times larger, so the bytes
         // published per wave are unchanged and only the message count drops. 1 = no aggregation.
         val ffgCompression = 10
-        val slotCount = 1
-        val warmupSlots = 0
+        // -Ddc.slots / -Ddc.warmupSlots: e.g. 2 and 1 for a warm-up slot ahead of the measured one.
+        val slotCount = System.getProperty("dc.slots")?.toInt() ?: 1
+        val warmupSlots = System.getProperty("dc.warmupSlots")?.toInt() ?: 0
         // -Ddc.poolCount / -Ddc.homeCount shrink the population to what a 64 GB machine holds:
         // 20 pools and 80 home nodes run in a couple of minutes, 80 pools do not fit.
         val poolCount = System.getProperty("dc.poolCount")?.toInt() ?: 100

@@ -109,6 +109,9 @@ class DcEthSlotSimComparisonTest {
             // go-libp2p-pubsub's IDONTWANT threshold and eth-slot-sim's GOSSIP_MAX_SIZE
             .iDontWantMinMessageSizeThreshold(1024)
             .maxGossipMessageSize(10 * 1024 * 1024)
+            // -Ddc.maxPublishedMessages=1 sends one message per RPC, as go-libp2p-pubsub does; unset lets
+            // queued messages share an RPC up to maxGossipMessageSize, decoded only once all of it arrived.
+            .also { b -> System.getProperty("dc.maxPublishedMessages")?.toInt()?.let { b.maxPublishedMessages(it) } }
             .build()
 
         val builder = DcNetworkBuilder.world(
@@ -214,7 +217,8 @@ class DcEthSlotSimComparisonTest {
         // -Ddc.queue=CODEL|FQ_CODEL|FIFO picks the link queue; its outputs then carry the name, so
         // runs with different queues sit side by side in the run dir.
         val queue = System.getProperty("dc.queue")?.let { BandwidthQueueDiscipline.valueOf(it) }
-        val suffix = queue?.let { "-${it.name.lowercase()}" } ?: ""
+        val suffix = (queue?.let { "-${it.name.lowercase()}" } ?: "") +
+            (System.getProperty("dc.maxPublishedMessages")?.let { "-mpm$it" } ?: "")
         val sentSizes = DcDatagramSizes(
             nodeCount,
             from = runConfig.slotTimes[runConfig.warmupSlots],
