@@ -23,7 +23,10 @@ enum class DcSlotMessageType(val id: String, val wireName: String) {
     BLOB_COLUMN("blob", "data_column_sidecar"),
     GOLDFISH_ATTESTATION("ac-vote", "ac_attestation"),
     FFG_ATTESTATION("ffg-vote", "beacon_attestation"),
-    AGGREGATES("aggregates", "beacon_aggregate_and_proof");
+    AGGREGATES("aggregates", "beacon_aggregate_and_proof"),
+
+    /** EIP-7732 payload timeliness committee vote. */
+    PTC_ATTESTATION("ptc-vote", "payload_attestation_message");
 
     override fun toString(): String = id
 

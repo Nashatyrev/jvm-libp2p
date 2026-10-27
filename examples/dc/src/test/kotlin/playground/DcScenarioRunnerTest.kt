@@ -470,6 +470,19 @@ class DcScenarioRunnerTest {
         // Models aggregation: N times fewer attestations, each N times larger, so the bytes
         // published per wave are unchanged and only the message count drops. 1 = no aggregation.
         val ffgCompression = 10
+
+        // Goldfish (available-chain) and PTC votes: a committee of single, unaggregated votes per
+        // slot on one global topic each. Sizes are the RPC message content. -Ddc.goldfishVotes /
+        // -Ddc.ptcVotes override the committee sizes; 0 switches that vote off.
+        // EIP-8453 draft: an available-chain committee of ~512 validators casts head votes each slot
+        val goldfishVotesPerSlot = System.getProperty("dc.goldfishVotes")?.toInt() ?: 512
+        val goldfishVoteSize = 240
+        // EIP-8453 leaves head-vote timing open; EIP-7732 ATTESTATION_DUE_BPS: 25% into the slot
+        val goldfishVoteOffset = 3.seconds
+        val ptcVotesPerSlot = System.getProperty("dc.ptcVotes")?.toInt() ?: 512
+        val ptcVoteSize = 146
+        // EIP-7732 PAYLOAD_ATTESTATION_DUE_BPS: 75% into the slot
+        val ptcVoteOffset = 9.seconds
         // -Ddc.slots / -Ddc.warmupSlots: e.g. 2 and 1 for a warm-up slot ahead of the measured one.
         val slotCount = System.getProperty("dc.slots")?.toInt() ?: 1
         val warmupSlots = System.getProperty("dc.warmupSlots")?.toInt() ?: 0
@@ -581,6 +594,24 @@ class DcScenarioRunnerTest {
                         messagesPerSlot = 128,
                         topics = DcSlotMessageTopics.Subnets(128)
                     )
+                ),
+                listOfNotNull(
+                    DcSlotMessageConfig(
+                        type = DcSlotMessageType.GOLDFISH_ATTESTATION,
+                        sizeBytes = goldfishVoteSize,
+                        publishOffset = goldfishVoteOffset,
+                        publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
+                        messagesPerSlot = goldfishVotesPerSlot,
+                        topics = DcSlotMessageTopics.Global
+                    ).takeIf { goldfishVotesPerSlot > 0 },
+                    DcSlotMessageConfig(
+                        type = DcSlotMessageType.PTC_ATTESTATION,
+                        sizeBytes = ptcVoteSize,
+                        publishOffset = ptcVoteOffset,
+                        publisherSelection = DcPublisherSelection.RANDOM_VALIDATORS,
+                        messagesPerSlot = ptcVotesPerSlot,
+                        topics = DcSlotMessageTopics.Global
+                    ).takeIf { ptcVotesPerSlot > 0 }
                 ),
                 (0 until ffgWavesPerSlotIfEnabled)
                     .map { waveIdx ->
