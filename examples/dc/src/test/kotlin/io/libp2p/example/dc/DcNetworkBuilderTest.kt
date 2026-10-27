@@ -375,10 +375,23 @@ class DcNetworkBuilderTest {
             }
             .build()
 
+        val onePerRpc = DcNetworkBuilder.DEFAULT_MAX_PUBLISHED_MESSAGES
         assertThat(network.nodesInGroup("pools").map { it.gossipParams }.distinct())
-            .describedAs("a group that sets nothing gets the library defaults")
-            .containsExactly(GossipParams())
-        assertThat(network.nodesInGroup("home").map { it.gossipParams }.distinct()).containsExactly(smallMesh)
+            .describedAs("a group that sets nothing gets the library defaults, one message per RPC")
+            .containsExactly(GossipParams(maxPublishedMessages = onePerRpc))
+        assertThat(network.nodesInGroup("home").map { it.gossipParams }.distinct())
+            .containsExactly(smallMesh.copy(maxPublishedMessages = onePerRpc))
+    }
+
+    @Test
+    fun `a group's own messages per RPC are kept`() {
+        val merging = GossipParams.builder().maxPublishedMessages(Int.MAX_VALUE).build()
+        val network = DcNetworkBuilder.world()
+            .defaults { bandwidth = Bandwidths.VPS }
+            .addGroup(count = 2) { gossipParams = merging }
+            .build()
+
+        assertThat(network.nodes.map { it.gossipParams }.distinct()).containsExactly(merging)
     }
 
     @Test

@@ -1,5 +1,6 @@
 package io.libp2p.example.dc
 
+import io.libp2p.pubsub.gossip.GossipParams
 import io.libp2p.quicsim.scenario.QuicNetworkTopology
 import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor
 import io.libp2p.quicsim.scenario.RegionalNetworkDescriptor.Companion.ContinentRegion
@@ -134,7 +135,7 @@ class DcNetworkBuilder<R>(
                 peerCount = group.peers,
                 slotMessageSubnetIds = group.messageSubnetsFor(index, simNodeId, randomSeed),
                 groupName = group.name,
-                gossipParams = group.gossipParams
+                gossipParams = group.gossipParams.withDcDefaults()
             )
         }
     }
@@ -167,6 +168,21 @@ class DcNetworkBuilder<R>(
     companion object {
         /** Subnet range used for a message type the builder does not say otherwise about. */
         const val DEFAULT_SUBNET_COUNT: Int = 64
+
+        /**
+         * Messages per gossip RPC for nodes whose [DcNodeGroup.gossipParams] leave
+         * `maxPublishedMessages` unset: one, as go-libp2p-pubsub sends. jvm-libp2p's own default
+         * merges everything queued for a peer into one RPC up to `maxGossipMessageSize`, and a
+         * receiver decodes none of it until the whole RPC has arrived -- in `median network` that
+         * cost home nodes ~18% of their blob and FFG-vote p99.
+         *
+         * Set `maxPublishedMessages` explicitly to model merging. It is also the most a node
+         * *accepts* in one RPC, so set it alike across groups, or RPCs between them are dropped.
+         */
+        const val DEFAULT_MAX_PUBLISHED_MESSAGES: Int = 1
+
+        private fun GossipParams.withDcDefaults(): GossipParams =
+            if (maxPublishedMessages != null) this else copy(maxPublishedMessages = DEFAULT_MAX_PUBLISHED_MESSAGES)
 
         /** Builder over the simulator's six-continent world model. */
         fun world(

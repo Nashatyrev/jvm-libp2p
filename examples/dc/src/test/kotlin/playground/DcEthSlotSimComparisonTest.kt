@@ -109,8 +109,9 @@ class DcEthSlotSimComparisonTest {
             // go-libp2p-pubsub's IDONTWANT threshold and eth-slot-sim's GOSSIP_MAX_SIZE
             .iDontWantMinMessageSizeThreshold(1024)
             .maxGossipMessageSize(10 * 1024 * 1024)
-            // -Ddc.maxPublishedMessages=1 sends one message per RPC, as go-libp2p-pubsub does; unset lets
-            // queued messages share an RPC up to maxGossipMessageSize, decoded only once all of it arrived.
+            // -Ddc.maxPublishedMessages=N caps the messages per RPC. Unset is the dc default of one, as
+            // go-libp2p-pubsub sends (DcNetworkBuilder.DEFAULT_MAX_PUBLISHED_MESSAGES); a large N restores
+            // jvm-libp2p's merging, where an RPC is decoded only once all of it has arrived.
             .also { b -> System.getProperty("dc.maxPublishedMessages")?.toInt()?.let { b.maxPublishedMessages(it) } }
             .build()
 

@@ -458,7 +458,8 @@ class DcScenarioTest {
         val paramsOf = { simNodeId: Int -> (factory.createNode(simNodeId) as DcNodeProgram).params }
 
         assertThat(paramsOf(0).D).describedAs("each node runs its own group's params").isEqualTo(8)
-        assertThat(paramsOf(6)).isEqualTo(smallMesh)
+        assertThat(paramsOf(6))
+            .isEqualTo(smallMesh.copy(maxPublishedMessages = DcNetworkBuilder.DEFAULT_MAX_PUBLISHED_MESSAGES))
 
         val report = DcScenario.run(network, graph, config)
         assertThat(report.groups["home"]?.meshDegrees)

@@ -439,8 +439,8 @@ class DcScenarioRunnerTest {
             }
             // Applied last: with gossip off, DLazy must stay 0 whatever the mesh params say.
             .also { if (!gossipEnabled) it.disableGossip() }
-            // -Ddc.maxPublishedMessages=1: one message per RPC, as go-libp2p-pubsub sends. Unset merges
-            // everything queued for a peer into one RPC up to maxGossipMessageSize.
+            // -Ddc.maxPublishedMessages=N caps the messages per RPC. Unset is the dc default of one
+            // (DcNetworkBuilder.DEFAULT_MAX_PUBLISHED_MESSAGES); a large N restores jvm-libp2p's merging.
             .also { b -> System.getProperty("dc.maxPublishedMessages")?.toInt()?.let { b.maxPublishedMessages(it) } }
             .build()
 
