@@ -828,7 +828,7 @@ open class GossipRouter(
 
     override fun broadcastOutboundBatch(msgs: List<PubsubMessage>): CompletableFuture<Unit> {
         val publishFutures = MutableList(msgs.size) { mutableListOf<CompletableFuture<Unit>>() }
-        val messagesByPeer = mutableMapOf<PeerHandler, MutableList<Pair<Int, PubsubMessage>>>()
+        val peersByMessage = List(msgs.size) { mutableListOf<PeerHandler>() }
 
         msgs.forEachIndexed { messageIndex, msg ->
             msg.topics.forEach { lastPublished[it] = currentTimeSupplier() }
@@ -848,19 +848,24 @@ open class GossipRouter(
                 peers
                     .filterNot { peerDoesNotWantMessage(it, msg.messageId) }
                     .filterNot { peerRequestsPartial(it.peerId, msg.topics) }
-                    .forEach { peer ->
-                        messagesByPeer.getOrPut(peer) { mutableListOf() } += messageIndex to msg
-                    }
+                    .forEach { peersByMessage[messageIndex] += it }
             }
         }
 
-        messagesByPeer.forEach { (peer, messages) ->
-            messages.shuffled(random).forEach { (messageIndex, msg) ->
-                publishFutures[messageIndex] += submitPublishMessage(peer, msg)
+        // Round-robin over the messages, as go-libp2p-pubsub's RoundRobinMessageIDScheduler: every
+        // message's first copy is queued before any message's second, so each peer's queue leads with
+        // the messages it is the first target of and every message gets one copy out early
+        val peerOrders = peersByMessage.map { it.shuffled(random) }
+        val rounds = peerOrders.maxOfOrNull { it.size } ?: 0
+        for (round in 0 until rounds) {
+            msgs.indices.shuffled(random).forEach { messageIndex ->
+                peerOrders[messageIndex].getOrNull(round)?.let { peer ->
+                    publishFutures[messageIndex] += submitPublishMessage(peer, msgs[messageIndex])
+                }
             }
         }
 
-        if (messagesByPeer.isNotEmpty()) flushAllPending()
+        if (rounds > 0) flushAllPending()
 
         return publishFutures.mapIndexed { messageIndex, futures ->
             if (futures.isEmpty()) {
