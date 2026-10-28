@@ -166,6 +166,10 @@ enum class DcPublisherSelection {
  * or payload) and batches (payload chunks or data-availability columns). With
  * [DcPublisherSelection.ALL_VALIDATORS], every validator emits one message and
  * [messagesPerSlot] must remain one.
+ *
+ * With [batchPublish], a publisher hands all its messages of this type that fall due at the same
+ * moment to the router as one batch ([io.libp2p.pubsub.PubsubRouter.publishBatch]) instead of one
+ * publish each, as Prysm does with a proposer's data columns.
  */
 data class DcSlotMessageConfig(
     val type: DcSlotMessageType,
@@ -174,7 +178,8 @@ data class DcSlotMessageConfig(
     val publisherGroups: Set<String>? = null,
     val messagesPerSlot: Int = 1,
     val publisherSelection: DcPublisherSelection = DcPublisherSelection.RANDOM_NODE,
-    val topics: DcSlotMessageTopics = DcSlotMessageTopics.Global
+    val topics: DcSlotMessageTopics = DcSlotMessageTopics.Global,
+    val batchPublish: Boolean = false
 ) {
     init {
         require(sizeBytes >= DcMessagePayload.HEADER_BYTES) {

@@ -75,31 +75,54 @@ class DcEthSlotSimComparisonTest {
         val slotCount = (params["num_slots"] as Number).toInt()
         val epbs = config["epbs"] as Map<*, *>
         val decoupled = config["decoupled_consensus"] as Map<*, *>
+        val attestation = config["attestation"] as Map<*, *>
+        val dataColumns = config["data_columns"] as Map<*, *>
         val slotDuration = (config["slot_duration_seconds"] as Number).toInt().seconds
-        val payloadOffset = (epbs["payload_offset_ms"] as Number).toInt().milliseconds
+        // eth-slot-sim draws the payload's reveal delay per slot (offset + U[0, jitter]) at run time,
+        // so it is not in the plan; the replay publishes at the mean.
+        val payloadOffset = ((epbs["payload_offset_ms"] as Number).toInt() + (epbs["payload_jitter_ms"] as Number).toInt() / 2).milliseconds
         val voteOffset = (decoupled["fc_vote_offset_ms"] as Number).toInt().milliseconds
         val aggregateOffset = slotDuration * (decoupled["round_aggregation_fraction"] as Number).toInt() / 100
+        val ptcOffset = (epbs["ptc_due_ms"] as Number).toInt().milliseconds
+        // eth-slot-sim sends an AC vote when its node gets the block (by attestation_due_ms at the
+        // latest); the replay sends it at a fixed time near a typical block arrival.
+        // -Ddc.acVoteOffsetMs overrides.
+        val acVoteOffset = (System.getProperty("dc.acVoteOffsetMs")?.toInt() ?: 150).milliseconds
+        require(acVoteOffset.inWholeMilliseconds < (attestation["attestation_due_ms"] as Number).toInt())
 
-        // Sizes as eth-slot-sim's validator package builds them; the column one assumes Blobs = 21.
+        // Sizes as eth-slot-sim's validator package builds them.
         val consensusBlockSize = (epbs["consensus_block_size"] as Number).toInt()
         val payloadSize = (config["block_size"] as Number).toInt()
-        val columnSize = 21 * 2144 + 356
+        val columnSize = (dataColumns["blobs"] as Number).toInt() * 2144 + 356
         val finalityVoteSize = 226
-        val validatorsPerRound = (schedule["validators_per_round_subnet"] as List<*>)
-            .map { ((it as List<*>).single() as Number).toInt() }
-        val aggregateSize = 328 + (validatorsPerRound.average().toInt() + 7) / 8
+        val acVoteSize = 240
+        val ptcVoteSize = 176
+        val cells = (schedule["validators_per_round_subnet"] as List<*>).flatMap { row -> (row as List<*>).map { (it as Number).toInt() } }
+        val aggregateSize = 328 + (cells.average().toInt() + 7) / 8
 
         val nodes = (topology["nodes"] as List<*>).map { it as Map<*, *> }.sortedBy { (it["num"] as Number).toInt() }
         require(nodes.size == nodeCount) { "topology has ${nodes.size} nodes, schedule $nodeCount" }
-        val columnSubscribers = (schedule["column_subscribers"] as List<*>).map { subs ->
-            (subs as List<*>).map { (it as Number).toInt() }
-        }
+        fun ints(key: String) = (schedule[key] as List<*>?)?.map { (it as Number).toInt() }
+        fun intLists(key: String) = (schedule[key] as List<*>).map { row -> (row as List<*>).map { (it as Number).toInt() } }
+        val columnSubscribers = intLists("column_subscribers")
         val custodyOf = (0 until nodeCount).map { node ->
             columnSubscribers.indices.filterTo(sortedSetOf()) { node in columnSubscribers[it] }
         }
-        require((schedule["finality_subscribers"] as List<*>).size == 1) { "expects fs_subnets: 1" }
-        // Uniform validator mapping: validator v runs on node v % N.
-        val validatorsOf = List(nodeCount) { node -> (0 until validatorCount).count { it % nodeCount == node } }
+        val finalitySubscribers = intLists("finality_subscribers")
+        val finalitySubnetsOf = (0 until nodeCount).map { node ->
+            finalitySubscribers.indices.filterTo(sortedSetOf()) { node in finalitySubscribers[it] }
+        }
+        // Validator ids are contiguous by node under explicit/tiered counts, v % N otherwise.
+        val counts = ints("validator_counts")
+        val validatorsOf = counts ?: List(nodeCount) { node -> (0 until validatorCount).count { it % nodeCount == node } }
+        val nodeOfValidator = if (counts == null) {
+            IntArray(validatorCount) { it % nodeCount }
+        } else {
+            IntArray(validatorCount).also { out ->
+                var v = 0
+                counts.forEachIndexed { node, c -> repeat(c) { out[v++] = node } }
+            }
+        }
 
         val gossipParams = GossipParams.builder()
             .D(8).DLow(6).DHigh(12).DLazy(6).DOut(1)
@@ -118,7 +141,7 @@ class DcEthSlotSimComparisonTest {
         val builder = DcNetworkBuilder.world(
             subnetCounts = mapOf(
                 DcSlotMessageType.BLOB_COLUMN to columnSubscribers.size,
-                DcSlotMessageType.FFG_ATTESTATION to 1
+                DcSlotMessageType.FFG_ATTESTATION to finalitySubscribers.size
             )
         ).defaults {
             this.gossipParams = gossipParams
@@ -134,7 +157,7 @@ class DcEthSlotSimComparisonTest {
                 validators = validatorsOf[index]
                 peers = nodeCount - 1
                 messageSubnets(DcSlotMessageType.BLOB_COLUMN, custodyOf[index])
-                messageSubnets(DcSlotMessageType.FFG_ATTESTATION, setOf(0))
+                messageSubnets(DcSlotMessageType.FFG_ATTESTATION, finalitySubnetsOf[index])
             }
         }
         val edges = (topology["edges"] as List<*>).map { it as Map<*, *> }.map {
@@ -154,6 +177,17 @@ class DcEthSlotSimComparisonTest {
                 "${adjacency.minOf { it.size }}/${adjacency.sumOf { it.size } / nodeCount}/${adjacency.maxOf { it.size }}"
         )
 
+        val slots = (schedule["slots"] as List<*>).map { it as Map<*, *> }
+        fun refsAt(slot: Int, key: String) = (slots[slot][key] as List<*>?).orEmpty().map { (it as Map<*, *>) }
+        val finalityRoundOf = ints("finality_round_of")!!
+        val finalitySubnetOf = ints("finality_subnet_of")!!
+        // Spread votes carry their own time into the slot; otherwise the whole round votes at once.
+        val voteOffsetOf = ints("finality_vote_offset_ms")
+        val votesByRoundAndOffset = finalityRoundOf.indices.groupBy {
+            finalityRoundOf[it] to (voteOffsetOf?.get(it)?.milliseconds ?: voteOffset)
+        }
+        val voteOffsets = votesByRoundAndOffset.keys.map { it.second }.distinct().sorted()
+
         val blockConfig = DcSlotMessageConfig(DcSlotMessageType.BLOCK, consensusBlockSize, Duration.ZERO)
         val payloadConfig = DcSlotMessageConfig(DcSlotMessageType.PAYLOAD, payloadSize, payloadOffset)
         val columnConfig = DcSlotMessageConfig(
@@ -161,30 +195,38 @@ class DcEthSlotSimComparisonTest {
             columnSize,
             payloadOffset,
             messagesPerSlot = columnSubscribers.size,
-            topics = DcSlotMessageTopics.Subnets(columnSubscribers.size)
+            topics = DcSlotMessageTopics.Subnets(columnSubscribers.size),
+            // one router batch, as eth-slot-sim now publishes them; -Ddc.unbatchedColumns=true for one by one
+            batchPublish = System.getProperty("dc.unbatchedColumns") != "true"
         )
-        val voteConfig = DcSlotMessageConfig(
-            DcSlotMessageType.FFG_ATTESTATION,
-            finalityVoteSize,
-            voteOffset,
-            messagesPerSlot = validatorCount / roundsPerFinalitySlot,
-            topics = DcSlotMessageTopics.Subnets(1)
-        )
+        val acVotesPerSlot = refsAt(0, "ac_voters").size
+        val acConfig = DcSlotMessageConfig(DcSlotMessageType.GOLDFISH_ATTESTATION, acVoteSize, acVoteOffset, messagesPerSlot = maxOf(1, acVotesPerSlot))
+            .takeIf { acVotesPerSlot > 0 }
+        val voteConfigs = voteOffsets.map { offset ->
+            DcSlotMessageConfig(
+                DcSlotMessageType.FFG_ATTESTATION,
+                finalityVoteSize,
+                offset,
+                messagesPerSlot = maxOf(1, votesByRoundAndOffset.filterKeys { it.second == offset }.values.maxOf { it.size }),
+                topics = DcSlotMessageTopics.Subnets(finalitySubscribers.size)
+            )
+        }
         val aggregateConfig = DcSlotMessageConfig(
             DcSlotMessageType.AGGREGATES,
             aggregateSize,
             aggregateOffset,
-            messagesPerSlot = 16
+            messagesPerSlot = maxOf(1, (slots[0]["finality_aggregators"] as List<*>?).orEmpty().sumOf { (it as List<*>).size })
         )
+        val ptcVotesPerSlot = refsAt(0, "ptc_voters").size
+        val ptcConfig = DcSlotMessageConfig(DcSlotMessageType.PTC_ATTESTATION, ptcVoteSize, ptcOffset, messagesPerSlot = maxOf(1, ptcVotesPerSlot))
+            .takeIf { ptcVotesPerSlot > 0 }
         val runConfig = DcRunConfig(
             slotCount = slotCount,
             warmupSlots = 1,
             slotInterval = slotDuration,
-            messages = listOf(blockConfig, payloadConfig, columnConfig, voteConfig, aggregateConfig)
+            messages = listOfNotNull(blockConfig, payloadConfig, columnConfig, acConfig, aggregateConfig, ptcConfig) + voteConfigs
         )
 
-        val slots = schedule["slots"] as List<*>
-        val finalityRoundOf = (schedule["finality_round_of"] as List<*>).map { (it as Number).toInt() }
         var nextId = 0
         fun schedule(config: DcSlotMessageConfig, messagesIn: (slot: Int) -> List<Pair<Int, Int?>>) =
             DcSlotMessageSchedule(
@@ -196,30 +238,35 @@ class DcEthSlotSimComparisonTest {
                     }
                 }
             )
-        val proposerOf = slots.map { ((it as Map<*, *>)["proposer"] as Number).toInt() }
-        val schedules = listOf(
+        val proposerOf = slots.map { (it["proposer"] as Number).toInt() }
+        fun refNodes(slot: Int, key: String) = refsAt(slot, key).map { (it["node"] as Number).toInt() to null }
+        val schedules = listOfNotNull(
             schedule(blockConfig) { listOf(proposerOf[it] to null) },
             schedule(payloadConfig) { listOf(proposerOf[it] to null) },
             schedule(columnConfig) { slot -> columnSubscribers.indices.map { proposerOf[slot] to it } },
-            schedule(voteConfig) { slot ->
-                finalityRoundOf.indices
-                    .filter { finalityRoundOf[it] == slot % roundsPerFinalitySlot }
-                    .map { validator -> validator % nodeCount to 0 }
-            },
+            acConfig?.let { c -> schedule(c) { slot -> refNodes(slot, "ac_voters") } },
             schedule(aggregateConfig) { slot ->
-                val aggregators = (slots[slot] as Map<*, *>)["finality_aggregators"] as List<*>
-                aggregators.flatMap { subnet ->
+                (slots[slot]["finality_aggregators"] as List<*>).flatMap { subnet ->
                     (subnet as List<*>).map { ((it as Map<*, *>)["node"] as Number).toInt() to null }
                 }
+            },
+            ptcConfig?.let { c -> schedule(c) { slot -> refNodes(slot, "ptc_voters") } }
+        ) + voteConfigs.map { c ->
+            schedule(c) { slot ->
+                votesByRoundAndOffset[(slot % roundsPerFinalitySlot) to c.publishOffset].orEmpty()
+                    .map { validator -> nodeOfValidator[validator] to finalitySubnetOf[validator] }
             }
-        )
-        schedules.forEach { println("${it.config.type}: ${it.messages.size} messages over $slotCount slots") }
+        }
+        schedules.groupBy { it.config.type }.forEach { (type, ofType) ->
+            println("$type: ${ofType.sumOf { it.messages.size }} messages over $slotCount slots in ${ofType.size} wave(s)")
+        }
 
         // -Ddc.queue=CODEL|FQ_CODEL|FIFO picks the link queue; its outputs then carry the name, so
         // runs with different queues sit side by side in the run dir.
         val queue = System.getProperty("dc.queue")?.let { BandwidthQueueDiscipline.valueOf(it) }
         val suffix = (queue?.let { "-${it.name.lowercase()}" } ?: "") +
-            (System.getProperty("dc.maxPublishedMessages")?.let { "-mpm$it" } ?: "")
+            (System.getProperty("dc.maxPublishedMessages")?.let { "-mpm$it" } ?: "") +
+            (if (System.getProperty("dc.unbatchedColumns") == "true") "-unbatched" else "")
         val sentSizes = DcDatagramSizes(
             nodeCount,
             from = runConfig.slotTimes[runConfig.warmupSlots],
@@ -238,7 +285,9 @@ class DcEthSlotSimComparisonTest {
                     DcSlotMessageType.PAYLOAD to 11,
                     DcSlotMessageType.BLOB_COLUMN to 4,
                     DcSlotMessageType.FFG_ATTESTATION to 8,
-                    DcSlotMessageType.AGGREGATES to 9
+                    DcSlotMessageType.AGGREGATES to 9,
+                    DcSlotMessageType.GOLDFISH_ATTESTATION to 7,
+                    DcSlotMessageType.PTC_ATTESTATION to 12
                 )
                 val messagesById = schedules.flatMap { it.messages }.associateBy { it.id }
                 File(runDir, "jvm_arrivals$suffix.csv").printWriter().use { out ->

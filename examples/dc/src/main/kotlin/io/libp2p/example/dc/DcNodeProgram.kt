@@ -2,6 +2,8 @@ package io.libp2p.example.dc
 
 import io.libp2p.core.crypto.sha256
 import io.libp2p.core.pubsub.MessageApi
+import io.libp2p.etc.types.toByteArray
+import io.libp2p.etc.types.toProtobuf
 import io.libp2p.etc.types.toWBytes
 import io.libp2p.pubsub.AbstractPubsubMessage
 import io.libp2p.pubsub.DEFAULT_PUBSUB_MESSAGE_ID_LENGTH
@@ -176,24 +178,44 @@ class DcNodeProgram(
         }
         if (myMessages.isEmpty()) return
         val publisher = messageApi.createPublisher(privKey = null, seqIdGenerator = { null })
-        myMessages.forEach { (messageSchedule, message) ->
+        val (batched, single) = myMessages.partition { (messageSchedule, _) -> messageSchedule.config.batchPublish }
+        single.forEach { (messageSchedule, message) ->
             publishAt(simContext, messageSchedule.timeOf(message)) { publishedAt ->
                 messageRecorders.getValue(messageSchedule.config.type)
                     .recordPublished(message, publishedAt)
-                publisher.publish(
-                    payload(
-                        kind = DcMessageKind.SLOT_MESSAGE,
-                        id = message.id,
-                        slotIndex = message.slotIndex,
-                        subnetId = message.subnetId ?: DcMessagePayload.NO_SUBNET,
-                        publishedAt = publishedAt,
-                        sizeBytes = messageSchedule.config.sizeBytes
-                    ),
-                    messageSchedule.topicOf(message)
-                )
+                publisher.publish(slotPayload(messageSchedule, message, publishedAt), messageSchedule.topicOf(message))
             }
         }
+        // The router's publishBatch takes topics per message, which the publisher API's batch does not
+        batched.groupBy { (messageSchedule, message) -> messageSchedule to messageSchedule.timeOf(message) }
+            .forEach { (key, group) ->
+                val (messageSchedule, at) = key
+                publishAt(simContext, at) { publishedAt ->
+                    val recorder = messageRecorders.getValue(messageSchedule.config.type)
+                    val msgs = group.map { (_, message) ->
+                        recorder.recordPublished(message, publishedAt)
+                        val data = slotPayload(messageSchedule, message, publishedAt)
+                        gossipRouter.messageFactory(
+                            Rpc.Message.newBuilder()
+                                .addTopicIDs(messageSchedule.topicOf(message).topic)
+                                .setData(data.toByteArray().toProtobuf())
+                                .build()
+                        )
+                    }
+                    gossipRouter.publishBatch(msgs)
+                }
+            }
     }
+
+    private fun slotPayload(messageSchedule: DcSlotMessageSchedule, message: DcSlotMessage, publishedAt: Duration) =
+        payload(
+            kind = DcMessageKind.SLOT_MESSAGE,
+            id = message.id,
+            slotIndex = message.slotIndex,
+            subnetId = message.subnetId ?: DcMessagePayload.NO_SUBNET,
+            publishedAt = publishedAt,
+            sizeBytes = messageSchedule.config.sizeBytes
+        )
 
     /** Runs [publish] at simulated time [at], handing it the moment it actually ran. */
     private fun publishAt(simContext: SimContext, at: Duration, publish: (Duration) -> Unit) {
