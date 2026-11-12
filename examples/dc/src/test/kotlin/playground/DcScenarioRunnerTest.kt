@@ -428,7 +428,10 @@ class DcScenarioRunnerTest {
         val ethGossipParams = true
         // 40/20 Mbps to compensate smaller number of IHAVEs
 //        val homeLink = DcLink(mbitPerSecond(40), mbitPerSecond(20))
-        val homeLink = DcLink(mbitPerSecond(50), mbitPerSecond(50))
+        val homeLink = DcLink(
+            mbitPerSecond(System.getProperty("dc.homeDownMbps")?.toLong() ?: 50),
+            mbitPerSecond(System.getProperty("dc.homeUpMbps")?.toLong() ?: 25)
+        )
 
         // Gossip params belong to the node, so they go on the groups below rather than on the run.
         val nodeGossipParams = GossipParams.builder()
