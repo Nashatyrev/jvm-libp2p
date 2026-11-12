@@ -207,12 +207,18 @@ configure(
             "quicsim.nodeHeapProfile.nodeId",
             "quicsim.nodeHeapProfile.periodMillis",
             "quicsim.nodeHeapProfile.retainedClasses",
-            "slowStartReport.dir"
+            "slowStartReport.dir",
+            "quicDos.enabled",
+            "quicDos.rates",
+            "quicDos.phaseSeconds",
+            "quicDos.senderThreads"
         ).forEach { propertyName ->
             System.getProperty(propertyName)?.let { propertyValue ->
                 systemProperty(propertyName, propertyValue)
             }
         }
+
+        System.getProperty("quicDos.maxHeap")?.let { maxHeapSize = it }
 
         if (System.getProperty("quicsim.reportProgress", "false").toBoolean()) {
             testLogging.showStandardStreams = true
