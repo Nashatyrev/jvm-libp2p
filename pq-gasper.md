@@ -6,7 +6,8 @@ be aggregated and reach every node before the 12 s slot ends, with 16 attestatio
 
 ## Signature and aggregation measurements
 
-leanVM `main` at e723a8c (Keccak), CPU only, 2026-11-10. M3 Max: 12P+4E cores, 64 GB, in desktop
+[leanVM](https://github.com/leanEthereum/leanVM) `main` at
+[e723a8c](https://github.com/leanEthereum/leanVM/commit/e723a8cc92892478ec6d0f73fa19da659fed9566) (Keccak), CPU only, 2026-11-10. M3 Max: 12P+4E cores, 64 GB, in desktop
 use during the run. M3 Ultra: 24P+8E cores, 512 GB, idle.
 
 **Single signature**
@@ -51,28 +52,25 @@ Setup (`DcPqAttestationRunnerTest`, one cold slot):
   100 mid home (100/50), 100 home (50/25 Mbit).
 - Block at 0 s, 1 MiB payload and 21 blobs at 1 s.
 - 31,250 votes (1/32 of validators) of 2,548 B each at 3.0 s, on 16 subnets. Full 2,404 B signature.
-- Pools subscribe to all 16 vote subnets, VPS to 2, upper and mid home to 1. The 50/25 home tier
-  publishes votes but relays no vote subnet.
+- Pools subscribe to all 16 vote subnets, VPS to 2, upper and mid home to 1.
+- The home tier (50/25 Mbit) **does not subscribe to any attestation subnet**. It only
+  publishes its own votes and receives the aggregates.
 - One 260 KiB aggregate per subnet, published by a pool node at 6.5 s. This stands for an
   aggregator that collects until about 5 s and proves in one pass, plus a first-seen rule that
   lets only one of the four aggregators' proofs travel. Proving itself is not simulated.
 
-Arrival times in seconds from slot start, p50 / p99 / max:
+Arrival times in seconds from slot start, p50 / **p99** / max:
 
 | Tier | Votes arrive | Aggregates arrive |
 |---|---|---|
-| Pools (aggregators) | 3.23 / 3.84 / 4.38 | 6.84 / 7.12 / 7.35 |
-| VPS | 3.41 / 4.59 / 5.15 | 6.94 / 7.44 / 7.95 |
-| Upper home (200/100) | 3.49 / 4.74 / 5.12 | 7.08 / 7.81 / 8.02 |
-| Mid home (100/50) | 3.67 / 5.61 / 6.67 | 7.47 / 9.35 / 10.54 |
-| Home (50/25) | not subscribed | 7.72 / 10.14 / 11.05 |
+| Pools (aggregators) | 3.23 / **3.84** / 4.38 | 6.84 / **7.12** / 7.35 |
+| VPS | 3.41 / **4.59** / 5.15 | 6.94 / **7.44** / 7.95 |
+| Upper home (200/100) | 3.49 / **4.74** / 5.12 | 7.08 / **7.81** / 8.02 |
+| Mid home (100/50) | 3.67 / **5.61** / 6.67 | 7.47 / **9.35** / 10.54 |
+| Home (50/25) | **not subscribed** | 7.72 / **10.14** / 11.05 |
 
 Every node has all 16 aggregates before the slot ends; the slowest at 11.05 s. Aggregators have
 every vote by 4.38 s.
-
-What makes it work: without the first-seen rule (64 aggregates travelling) the two lower home tiers
-miss the slot, and a 50/25 node that relays a vote subnet also misses it, because votes are
-delivered about 9 times each.
 
 ## Optimizations not used in this simulation
 
