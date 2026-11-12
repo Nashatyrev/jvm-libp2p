@@ -60,6 +60,10 @@ tasks.register('simulation', Test) {
       systemProperty name, System.getProperty(name)
     }
   }
+  // Every -Ddc.pq.* switch of DcPqAttestationRunnerTest, without listing them one by one.
+  System.properties.findAll { it.key.toString().startsWith('dc.pq.') }.each { name, value ->
+    systemProperty name.toString(), value
+  }
   // Simulations run QUIC with quic-go-like settings unless told otherwise: go-libp2p's 32-packet initial
   // window and 1280-byte packets, 4-byte connection ids, and flow-control credit large enough to stand
   // in for quic-go's window auto-tuning (quiche's own growth stalls a cold 1 MiB transfer for several
