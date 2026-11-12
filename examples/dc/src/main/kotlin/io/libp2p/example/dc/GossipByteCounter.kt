@@ -59,6 +59,10 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
     private val _controlBytesReadByBucket: Array<AtomicLong>? = slotProfile?.let { params ->
         Array(params.bucketCount) { AtomicLong(0) }
     }
+    private val _messageBytesWrittenByTypeBucket = ConcurrentHashMap<DcSlotMessageType, Array<AtomicLong>>()
+    private val _controlBytesWrittenByBucket: Array<AtomicLong>? = slotProfile?.let { params ->
+        Array(params.bucketCount) { AtomicLong(0) }
+    }
     private val _controlBreakdownRead = ControlAccumulator()
     private val _iwantIdsWrittenBySlot = ConcurrentHashMap<Int, AtomicLong>()
     private val _ihaveIdsReadBySlot = ConcurrentHashMap<Int, AtomicLong>()
@@ -114,6 +118,18 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
         get() = _controlBytesReadByBucket?.map { it.get() } ?: emptyList()
 
     /**
+     * Outbound publish bytes by message type and bucket, bucketed by when gossip handed the RPC to
+     * its stream — the transport may put it on the wire later. Not split into first copies and
+     * duplicates: whether a copy is a duplicate is only known at the receiver.
+     */
+    val messageBytesWrittenByTypeAndBucket: Map<DcSlotMessageType, List<Long>>
+        get() = _messageBytesWrittenByTypeBucket.mapValues { (_, buckets) -> buckets.map { it.get() } }
+
+    /** Outbound control bytes by slot bucket, bucketed the same way as [messageBytesWrittenByTypeAndBucket]. */
+    val controlBytesWrittenByBucket: List<Long>
+        get() = _controlBytesWrittenByBucket?.map { it.get() } ?: emptyList()
+
+    /**
      * Inbound [controlBytesRead] split by what it was spent on, since "control" otherwise lumps
      * together things with very different scaling: IHAVE/IWANT grow with the number of messages
      * published, GRAFT/PRUNE with mesh churn, and subscriptions are paid once per topic at startup.
@@ -164,6 +180,7 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
             count(msg, _publishBytesWritten, _controlBytesWritten, _writtenBySlot, _publishMessagesWritten)
             _controlBreakdownWritten.add(msg)
             countIWantBySlot(msg)
+            countSlotProfileWritten(msg)
             timeline?.let { t -> currentTimeSupplier?.let { t.onWrite(msg, it()) } }
         }
         super.write(ctx, msg, promise)
@@ -211,6 +228,27 @@ class GossipByteCounter(private val slotProfile: DcSlotProfileParams? = null) : 
         val totalBytes = rpc.serializedSize + VARINT_OVERHEAD
         _controlBytesReadByBucket?.get(bucket)?.addAndGet(totalBytes - publishBytes)
         _controlBreakdownReadMeasured.add(rpc)
+    }
+
+    /** The outbound counterpart of [countSlotProfile], with no first-copy/duplicate split. */
+    private fun countSlotProfileWritten(rpc: Rpc.RPC) {
+        val params = slotProfile ?: return
+        val now = currentTimeSupplier?.invoke() ?: return
+        val bucket = params.bucketOf(now) ?: return
+
+        var publishBytes = 0L
+        rpc.publishList.forEach { message ->
+            val size = encodedFieldSize(message)
+            publishBytes += size
+            message.topicIDsList.firstOrNull()?.let { DcSlotMessageTopics.typeOf(it) }?.let { type ->
+                val buckets = _messageBytesWrittenByTypeBucket.computeIfAbsent(type) {
+                    Array(params.bucketCount) { AtomicLong(0) }
+                }
+                buckets[bucket].addAndGet(size)
+            }
+        }
+        val totalBytes = rpc.serializedSize + VARINT_OVERHEAD
+        _controlBytesWrittenByBucket?.get(bucket)?.addAndGet(totalBytes - publishBytes)
     }
 
     /** Bytes and message count for one slot, so both are attributed in a single map lookup. */

@@ -149,13 +149,18 @@ class DatagramTrafficAggregate(
     }
 
     /** Inbound bytes per grid bucket, summed over [nodeIds] — every node when null. */
+    fun inboundBytesPerBucket(nodeIds: Set<Int>? = null): LongArray = bytesPerBucket(IN, nodeIds)
+
+    /** Outbound bytes per grid bucket, summed over [nodeIds] — every node when null. */
+    fun outboundBytesPerBucket(nodeIds: Set<Int>? = null): LongArray = bytesPerBucket(OUT, nodeIds)
+
     @Synchronized
-    fun inboundBytesPerBucket(nodeIds: Set<Int>? = null): LongArray {
+    private fun bytesPerBucket(direction: Int, nodeIds: Set<Int>?): LongArray {
         val out = LongArray(bucketCount)
         forEachNode(nodeIds) { node ->
             val base = node * bucketCount
             for (bucket in 0 until bucketCount) {
-                out[bucket] = out[bucket] + bytes[IN][base + bucket]
+                out[bucket] = out[bucket] + bytes[direction][base + bucket]
             }
         }
         return out

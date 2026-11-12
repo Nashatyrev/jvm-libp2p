@@ -5,6 +5,7 @@ import io.libp2p.quicsim.runner.DatagramPacketTraceEvent
 import io.netty.channel.embedded.EmbeddedChannel
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.assertj.core.data.Percentage
 import org.junit.jupiter.api.Test
 import pubsub.pb.Rpc
 import kotlin.random.Random
@@ -151,6 +152,24 @@ class DcSlotTrafficProfileTest {
             .isGreaterThan(1000L)
         assertThat(bytes.filterIndexed { index, _ -> index != 2 }).allMatch { it == 0L }
         assertThat(counter.duplicateMessageBytesReadByTypeAndBucket).isEmpty()
+    }
+
+    @Test
+    fun `an outbound publish is attributed to its type and bucket, every copy alike, with the rest as control`() {
+        val params = DcSlotProfileParams(anchor = Duration.ZERO, slotDuration = 12.seconds, bucketDuration = 100.milliseconds)
+        val counter = GossipByteCounter(params)
+        counter.currentTimeSupplier = { 250.milliseconds }
+        val rpc = rpcWithPublish(TOPIC_BLOCK, id = 1, dataSize = 1000)
+
+        counter.writeForTest(rpc)
+        counter.writeForTest(rpc)
+
+        val bytes = counter.messageBytesWrittenByTypeAndBucket.getValue(DcSlotMessageType.BLOCK)
+        val control = counter.controlBytesWrittenByBucket
+        assertThat(bytes[2] + control[2]).isEqualTo(counter.bytesWritten)
+        assertThat(bytes[2]).isGreaterThan(2 * 1000L)
+        assertThat(bytes.filterIndexed { index, _ -> index != 2 }).allMatch { it == 0L }
+        assertThat(counter.uniqueMessageBytesReadByTypeAndBucket).isEmpty()
     }
 
     @Test
@@ -340,6 +359,7 @@ class DcSlotTrafficProfileTest {
         )
 
         assertThat(profile.transportBytesPerNode).allMatch { it == 0L }
+        assertThat(profile.outboundTransportBytesPerNode[0]).isEqualTo(500L)
     }
 
     @Test
@@ -480,6 +500,16 @@ class DcSlotTrafficProfileTest {
         assertThat(profile.transportBytesPerNode.sum())
             .describedAs("nodes received traffic over the run, so raw inbound UDP bytes are nonzero")
             .isGreaterThan(0L)
+
+        val inboundMessageBytes = (profile.uniqueMessageBytesPerNode.values + profile.duplicateMessageBytesPerNode.values)
+            .sumOf { it.sum() }
+        val outboundMessageBytes = profile.outboundMessageBytesPerNode.values.sumOf { it.sum() }
+        assertThat(outboundMessageBytes.toDouble())
+            .describedAs("network-wide every copy sent is a copy received, give or take the slot boundary")
+            .isCloseTo(inboundMessageBytes.toDouble(), Percentage.withPercentage(10.0))
+        assertThat(profile.outboundTransportBytesPerNode.sum().toDouble())
+            .isCloseTo(profile.transportBytesPerNode.sum().toDouble(), Percentage.withPercentage(10.0))
+        assertThat(profile.toString()).contains("block-out", "control-out", "transport-out")
     }
 
     @Test
@@ -497,6 +527,13 @@ class DcSlotTrafficProfileTest {
         assertThatThrownBy { DcRunConfig(slotTrafficBucketDuration = Duration.ZERO) }
             .hasMessageContaining("slotTrafficBucketDuration must be > 0")
     }
+}
+
+/** Drives [GossipByteCounter.write] through a real (embedded) Netty pipeline. */
+private fun GossipByteCounter.writeForTest(rpc: Rpc.RPC) {
+    val channel = EmbeddedChannel(this)
+    channel.writeOutbound(rpc)
+    channel.finishAndReleaseAll()
 }
 
 /** Drives [GossipByteCounter.channelRead] through a real (embedded) Netty pipeline. */

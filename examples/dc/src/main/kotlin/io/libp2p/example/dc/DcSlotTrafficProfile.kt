@@ -98,6 +98,12 @@ data class DcSlotProfileParams(
  *    without meaning anything. This column is simply the wire truth for the bucket, comparable
  *    against the gossip columns by eye but not netted against them.
  *
+ * The same node's outbound traffic sits alongside, in [outboundMessageBytesPerNode],
+ * [outboundControlBytesPerNode] and [outboundTransportBytesPerNode]. Outbound gossip bytes are not
+ * split into first copies and duplicates, since only the receiver knows which a copy was, and they
+ * are bucketed when gossip hands an RPC to its stream rather than when QUIC sends it — under a full
+ * congestion window the outbound UDP column trails the gossip columns.
+ *
  * Every figure is bytes per node per slot: summed over every measured slot and every receiving node,
  * divided by [nodeCount] and [slotsMeasured] — the same "per network node" convention the rest of the
  * report uses — then rounded up to a whole byte so a bucket that saw any traffic at all reads as at
@@ -112,7 +118,11 @@ data class DcSlotTrafficProfile(
     val uniqueMessageBytesPerNode: Map<DcSlotMessageType, List<Long>>,
     val duplicateMessageBytesPerNode: Map<DcSlotMessageType, List<Long>>,
     val controlBytesPerNode: List<Long>,
-    val transportBytesPerNode: List<Long>
+    val transportBytesPerNode: List<Long>,
+    val outboundMessageBytesPerNode: Map<DcSlotMessageType, List<Long>> = emptyMap(),
+    /** Empty when the profile was built without outbound traffic, which leaves out every outbound column. */
+    val outboundControlBytesPerNode: List<Long> = emptyList(),
+    val outboundTransportBytesPerNode: List<Long> = emptyList()
 ) {
     val bucketCount: Int get() = controlBytesPerNode.size
 
@@ -127,16 +137,29 @@ data class DcSlotTrafficProfile(
         )
         // Columns follow DcSlotMessageType declaration order, i.e. slot order.
         val types = (uniqueMessageBytesPerNode.keys + duplicateMessageBytesPerNode.keys).distinct().sorted()
+        val outboundTypes = outboundMessageBytesPerNode.keys.sorted()
+        val hasOutbound = outboundControlBytesPerNode.isNotEmpty()
+        val outboundColumns = if (hasOutbound) {
+            outboundTypes.map { "${it.id}$OUTBOUND_SUFFIX" } +
+                "$CONTROL_COLUMN$OUTBOUND_SUFFIX" +
+                "$TRANSPORT_COLUMN$OUTBOUND_SUFFIX"
+        } else {
+            emptyList()
+        }
         val columns = types.flatMap { listOf("${it.id}$UNIQUE_SUFFIX", "${it.id}$DUPLICATE_SUFFIX") } +
             CONTROL_COLUMN +
-            TRANSPORT_COLUMN
+            TRANSPORT_COLUMN +
+            outboundColumns
         val zeros = List(bucketCount) { 0L }
         val series = types.flatMap { type ->
             listOf(
                 "${type.id}$UNIQUE_SUFFIX" to (uniqueMessageBytesPerNode[type] ?: zeros),
                 "${type.id}$DUPLICATE_SUFFIX" to (duplicateMessageBytesPerNode[type] ?: zeros)
             )
-        }.toMap() + (CONTROL_COLUMN to controlBytesPerNode) + (TRANSPORT_COLUMN to transportBytesPerNode)
+        }.toMap() + (CONTROL_COLUMN to controlBytesPerNode) + (TRANSPORT_COLUMN to transportBytesPerNode) +
+            outboundTypes.associate { "${it.id}$OUTBOUND_SUFFIX" to outboundMessageBytesPerNode.getValue(it) } +
+            ("$CONTROL_COLUMN$OUTBOUND_SUFFIX" to outboundControlBytesPerNode) +
+            ("$TRANSPORT_COLUMN$OUTBOUND_SUFFIX" to outboundTransportBytesPerNode)
         val widths = columns.associateWith { maxOf(it.length, VALUE_WIDTH) }
         appendLine(
             "%${TIME_WIDTH}s".format("t(ms)") +
@@ -157,6 +180,7 @@ data class DcSlotTrafficProfile(
         private const val VALUE_WIDTH = 8
         const val UNIQUE_SUFFIX = "-uniq"
         const val DUPLICATE_SUFFIX = "-dup"
+        const val OUTBOUND_SUFFIX = "-out"
         const val CONTROL_COLUMN = "control"
         const val TRANSPORT_COLUMN = "transport"
 
@@ -192,16 +216,25 @@ data class DcSlotTrafficProfile(
                 "aggregate bucketDuration ${traffic.bucketDuration} must match the profile's " +
                     "${params.bucketDuration}, or its buckets cannot be folded into slot positions"
             }
-            val folded = LongArray(params.bucketCount)
-            val perBucket = traffic.inboundBytesPerBucket(nodeIds)
-            perBucket.forEachIndexed { bucket, value ->
-                if (value != 0L) {
-                    params.bucketOf(traffic.bucketStart(bucket))?.let { slotBucket ->
-                        folded[slotBucket] = folded[slotBucket] + value
+            fun fold(perBucket: LongArray): LongArray {
+                val folded = LongArray(params.bucketCount)
+                perBucket.forEachIndexed { bucket, value ->
+                    if (value != 0L) {
+                        params.bucketOf(traffic.bucketStart(bucket))?.let { slotBucket ->
+                            folded[slotBucket] = folded[slotBucket] + value
+                        }
                     }
                 }
+                return folded
             }
-            return build(gossipCounters, folded, params, nodeCount, slotsMeasured)
+            return build(
+                gossipCounters,
+                fold(traffic.inboundBytesPerBucket(nodeIds)),
+                fold(traffic.outboundBytesPerBucket(nodeIds)),
+                params,
+                nodeCount,
+                slotsMeasured
+            )
         }
 
         fun of(
@@ -211,20 +244,31 @@ data class DcSlotTrafficProfile(
             nodeCount: Int,
             slotsMeasured: Int
         ): DcSlotTrafficProfile {
-            val rawUdpBytes = LongArray(params.bucketCount)
-            inboundEvents
-                .asSequence()
-                .filter { it.direction == DatagramPacketTraceEvent.Direction.INBOUND }
-                .forEach { event ->
-                    params.bucketOf(event.at)?.let { bucket -> rawUdpBytes[bucket] = rawUdpBytes[bucket] + event.bytes }
-                }
-            return build(gossipCounters, rawUdpBytes, params, nodeCount, slotsMeasured)
+            fun udpBytes(direction: DatagramPacketTraceEvent.Direction): LongArray {
+                val raw = LongArray(params.bucketCount)
+                inboundEvents
+                    .asSequence()
+                    .filter { it.direction == direction }
+                    .forEach { event ->
+                        params.bucketOf(event.at)?.let { bucket -> raw[bucket] = raw[bucket] + event.bytes }
+                    }
+                return raw
+            }
+            return build(
+                gossipCounters,
+                udpBytes(DatagramPacketTraceEvent.Direction.INBOUND),
+                udpBytes(DatagramPacketTraceEvent.Direction.OUTBOUND),
+                params,
+                nodeCount,
+                slotsMeasured
+            )
         }
 
         /** Shared tail of both factories: fold in the gossip counters and average per node per slot. */
         private fun build(
             gossipCounters: Collection<GossipByteCounter>,
             rawUdpBytes: LongArray,
+            rawUdpBytesOut: LongArray,
             params: DcSlotProfileParams,
             nodeCount: Int,
             slotsMeasured: Int
@@ -235,7 +279,13 @@ data class DcSlotTrafficProfile(
             val rawUniqueBytes = mutableMapOf<DcSlotMessageType, LongArray>()
             val rawDuplicateBytes = mutableMapOf<DcSlotMessageType, LongArray>()
             val rawControlBytes = LongArray(bucketCount)
+            val rawOutboundBytes = mutableMapOf<DcSlotMessageType, LongArray>()
+            val rawOutboundControlBytes = LongArray(bucketCount)
             gossipCounters.forEach { counter ->
+                addInto(rawOutboundBytes, counter.messageBytesWrittenByTypeAndBucket, bucketCount)
+                counter.controlBytesWrittenByBucket.forEachIndexed { bucket, bytes ->
+                    rawOutboundControlBytes[bucket] = rawOutboundControlBytes[bucket] + bytes
+                }
                 addInto(rawUniqueBytes, counter.uniqueMessageBytesReadByTypeAndBucket, bucketCount)
                 addInto(rawDuplicateBytes, counter.duplicateMessageBytesReadByTypeAndBucket, bucketCount)
                 counter.controlBytesReadByBucket.forEachIndexed { bucket, bytes ->
@@ -253,7 +303,10 @@ data class DcSlotTrafficProfile(
                 uniqueMessageBytesPerNode = rawUniqueBytes.mapValues { (_, raw) -> average(raw) },
                 duplicateMessageBytesPerNode = rawDuplicateBytes.mapValues { (_, raw) -> average(raw) },
                 controlBytesPerNode = average(rawControlBytes),
-                transportBytesPerNode = average(rawUdpBytes)
+                transportBytesPerNode = average(rawUdpBytes),
+                outboundMessageBytesPerNode = rawOutboundBytes.mapValues { (_, raw) -> average(raw) },
+                outboundControlBytesPerNode = average(rawOutboundControlBytes),
+                outboundTransportBytesPerNode = average(rawUdpBytesOut)
             )
         }
 
