@@ -6,6 +6,10 @@ not subscribed, one cold slot); only the gossip mesh degree changes: D/DLow/DHig
 **Result:** D = 4 halves the vote traffic at no latency cost in an honest network, and holds up to
 70% withholding attackers. From 80% attackers it degrades earlier than D = 8.
 
+## Throughput and latency by D (no attack)
+
+![Pools inbound per slot and p99 arrival vs gossip mesh degree D](docs/pq-gasper/mesh-degree.png)
+
 ## Throughput
 
 | | D = 8 | D = 4 |
